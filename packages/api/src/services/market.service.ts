@@ -23,7 +23,7 @@ export interface QuoteRow {
   fees: number;
   total: number;
   expires_at: string;
-  used: number;
+  status: 'PENDING' | 'USED' | 'EXPIRED';
   created_at: string;
 }
 
@@ -76,11 +76,22 @@ export class MarketService {
   }
 
   /**
-   * Get price history
+   * Get price history with downsampling and KV cache per period.
+   * - 24h: raw points (~288), cached 60s
+   * - 7d: hourly avg (~168), cached 5min
+   * - 30d: 4-hour avg (~180), cached 15min
+   * - 1y: daily avg (~365), cached 1h
    */
   async getPriceHistory(
     period: '24h' | '7d' | '30d' | '1y' = '24h'
   ): Promise<GoldPriceRow[]> {
+    // Try KV cache first
+    const cacheKey = `price_history:${period}`;
+    const cacheTtl: Record<string, number> = { '24h': 60, '7d': 300, '30d': 900, '1y': 3600 };
+
+    const cached = await this.kv.get(cacheKey, 'json');
+    if (cached) return cached as GoldPriceRow[];
+
     const intervals: Record<string, string> = {
       '24h': '-1 day',
       '7d': '-7 days',
@@ -88,16 +99,78 @@ export class MarketService {
       '1y': '-1 year',
     };
 
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM gold_prices
-         WHERE timestamp >= datetime('now', ?)
-         ORDER BY timestamp ASC`
-      )
-      .bind(intervals[period])
-      .all<GoldPriceRow>();
+    // Downsampling format per period
+    const groupFormats: Record<string, string | null> = {
+      '24h': null, // raw
+      '7d': '%Y-%m-%d %H:00:00',       // hourly
+      '30d': '%Y-%m-%d %H:00:00',      // will filter to 4h buckets below
+      '1y': '%Y-%m-%d',                 // daily
+    };
 
-    return result.results || [];
+    let results: GoldPriceRow[];
+    const groupFormat = groupFormats[period];
+
+    if (!groupFormat) {
+      // Raw for 24h
+      const result = await this.db
+        .prepare(
+          `SELECT * FROM gold_prices
+           WHERE timestamp >= datetime('now', ?)
+           ORDER BY timestamp ASC`
+        )
+        .bind(intervals[period])
+        .all<GoldPriceRow>();
+      results = result.results || [];
+    } else if (period === '30d') {
+      // 4-hour buckets: group by date + floor(hour/4)
+      const result = await this.db
+        .prepare(
+          `SELECT
+             MIN(id) as id,
+             AVG(price_usd) as price_usd,
+             AVG(price_xof) as price_xof,
+             AVG(exchange_rate) as exchange_rate,
+             AVG(buy_price) as buy_price,
+             AVG(sell_price) as sell_price,
+             MIN(source) as source,
+             MIN(timestamp) as timestamp
+           FROM gold_prices
+           WHERE timestamp >= datetime('now', ?)
+           GROUP BY strftime('%Y-%m-%d', timestamp), CAST(strftime('%H', timestamp) AS INTEGER) / 4
+           ORDER BY timestamp ASC`
+        )
+        .bind(intervals[period])
+        .all<GoldPriceRow>();
+      results = result.results || [];
+    } else {
+      // Hourly (7d) or daily (1y)
+      const result = await this.db
+        .prepare(
+          `SELECT
+             MIN(id) as id,
+             AVG(price_usd) as price_usd,
+             AVG(price_xof) as price_xof,
+             AVG(exchange_rate) as exchange_rate,
+             AVG(buy_price) as buy_price,
+             AVG(sell_price) as sell_price,
+             MIN(source) as source,
+             MIN(timestamp) as timestamp
+           FROM gold_prices
+           WHERE timestamp >= datetime('now', ?)
+           GROUP BY strftime(?, timestamp)
+           ORDER BY timestamp ASC`
+        )
+        .bind(intervals[period], groupFormat)
+        .all<GoldPriceRow>();
+      results = result.results || [];
+    }
+
+    // Cache result
+    await this.kv.put(cacheKey, JSON.stringify(results), {
+      expirationTtl: cacheTtl[period],
+    });
+
+    return results;
   }
 
   /**
@@ -179,7 +252,7 @@ export class MarketService {
       fees,
       total,
       expires_at: expiresAt,
-      used: 0,
+      status: 'PENDING',
       created_at: new Date().toISOString(),
     };
   }
@@ -191,27 +264,32 @@ export class MarketService {
     const result = await this.db
       .prepare('SELECT * FROM quotes WHERE id = ?')
       .bind(quoteId)
-      .first<QuoteRow>();
-    return result || null;
+      .first<Omit<QuoteRow, 'total'>>();
+    if (!result) return null;
+    // Compute total (not stored in DB)
+    const total = result.type === 'BUY'
+      ? result.cash_amount + result.fees
+      : result.cash_amount - result.fees;
+    return { ...result, total };
   }
 
   /**
-   * Validate and mark quote as used
+   * Validate and mark quote as used (atomic - prevents double-use race condition)
    */
   async useQuote(quoteId: string, userId: string): Promise<QuoteRow | null> {
-    const quote = await this.getQuote(quoteId);
-
-    if (!quote) return null;
-    if (quote.user_id !== userId) return null;
-    if (quote.used === 1) return null;
-    if (new Date(quote.expires_at) < new Date()) return null;
-
-    await this.db
-      .prepare('UPDATE quotes SET used = 1 WHERE id = ?')
-      .bind(quoteId)
+    // Atomic: only one concurrent request can successfully mark the quote as used
+    const result = await this.db
+      .prepare(
+        `UPDATE quotes SET status = 'USED'
+         WHERE id = ? AND user_id = ? AND status = 'PENDING' AND expires_at > datetime('now')`
+      )
+      .bind(quoteId, userId)
       .run();
 
-    return { ...quote, used: 1 };
+    // If no rows changed, the quote was already used, expired, or doesn't belong to user
+    if (result.meta.changes === 0) return null;
+
+    return this.getQuote(quoteId);
   }
 
   /**
@@ -226,7 +304,7 @@ export class MarketService {
   }
 
   /**
-   * Check if purchase is possible
+   * Check if purchase is possible (non-atomic, use for quote generation only)
    */
   async canPurchase(tokenAmount: number): Promise<boolean> {
     const stock = await this.getGoldStock();
@@ -236,33 +314,42 @@ export class MarketService {
   }
 
   /**
-   * Update stock after purchase (increase tokens_issued)
+   * Atomically reserve stock for a purchase.
+   * Returns true if stock was successfully reserved, false if insufficient.
+   * Prevents race condition: only one concurrent request can claim the same stock.
    */
-  async decreaseAvailableStock(tokenAmount: number): Promise<void> {
-    await this.db
+  async atomicPurchaseStock(tokenAmount: number): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued + ?,
              updated_at = datetime('now')
-         WHERE id = 'primary'`
+         WHERE id = 'primary'
+           AND (total_allocated - tokens_issued) >= ?`
       )
-      .bind(tokenAmount)
+      .bind(tokenAmount, tokenAmount)
       .run();
+
+    return result.meta.changes > 0;
   }
 
   /**
-   * Update stock after sale (decrease tokens_issued)
+   * Atomically release stock after a sale or rollback.
+   * Returns true if stock was successfully released.
    */
-  async increaseAvailableStock(tokenAmount: number): Promise<void> {
-    await this.db
+  async atomicSellStock(tokenAmount: number): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued - ?,
              updated_at = datetime('now')
-         WHERE id = 'primary'`
+         WHERE id = 'primary'
+           AND tokens_issued >= ?`
       )
-      .bind(tokenAmount)
+      .bind(tokenAmount, tokenAmount)
       .run();
+
+    return result.meta.changes > 0;
   }
 
   /**

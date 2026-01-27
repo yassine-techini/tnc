@@ -28,7 +28,35 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
-      }
+      },
+      workbox: {
+        runtimeCaching: [
+          {
+            urlPattern: /\/api\/v1\/market\/price$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'market-price',
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 },
+            },
+          },
+          {
+            urlPattern: /\/api\/v1\/market\/price\/history/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'price-history',
+              expiration: { maxEntries: 4, maxAgeSeconds: 300 },
+            },
+          },
+          {
+            urlPattern: /\/api\/v1\/market\/stock$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'market-stock',
+              expiration: { maxEntries: 1, maxAgeSeconds: 120 },
+            },
+          },
+        ],
+      },
     })
   ],
   resolve: {

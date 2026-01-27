@@ -7,8 +7,10 @@ import './index.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 1,
+      staleTime: 1000 * 60 * 10, // 10 minutes (read-only data)
+      gcTime: 1000 * 60 * 60,     // 1 hour garbage collection
+      retry: 2,
+      refetchOnWindowFocus: 'always',
     },
   },
 });

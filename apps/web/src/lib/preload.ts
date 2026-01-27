@@ -3,6 +3,10 @@
  * Preloads page chunks on hover/focus for instant navigation
  */
 
+import { QueryClient } from '@tanstack/react-query';
+import api from './api';
+import { queryKeys, staleTimes } from './query-keys';
+
 // Map of routes to their dynamic import functions
 const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/dashboard': () => import('../pages/Dashboard'),
@@ -26,22 +30,15 @@ const preloadedRoutes = new Set<string>();
  * Only preloads once per route per session
  */
 export function preloadRoute(path: string): void {
-  // Normalize path
   const normalizedPath = path.split('?')[0];
-
-  // Skip if already preloaded
   if (preloadedRoutes.has(normalizedPath)) return;
 
-  // Get preloader for this route
   const preloader = routePreloaders[normalizedPath];
-
   if (preloader) {
     preloadedRoutes.add(normalizedPath);
-    // Use requestIdleCallback if available for non-blocking preload
     if ('requestIdleCallback' in window) {
       window.requestIdleCallback(() => preloader());
     } else {
-      // Fallback: preload after a short delay
       setTimeout(() => preloader(), 100);
     }
   }
@@ -56,10 +53,8 @@ export function handlePreloadHover(path: string) {
 
 /**
  * Preload critical routes after initial page load
- * Call this after the app has mounted
  */
 export function preloadCriticalRoutes(): void {
-  // Wait for idle time to preload critical routes
   const criticalRoutes = ['/dashboard', '/marketplace', '/wallet'];
 
   if ('requestIdleCallback' in window) {
@@ -73,4 +68,40 @@ export function preloadCriticalRoutes(): void {
       });
     });
   }
+}
+
+// ---- React Query data prefetching ----
+
+export function prefetchDashboard(queryClient: QueryClient, token: string) {
+  queryClient.prefetchQuery({
+    queryKey: queryKeys.price,
+    queryFn: () => api.getPrice(),
+    staleTime: staleTimes.price,
+  });
+  queryClient.prefetchQuery({
+    queryKey: queryKeys.wallet,
+    queryFn: () => api.getWallet(token),
+    staleTime: staleTimes.wallet,
+  });
+}
+
+export function prefetchMarketplace(queryClient: QueryClient) {
+  queryClient.prefetchQuery({
+    queryKey: queryKeys.price,
+    queryFn: () => api.getPrice(),
+    staleTime: staleTimes.price,
+  });
+  queryClient.prefetchQuery({
+    queryKey: queryKeys.stock,
+    queryFn: () => api.getStock(),
+    staleTime: staleTimes.stock,
+  });
+}
+
+export function prefetchWallet(queryClient: QueryClient, token: string) {
+  queryClient.prefetchQuery({
+    queryKey: queryKeys.wallet,
+    queryFn: () => api.getWallet(token),
+    staleTime: staleTimes.wallet,
+  });
 }

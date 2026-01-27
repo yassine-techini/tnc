@@ -69,20 +69,20 @@ function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
         </Route>
 
-        {/* Protected routes */}
+        {/* Protected routes - each with individual ErrorBoundary */}
         <Route element={
           <ProtectedRoute>
             <AppLayout />
           </ProtectedRoute>
         }>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/wallet" element={<Wallet />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/kyc" element={<KYC />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+          <Route path="/marketplace" element={<ErrorBoundary><Marketplace /></ErrorBoundary>} />
+          <Route path="/wallet" element={<ErrorBoundary><Wallet /></ErrorBoundary>} />
+          <Route path="/transactions" element={<ErrorBoundary><Transactions /></ErrorBoundary>} />
+          <Route path="/analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
+          <Route path="/profile" element={<ErrorBoundary><Profile /></ErrorBoundary>} />
+          <Route path="/kyc" element={<ErrorBoundary><KYC /></ErrorBoundary>} />
+          <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
         </Route>
 
         {/* Catch all */}

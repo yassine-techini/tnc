@@ -178,7 +178,10 @@ app.notFound((c) => {
 // Import scheduled handler
 import { handleScheduled, type ScheduledController } from './scheduled';
 
-// Export as module with fetch and scheduled handlers
+// Import notification service for queue consumer
+import { NotificationService, type NotificationQueueMessage } from './services/notification.service';
+
+// Export as module with fetch, scheduled, and queue handlers
 export default {
   fetch: app.fetch,
 
@@ -189,6 +192,32 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     await handleScheduled(controller, env, ctx);
+  },
+
+  // Queue consumer for async notifications
+  async queue(
+    batch: MessageBatch<NotificationQueueMessage>,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    const notificationService = new NotificationService(env.DB, {
+      resendApiKey: env.RESEND_API_KEY,
+      sendgridApiKey: env.SENDGRID_API_KEY,
+      twilioAccountSid: env.TWILIO_ACCOUNT_SID,
+      twilioAuthToken: env.TWILIO_AUTH_TOKEN,
+      twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
+      fcmServerKey: env.FCM_SERVER_KEY,
+    });
+
+    for (const message of batch.messages) {
+      try {
+        await notificationService.processNotification(message.body);
+        message.ack();
+      } catch (error) {
+        console.error('Queue message processing failed:', error);
+        message.retry();
+      }
+    }
   },
 };
 

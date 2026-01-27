@@ -5,12 +5,17 @@ import { useAuthStore } from '../stores/auth';
 import Loader from '../components/Loader';
 import { useEffect, useRef } from 'react';
 import { AppState, View } from 'react-native';
+import { networkMonitor } from '../lib/network';
+
+// Initialize offline detection (wires into React Query's onlineManager)
+networkMonitor.init();
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60,
-      retry: 1,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30,   // 30 minutes
+      retry: 2,
     },
   },
 });

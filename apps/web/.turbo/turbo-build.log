@@ -4,37 +4,37 @@
 
 vite v5.4.21 building for production...
 transforming...
-✓ 132 modules transformed.
+✓ 133 modules transformed.
 rendering chunks...
 computing gzip size...
 dist/registerSW.js                        0.13 kB
 dist/manifest.webmanifest                 0.36 kB
 dist/index.html                           0.91 kB │ gzip:  0.47 kB
 dist/assets/index-BWlR00l8.css           54.98 kB │ gzip:  8.47 kB
-dist/assets/ForgotPassword-DcVhGjO9.js    2.47 kB │ gzip:  1.11 kB
-dist/assets/Login-BBCCdP4G.js             2.78 kB │ gzip:  1.15 kB
-dist/assets/formatters-B6j1_Rwm.js        4.30 kB │ gzip:  1.75 kB
-dist/assets/VerifyEmail-CDxQPwNr.js       4.64 kB │ gzip:  1.43 kB
-dist/assets/ResetPassword-CnUOtOqW.js     5.03 kB │ gzip:  1.68 kB
-dist/assets/api-yJeSERVK.js               5.50 kB │ gzip:  1.45 kB
-dist/assets/Transactions-CJSYKJtb.js      8.36 kB │ gzip:  2.74 kB
-dist/assets/Register-DVG02I0-.js          9.46 kB │ gzip:  3.08 kB
-dist/assets/useQuery-Cf68vvom.js         10.43 kB │ gzip:  3.70 kB
-dist/assets/Dashboard-DsY51RNe.js        12.18 kB │ gzip:  3.35 kB
-dist/assets/Landing-a1rg0_v7.js          14.56 kB │ gzip:  4.47 kB
-dist/assets/Analytics-B9GP_GVG.js        16.84 kB │ gzip:  4.69 kB
-dist/assets/Marketplace-360ri0kR.js      17.74 kB │ gzip:  4.58 kB
-dist/assets/KYC-CA8DcNWG.js              19.65 kB │ gzip:  4.21 kB
-dist/assets/Profile-c-lBUkIB.js          21.71 kB │ gzip:  5.07 kB
-dist/assets/Settings-QQ7EdvcE.js         26.83 kB │ gzip:  5.49 kB
-dist/assets/Wallet-Bi5fztkA.js           30.44 kB │ gzip:  7.34 kB
-dist/assets/PriceChart-9C9RKXRQ.js      171.36 kB │ gzip: 54.90 kB
-dist/assets/index-BOCknUAe.js           220.97 kB │ gzip: 70.49 kB
-✓ built in 27.35s
+dist/assets/ForgotPassword-BwUXuvM-.js    2.47 kB │ gzip:  1.11 kB
+dist/assets/Login-NyLSUF9d.js             2.78 kB │ gzip:  1.15 kB
+dist/assets/formatters-Dx_KmC0I.js        4.30 kB │ gzip:  1.75 kB
+dist/assets/VerifyEmail-7biI8FVI.js       4.64 kB │ gzip:  1.43 kB
+dist/assets/ResetPassword-eHg5v3s3.js     5.03 kB │ gzip:  1.68 kB
+dist/assets/api-BAc1g30m.js               7.33 kB │ gzip:  2.01 kB
+dist/assets/Transactions-DGw7N1ME.js      8.36 kB │ gzip:  2.74 kB
+dist/assets/Register-h2Pj3TSL.js          9.46 kB │ gzip:  3.08 kB
+dist/assets/useQuery-DxW3ikq4.js         10.43 kB │ gzip:  3.70 kB
+dist/assets/Dashboard-DJvOGYVX.js        12.18 kB │ gzip:  3.35 kB
+dist/assets/Landing-DatIM4b6.js          14.56 kB │ gzip:  4.47 kB
+dist/assets/Analytics-BboxPPfK.js        16.84 kB │ gzip:  4.69 kB
+dist/assets/Marketplace-DoAPe2Qn.js      17.74 kB │ gzip:  4.58 kB
+dist/assets/KYC-BDXpOdrw.js              19.65 kB │ gzip:  4.20 kB
+dist/assets/Profile-DUgRGZZ-.js          21.71 kB │ gzip:  5.08 kB
+dist/assets/Settings-BtZy_dzq.js         26.83 kB │ gzip:  5.49 kB
+dist/assets/Wallet-3iVW9ZGX.js           30.44 kB │ gzip:  7.34 kB
+dist/assets/PriceChart-CCYD8YMe.js      171.36 kB │ gzip: 54.90 kB
+dist/assets/index-DiVc2ML3.js           221.16 kB │ gzip: 70.52 kB
+✓ built in 20.73s
 
 PWA v0.17.5
 mode      generateSW
-precache  23 entries (646.54 KiB)
+precache  23 entries (648.51 KiB)
 files generated
   dist/sw.js
   dist/workbox-01f28f5c.js

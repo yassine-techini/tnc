@@ -20,17 +20,74 @@ type ApiResult<T> = ApiResponse<T> | ApiError;
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string;
   headers?: Record<string, string>;
+  _isRetry?: boolean;
 }
 
 class StateApiClient {
   private baseUrl: string;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
 
+  private getStoredAuth(): { accessToken: string; refreshToken: string } | null {
+    try {
+      const raw = localStorage.getItem('tnc-state-auth');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const tokens = parsed?.state?.tokens;
+      if (tokens?.accessToken && tokens?.refreshToken) return tokens;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private updateStoredTokens(accessToken: string, refreshToken: string, expiresIn: number) {
+    try {
+      const raw = localStorage.getItem('tnc-state-auth');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      parsed.state.tokens = { accessToken, refreshToken, expiresIn };
+      localStorage.setItem('tnc-state-auth', JSON.stringify(parsed));
+    } catch { /* ignore */ }
+  }
+
+  private clearStoredAuth() {
+    try {
+      const raw = localStorage.getItem('tnc-state-auth');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      parsed.state = { user: null, tokens: null, isAuthenticated: false };
+      localStorage.setItem('tnc-state-auth', JSON.stringify(parsed));
+    } catch { /* ignore */ }
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    const auth = this.getStoredAuth();
+    if (!auth?.refreshToken) return null;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.data?.accessToken) {
+        this.updateStoredTokens(data.data.accessToken, data.data.refreshToken, data.data.expiresIn);
+        return data.data.accessToken;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
-    const { token, ...fetchOptions } = options;
+    const { token, _isRetry, ...fetchOptions } = options;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -45,6 +102,24 @@ class StateApiClient {
       ...fetchOptions,
       headers,
     });
+
+    // On 401, try to refresh the token once
+    if (response.status === 401 && token && !_isRetry) {
+      if (!this.refreshPromise) {
+        this.refreshPromise = this.refreshAccessToken().finally(() => {
+          this.refreshPromise = null;
+        });
+      }
+
+      const newToken = await this.refreshPromise;
+      if (newToken) {
+        return this.request<T>(endpoint, { ...options, token: newToken, _isRetry: true });
+      }
+
+      this.clearStoredAuth();
+      window.location.href = '/login';
+      throw new Error('Session expirée, veuillez vous reconnecter');
+    }
 
     const data: ApiResult<T> = await response.json();
 

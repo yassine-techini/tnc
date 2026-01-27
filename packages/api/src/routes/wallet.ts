@@ -42,22 +42,8 @@ wallet.get('/', async (c) => {
     ? walletData.token_balance * currentPrice.price_xof
     : 0;
 
-  // Calculate average buy price and profit/loss from transactions
-  const { transactions } = await walletService.findTransactionsByUserId(userId, 1000, 0);
-  const buyTransactions = transactions.filter(
-    (t) => t.type === 'BUY' && t.status === 'COMPLETED'
-  );
-
-  let totalTokensBought = 0;
-  let totalCashSpent = 0;
-
-  for (const tx of buyTransactions) {
-    if (tx.token_amount && tx.cash_amount) {
-      totalTokensBought += tx.token_amount;
-      totalCashSpent += tx.cash_amount;
-    }
-  }
-
+  // Calculate average buy price via SQL aggregate (no N+1)
+  const { totalTokensBought, totalCashSpent } = await walletService.getAverageBuyPrice(userId);
   const averageBuyPrice = totalTokensBought > 0
     ? totalCashSpent / totalTokensBought
     : 0;
@@ -100,25 +86,18 @@ wallet.get('/transactions', async (c) => {
   const offset = (pageNum - 1) * limitNum;
 
   const walletService = new WalletService(c.env.DB);
-  const { transactions, total } = await walletService.findTransactionsByUserId(
+  const { transactions, total } = await walletService.findTransactionsFiltered(
     userId,
     limitNum,
-    offset
+    offset,
+    type,
+    status
   );
-
-  // Filter by type and status if provided
-  let filteredTransactions = transactions;
-  if (type) {
-    filteredTransactions = filteredTransactions.filter((t) => t.type === type);
-  }
-  if (status) {
-    filteredTransactions = filteredTransactions.filter((t) => t.status === status);
-  }
 
   return c.json({
     success: true,
     data: {
-      items: filteredTransactions.map((t) => ({
+      items: transactions.map((t) => ({
         id: t.id,
         type: t.type,
         status: t.status,
@@ -133,7 +112,7 @@ wallet.get('/transactions', async (c) => {
       total,
       page: pageNum,
       limit: limitNum,
-      hasMore: offset + filteredTransactions.length < total,
+      hasMore: offset + transactions.length < total,
     },
     requestId,
   });

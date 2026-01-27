@@ -183,46 +183,81 @@ export class WalletService {
     }
   }
 
+  /**
+   * Atomically process a buy transaction.
+   * Returns true if the wallet had sufficient cash balance, false otherwise.
+   * Uses conditional UPDATE to prevent race conditions on concurrent purchases.
+   */
   async processBuyTransaction(
     transactionId: string,
     walletId: string,
     tokenAmount: number,
     cashAmount: number
-  ): Promise<void> {
-    // Deduct cash, add tokens
-    await this.db.batch([
-      this.db
-        .prepare(
-          `UPDATE wallets SET cash_balance = cash_balance - ?, token_balance = token_balance + ?, updated_at = datetime('now') WHERE id = ?`
-        )
-        .bind(cashAmount, tokenAmount, walletId),
-      this.db
-        .prepare(
-          `UPDATE transactions SET status = 'COMPLETED', completed_at = datetime('now') WHERE id = ?`
-        )
-        .bind(transactionId),
-    ]);
+  ): Promise<boolean> {
+    // Atomic: deduct cash only if sufficient balance
+    const walletUpdate = await this.db
+      .prepare(
+        `UPDATE wallets
+         SET cash_balance = cash_balance - ?,
+             token_balance = token_balance + ?,
+             total_bought = total_bought + ?,
+             total_spent = total_spent + ?,
+             updated_at = datetime('now')
+         WHERE id = ? AND cash_balance >= ?`
+      )
+      .bind(cashAmount, tokenAmount, tokenAmount, cashAmount, walletId, cashAmount)
+      .run();
+
+    if (walletUpdate.meta.changes === 0) {
+      await this.updateTransactionStatus(transactionId, 'FAILED', 'Solde insuffisant');
+      return false;
+    }
+
+    await this.db
+      .prepare(
+        `UPDATE transactions SET status = 'COMPLETED', completed_at = datetime('now') WHERE id = ?`
+      )
+      .bind(transactionId)
+      .run();
+
+    return true;
   }
 
+  /**
+   * Atomically process a sell transaction.
+   * Returns true if the wallet had sufficient token balance, false otherwise.
+   */
   async processSellTransaction(
     transactionId: string,
     walletId: string,
     tokenAmount: number,
     cashAmount: number
-  ): Promise<void> {
-    // Deduct tokens, add cash
-    await this.db.batch([
-      this.db
-        .prepare(
-          `UPDATE wallets SET token_balance = token_balance - ?, cash_balance = cash_balance + ?, updated_at = datetime('now') WHERE id = ?`
-        )
-        .bind(tokenAmount, cashAmount, walletId),
-      this.db
-        .prepare(
-          `UPDATE transactions SET status = 'COMPLETED', completed_at = datetime('now') WHERE id = ?`
-        )
-        .bind(transactionId),
-    ]);
+  ): Promise<boolean> {
+    // Atomic: deduct tokens only if sufficient balance
+    const walletUpdate = await this.db
+      .prepare(
+        `UPDATE wallets
+         SET token_balance = token_balance - ?,
+             cash_balance = cash_balance + ?,
+             updated_at = datetime('now')
+         WHERE id = ? AND token_balance >= ?`
+      )
+      .bind(tokenAmount, cashAmount, walletId, tokenAmount)
+      .run();
+
+    if (walletUpdate.meta.changes === 0) {
+      await this.updateTransactionStatus(transactionId, 'FAILED', 'Solde de tokens insuffisant');
+      return false;
+    }
+
+    await this.db
+      .prepare(
+        `UPDATE transactions SET status = 'COMPLETED', completed_at = datetime('now') WHERE id = ?`
+      )
+      .bind(transactionId)
+      .run();
+
+    return true;
   }
 
   async getDailyTransactionVolume(
@@ -241,6 +276,65 @@ export class WalletService {
       .bind(userId, type)
       .first<{ total: number }>();
     return result?.total || 0;
+  }
+
+  /**
+   * Get average buy price via SQL aggregate (avoids N+1 fetching all transactions).
+   */
+  async getAverageBuyPrice(userId: string): Promise<{ totalTokensBought: number; totalCashSpent: number }> {
+    const result = await this.db
+      .prepare(
+        `SELECT COALESCE(SUM(token_amount), 0) as total_tokens,
+                COALESCE(SUM(cash_amount), 0) as total_cash
+         FROM transactions
+         WHERE user_id = ? AND type = 'BUY' AND status = 'COMPLETED'`
+      )
+      .bind(userId)
+      .first<{ total_tokens: number; total_cash: number }>();
+    return {
+      totalTokensBought: result?.total_tokens || 0,
+      totalCashSpent: result?.total_cash || 0,
+    };
+  }
+
+  /**
+   * Find transactions with optional SQL-level type/status filtering.
+   */
+  async findTransactionsFiltered(
+    userId: string,
+    limit = 50,
+    offset = 0,
+    type?: string,
+    status?: string
+  ): Promise<{ transactions: TransactionRow[]; total: number }> {
+    let whereClause = 'WHERE user_id = ?';
+    const bindings: (string | number)[] = [userId];
+
+    if (type) {
+      whereClause += ' AND type = ?';
+      bindings.push(type);
+    }
+    if (status) {
+      whereClause += ' AND status = ?';
+      bindings.push(status);
+    }
+
+    const countResult = await this.db
+      .prepare(`SELECT COUNT(*) as count FROM transactions ${whereClause}`)
+      .bind(...bindings)
+      .first<{ count: number }>();
+
+    const transactions = await this.db
+      .prepare(
+        `SELECT * FROM transactions ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+      )
+      .bind(...bindings, limit, offset)
+      .all<TransactionRow>();
+
+    return {
+      transactions: transactions.results || [],
+      total: countResult?.count || 0,
+    };
   }
 
   async getMonthlyTransactionVolume(

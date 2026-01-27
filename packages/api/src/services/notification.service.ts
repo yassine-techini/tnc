@@ -364,11 +364,54 @@ const SMS_TEMPLATES = {
     `TNC Trading: Code 2FA: ${code}. Ne partagez jamais ce code.`,
 };
 
+export interface NotificationQueueMessage {
+  type: 'email' | 'sms' | 'push';
+  payload: EmailOptions | SmsOptions | PushOptions;
+}
+
 export class NotificationService {
+  private queue: Queue<NotificationQueueMessage> | null;
+
   constructor(
     private db: D1Database,
-    private config: NotificationConfig
-  ) {}
+    private config: NotificationConfig,
+    queue?: Queue<NotificationQueueMessage>
+  ) {
+    this.queue = queue || null;
+  }
+
+  /**
+   * Enqueue a notification for async delivery. Falls back to sync if queue unavailable.
+   */
+  async enqueueNotification(message: NotificationQueueMessage): Promise<void> {
+    if (this.queue) {
+      try {
+        await this.queue.send(message);
+        return;
+      } catch (error) {
+        console.error('Queue send failed, falling back to sync:', error);
+      }
+    }
+    // Fallback: send synchronously
+    await this.processNotification(message);
+  }
+
+  /**
+   * Process a single notification message (used by queue consumer and sync fallback).
+   */
+  async processNotification(message: NotificationQueueMessage): Promise<void> {
+    switch (message.type) {
+      case 'email':
+        await this.sendEmail(message.payload as EmailOptions);
+        break;
+      case 'sms':
+        await this.sendSms(message.payload as SmsOptions);
+        break;
+      case 'push':
+        await this.sendPush(message.payload as PushOptions);
+        break;
+    }
+  }
 
   /**
    * Send email via Resend

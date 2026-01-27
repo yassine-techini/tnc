@@ -204,6 +204,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
 const executeSchema = z.object({
   quoteId: z.string().uuid(),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'card', 'bank']).optional(),
+  idempotencyKey: z.string().max(64).optional(),
 });
 
 // POST /market/buy - Protected
@@ -212,6 +213,13 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const requestId = crypto.randomUUID();
+
+  // Idempotency check: return cached response if key was seen
+  if (body.idempotencyKey) {
+    const cacheKey = `idempotency:buy:${userId}:${body.idempotencyKey}`;
+    const cached = await c.env.CACHE.get(cacheKey, 'json');
+    if (cached) return c.json(cached as Record<string, unknown>);
+  }
 
   const marketService = new MarketService(c.env.DB, c.env.CACHE);
   const walletService = new WalletService(c.env.DB);
@@ -267,9 +275,9 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     }, 400);
   }
 
-  // Check stock availability
-  const canPurchase = await marketService.canPurchase(quote.token_amount);
-  if (!canPurchase) {
+  // Step 1: Atomically reserve stock (prevents overselling race condition)
+  const stockReserved = await marketService.atomicPurchaseStock(quote.token_amount);
+  if (!stockReserved) {
     return c.json({
       success: false,
       error: {
@@ -287,18 +295,6 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     wallet = await walletService.create(userId, walletId);
   }
 
-  // Check cash balance
-  if (wallet.cash_balance < quote.total) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_INSUFFICIENT_BALANCE',
-        message: 'Solde insuffisant. Veuillez recharger votre compte.',
-      },
-      requestId,
-    }, 400);
-  }
-
   // Create transaction
   const transactionId = crypto.randomUUID();
   await walletService.createTransaction({
@@ -313,18 +309,28 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     paymentMethod: body.paymentMethod,
   });
 
-  // Process the transaction (deduct cash, add tokens)
-  await walletService.processBuyTransaction(
+  // Step 2: Atomically debit wallet (prevents overdraft race condition)
+  const walletDebited = await walletService.processBuyTransaction(
     transactionId,
     wallet.id,
     quote.token_amount,
     quote.total
   );
 
-  // Update stock
-  await marketService.decreaseAvailableStock(quote.token_amount);
+  if (!walletDebited) {
+    // Rollback stock reservation
+    await marketService.atomicSellStock(quote.token_amount);
+    return c.json({
+      success: false,
+      error: {
+        code: 'TRADING_INSUFFICIENT_BALANCE',
+        message: 'Solde insuffisant. Veuillez recharger votre compte.',
+      },
+      requestId,
+    }, 400);
+  }
 
-  return c.json({
+  const buyResponse = {
     success: true,
     data: {
       transactionId,
@@ -334,7 +340,20 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       status: 'COMPLETED',
     },
     requestId,
-  });
+  };
+
+  // Cache idempotency response (24h TTL)
+  if (body.idempotencyKey) {
+    c.executionCtx.waitUntil(
+      c.env.CACHE.put(
+        `idempotency:buy:${userId}:${body.idempotencyKey}`,
+        JSON.stringify(buyResponse),
+        { expirationTtl: 86400 }
+      )
+    );
+  }
+
+  return c.json(buyResponse);
 });
 
 // POST /market/sell - Protected
@@ -343,6 +362,13 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const requestId = crypto.randomUUID();
+
+  // Idempotency check
+  if (body.idempotencyKey) {
+    const cacheKey = `idempotency:sell:${userId}:${body.idempotencyKey}`;
+    const cached = await c.env.CACHE.get(cacheKey, 'json');
+    if (cached) return c.json(cached as Record<string, unknown>);
+  }
 
   const marketService = new MarketService(c.env.DB, c.env.CACHE);
   const walletService = new WalletService(c.env.DB);
@@ -397,18 +423,6 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     }, 404);
   }
 
-  // Check token balance
-  if (wallet.token_balance < quote.token_amount) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_INSUFFICIENT_BALANCE',
-        message: 'Solde de tokens insuffisant',
-      },
-      requestId,
-    }, 400);
-  }
-
   // Create transaction
   const transactionId = crypto.randomUUID();
   await walletService.createTransaction({
@@ -423,18 +437,29 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     paymentMethod: body.paymentMethod,
   });
 
-  // Process the transaction (deduct tokens, add cash)
-  await walletService.processSellTransaction(
+  // Step 1: Atomically debit tokens (prevents overdraft race condition)
+  const walletDebited = await walletService.processSellTransaction(
     transactionId,
     wallet.id,
     quote.token_amount,
     quote.total
   );
 
-  // Update stock
-  await marketService.increaseAvailableStock(quote.token_amount);
+  if (!walletDebited) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'TRADING_INSUFFICIENT_BALANCE',
+        message: 'Solde de tokens insuffisant',
+      },
+      requestId,
+    }, 400);
+  }
 
-  return c.json({
+  // Step 2: Release stock (tokens returned to available pool)
+  await marketService.atomicSellStock(quote.token_amount);
+
+  const sellResponse = {
     success: true,
     data: {
       transactionId,
@@ -444,7 +469,20 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       status: 'COMPLETED',
     },
     requestId,
-  });
+  };
+
+  // Cache idempotency response (24h TTL)
+  if (body.idempotencyKey) {
+    c.executionCtx.waitUntil(
+      c.env.CACHE.put(
+        `idempotency:sell:${userId}:${body.idempotencyKey}`,
+        JSON.stringify(sellResponse),
+        { expirationTtl: 86400 }
+      )
+    );
+  }
+
+  return c.json(sellResponse);
 });
 
 // POST /market/price/refresh - Refresh gold price from external API

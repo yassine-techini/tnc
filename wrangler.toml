@@ -46,6 +46,11 @@ class_name = "TransactionSession"
 tag = "v1"
 new_classes = ["PriceTracker", "TransactionSession"]
 
+# Queues - Async notifications
+[[queues.producers]]
+queue = "tnc-notifications-dev"
+binding = "NOTIFICATION_QUEUE"
+
 # ============================================
 # Staging Environment
 # ============================================
@@ -74,6 +79,10 @@ class_name = "PriceTracker"
 [[env.staging.durable_objects.bindings]]
 name = "TRANSACTION_SESSION"
 class_name = "TransactionSession"
+
+[[env.staging.queues.producers]]
+queue = "tnc-notifications-staging"
+binding = "NOTIFICATION_QUEUE"
 
 # ============================================
 # Production Environment
@@ -106,6 +115,10 @@ class_name = "PriceTracker"
 [[env.production.durable_objects.bindings]]
 name = "TRANSACTION_SESSION"
 class_name = "TransactionSession"
+
+[[env.production.queues.producers]]
+queue = "tnc-notifications"
+binding = "NOTIFICATION_QUEUE"
 
 [[env.production.migrations]]
 tag = "v1"

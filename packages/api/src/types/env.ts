@@ -16,7 +16,7 @@ export interface Env {
   STORAGE: R2Bucket;
   
   // Cloudflare Queues
-  NOTIFICATIONS_QUEUE: Queue;
+  NOTIFICATION_QUEUE: Queue;
   
   // Durable Objects
   PRICE_TRACKER: DurableObjectNamespace;
