@@ -19,6 +19,7 @@ binding = "DB"
 database_name = "tnc-trading-db-dev-v2"
 database_id = "f7988856-d5eb-473f-b253-2ef86a83141b"
 preview_database_id = "f7988856-d5eb-473f-b253-2ef86a83141b"
+migrations_dir = "packages/api/migrations"
 
 # KV Namespace - Cache
 [[kv_namespaces]]

@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_phone ON users(phone);
-CREATE INDEX idx_users_kyc_status ON users(kyc_status);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+CREATE INDEX IF NOT EXISTS idx_users_kyc_status ON users(kyc_status);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS verification_codes (
     id TEXT PRIMARY KEY,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_verification_codes_identifier ON verification_codes(identifier, type);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_identifier ON verification_codes(identifier, type);
 
 CREATE TABLE IF NOT EXISTS recovery_codes (
     id TEXT PRIMARY KEY,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS recovery_codes (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_recovery_codes_user ON recovery_codes(user_id);
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_user ON recovery_codes(user_id);
 
 -- ============================================
 -- KYC DOCUMENTS
@@ -96,8 +96,8 @@ CREATE TABLE IF NOT EXISTS kyc_documents (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_kyc_documents_user ON kyc_documents(user_id);
-CREATE INDEX idx_kyc_documents_status ON kyc_documents(status);
+CREATE INDEX IF NOT EXISTS idx_kyc_documents_user ON kyc_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_kyc_documents_status ON kyc_documents(status);
 
 -- ============================================
 -- WALLETS & TRANSACTIONS
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_wallets_user ON wallets(user_id);
+CREATE INDEX IF NOT EXISTS idx_wallets_user ON wallets(user_id);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
@@ -138,11 +138,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_transactions_user ON transactions(user_id);
-CREATE INDEX idx_transactions_wallet ON transactions(wallet_id);
-CREATE INDEX idx_transactions_type ON transactions(type);
-CREATE INDEX idx_transactions_status ON transactions(status);
-CREATE INDEX idx_transactions_created ON transactions(created_at);
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
 
 CREATE TABLE IF NOT EXISTS withdrawals (
     id TEXT PRIMARY KEY,
@@ -163,8 +163,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     completed_at TEXT
 );
 
-CREATE INDEX idx_withdrawals_status ON withdrawals(status);
-CREATE INDEX idx_withdrawals_transaction ON withdrawals(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON withdrawals(status);
+CREATE INDEX IF NOT EXISTS idx_withdrawals_transaction ON withdrawals(transaction_id);
 
 -- ============================================
 -- MARKETPLACE & PRICING
@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS gold_prices (
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_gold_prices_timestamp ON gold_prices(timestamp);
+CREATE INDEX IF NOT EXISTS idx_gold_prices_timestamp ON gold_prices(timestamp);
 
 CREATE TABLE IF NOT EXISTS gold_stock (
     id TEXT PRIMARY KEY DEFAULT 'main',
@@ -211,9 +211,9 @@ CREATE TABLE IF NOT EXISTS quotes (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_quotes_user ON quotes(user_id);
-CREATE INDEX idx_quotes_status ON quotes(status);
-CREATE INDEX idx_quotes_expires ON quotes(expires_at);
+CREATE INDEX IF NOT EXISTS idx_quotes_user ON quotes(user_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);
+CREATE INDEX IF NOT EXISTS idx_quotes_expires ON quotes(expires_at);
 
 -- ============================================
 -- ADMIN & STATE PORTAL
@@ -234,8 +234,8 @@ CREATE TABLE IF NOT EXISTS admins (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_admins_email ON admins(email);
-CREATE INDEX idx_admins_role ON admins(role);
+CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
+CREATE INDEX IF NOT EXISTS idx_admins_role ON admins(role);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
@@ -251,9 +251,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_audit_logs_admin ON audit_logs(admin_id);
-CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
-CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_admin ON audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
 
 CREATE TABLE IF NOT EXISTS proof_of_reserve (
     id TEXT PRIMARY KEY,
@@ -268,7 +268,7 @@ CREATE TABLE IF NOT EXISTS proof_of_reserve (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_por_date ON proof_of_reserve(report_date);
+CREATE INDEX IF NOT EXISTS idx_por_date ON proof_of_reserve(report_date);
 
 -- ============================================
 -- NOTIFICATIONS
@@ -286,8 +286,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_notifications_user ON notifications(user_id);
-CREATE INDEX idx_notifications_read ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, read);
 
 CREATE TABLE IF NOT EXISTS push_tokens (
     id TEXT PRIMARY KEY,
@@ -300,7 +300,7 @@ CREATE TABLE IF NOT EXISTS push_tokens (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX idx_push_tokens_user ON push_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
 
 -- ============================================
 -- CONFIGURATION
