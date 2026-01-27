@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,9 @@ import InlineMessage from '../../components/InlineMessage';
 
 const BIOMETRIC_ENABLED_KEY = 'tnc_biometric_enabled';
 const BIOMETRIC_REFRESH_TOKEN_KEY = 'tnc_biometric_refresh_token';
+const LAST_USER_EMAIL_KEY = 'tnc_last_user_email';
+
+type ScreenMode = 'biometric' | 'credentials';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -35,12 +38,51 @@ export default function LoginScreen() {
   });
   const [showTOTP, setShowTOTP] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [screenMode, setScreenMode] = useState<ScreenMode>('credentials');
+  const [lastUserEmail, setLastUserEmail] = useState('');
+  const [biometricType, setBiometricType] = useState<'face' | 'fingerprint'>('fingerprint');
+  const [checkingBiometric, setCheckingBiometric] = useState(true);
+
+  // Check if returning user with biometric enabled
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const compatible = await LocalAuthentication.hasHardwareAsync();
+        const enrolled = await LocalAuthentication.isEnrolledAsync();
+        if (!compatible || !enrolled) {
+          setCheckingBiometric(false);
+          return;
+        }
+
+        // Detect biometric type
+        const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+        if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+          setBiometricType('face');
+        }
+
+        // Check if biometric is enabled + has stored refresh token
+        const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+        const storedToken = await SecureStore.getItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY);
+        const savedEmail = await SecureStore.getItemAsync(LAST_USER_EMAIL_KEY);
+
+        if (enabled === 'true' && storedToken) {
+          // Returning user — show biometric screen
+          setScreenMode('biometric');
+          if (savedEmail) setLastUserEmail(savedEmail);
+          // Auto-trigger biometric
+          setTimeout(() => handleBiometricLogin(), 300);
+        }
+      } catch (err) {
+        console.error('Biometric init error:', err);
+      } finally {
+        setCheckingBiometric(false);
+      }
+    };
+    init();
+  }, []);
 
   const handleLogin = async () => {
     setErrorMsg('');
-    // Client-side validation with Zod schema
     const validation = validateForm(loginSchema, {
       identifier: formData.identifier,
       password: formData.password,
@@ -60,33 +102,30 @@ export default function LoginScreen() {
         formData.totpCode || undefined
       );
 
-      login(
-        {
-          id: response.data.user.id,
-          email: response.data.user.email,
-          phone: response.data.user.phone,
-          country: response.data.user.country,
-          kycLevel: response.data.user.kycLevel,
-          kycStatus: response.data.user.kycStatus as any,
-          emailVerified: response.data.user.emailVerified,
-          phoneVerified: response.data.user.phoneVerified,
-          twoFactorEnabled: response.data.user.twoFactorEnabled,
-        },
-        {
-          accessToken: response.data.accessToken,
-          refreshToken: response.data.refreshToken,
-          expiresIn: response.data.expiresIn,
-        }
-      );
+      const userData = {
+        id: response.data.user.id,
+        email: response.data.user.email,
+        phone: response.data.user.phone,
+        country: response.data.user.country,
+        kycLevel: response.data.user.kycLevel,
+        kycStatus: response.data.user.kycStatus as any,
+        emailVerified: response.data.user.emailVerified,
+        phoneVerified: response.data.user.phoneVerified,
+        twoFactorEnabled: response.data.user.twoFactorEnabled,
+      };
 
-      // Save refresh token for biometric login if enabled (never store passwords)
+      login(userData, {
+        accessToken: response.data.accessToken,
+        refreshToken: response.data.refreshToken,
+        expiresIn: response.data.expiresIn,
+      });
+
+      // Save refresh token for biometric + remember email
       const biometricOn = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
       if (biometricOn === 'true') {
-        await SecureStore.setItemAsync(
-          BIOMETRIC_REFRESH_TOKEN_KEY,
-          response.data.refreshToken
-        );
+        await SecureStore.setItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY, response.data.refreshToken);
       }
+      await SecureStore.setItemAsync(LAST_USER_EMAIL_KEY, response.data.user.email);
 
       router.replace('/(tabs)');
     } catch (err) {
@@ -101,46 +140,38 @@ export default function LoginScreen() {
     }
   };
 
-  const handleBiometricLogin = async () => {
+  const handleBiometricLogin = useCallback(async () => {
     setErrorMsg('');
     setIsLoading(true);
 
     try {
-      // Check if biometric is enabled
-      const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
-      if (enabled !== 'true') {
-        setErrorMsg('La biométrie n\'est pas activée');
-        return;
-      }
-
-      // Get stored refresh token (never store passwords)
       const storedRefreshToken = await SecureStore.getItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY);
       if (!storedRefreshToken) {
-        setErrorMsg('Session expirée. Veuillez vous reconnecter avec vos identifiants.');
-        // Clear stale biometric flag
+        setErrorMsg('Session expirée. Veuillez vous reconnecter.');
         await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY);
-        setBiometricEnabled(false);
+        setScreenMode('credentials');
         return;
       }
 
-      // Authenticate with biometric
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Connectez-vous avec la biométrie',
-        cancelLabel: 'Annuler',
+        promptMessage: 'Connectez-vous à TNC Trading',
+        cancelLabel: 'Utiliser le mot de passe',
+        disableDeviceFallback: false,
       });
 
       if (!result.success) {
-        setErrorMsg('Authentification biométrique échouée');
+        // User cancelled — don't show error, just stay on biometric screen
+        setIsLoading(false);
         return;
       }
 
-      // Use refresh token to obtain new session
+      // Use refresh token to get new session
       const response = await api.refreshToken(storedRefreshToken);
 
-      // Save the new refresh token for next biometric login
+      // Save new refresh token for next time
       await SecureStore.setItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY, response.data.refreshToken);
 
-      // We need user profile — fetch it with the new access token
+      // Fetch user profile
       const profileResponse = await api.getProfile(response.data.accessToken);
 
       login(
@@ -164,43 +195,98 @@ export default function LoginScreen() {
 
       router.replace('/(tabs)');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erreur de connexion biométrique';
-      // If refresh token is expired/invalid, clear biometric data
+      const message = err instanceof Error ? err.message : 'Erreur de connexion';
       if (message.includes('expired') || message.includes('invalid') || message.includes('Unauthorized')) {
         await SecureStore.deleteItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY);
-        setErrorMsg('Session expirée. Veuillez vous reconnecter avec vos identifiants.');
+        setErrorMsg('Session expirée. Veuillez vous reconnecter.');
+        setScreenMode('credentials');
       } else {
         setErrorMsg(message);
       }
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [login]);
 
-  useEffect(() => {
-    const checkBiometric = async () => {
-      // Check if biometric hardware is available
-      const compatible = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      const available = compatible && enrolled;
-      setBiometricAvailable(available);
+  // Loading check
+  if (checkingBiometric) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#D4AF37" />
+      </View>
+    );
+  }
 
-      if (available) {
-        // Check if biometric is enabled for the app
-        const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
-        const isEnabled = enabled === 'true';
-        setBiometricEnabled(isEnabled);
+  // ── BIOMETRIC SCREEN (banking-app style) ──
+  if (screenMode === 'biometric') {
+    return (
+      <View style={[styles.container, styles.biometricScreen, { paddingTop: insets.top + 60 }]}>
+        {/* Logo */}
+        <View style={styles.biometricHeader}>
+          <View style={styles.logoCoin}>
+            <Text style={styles.logoText}>Au</Text>
+          </View>
+          <Text style={styles.biometricTitle}>TNC Trading</Text>
+          {lastUserEmail ? (
+            <Text style={styles.biometricEmail}>{lastUserEmail}</Text>
+          ) : null}
+        </View>
 
-        // Auto-trigger biometric login if enabled
-        if (isEnabled) {
-          handleBiometricLogin();
-        }
-      }
-    };
+        {/* Biometric prompt */}
+        <View style={styles.biometricCenter}>
+          {errorMsg ? (
+            <InlineMessage
+              type="error"
+              message={errorMsg}
+              onDismiss={() => setErrorMsg('')}
+            />
+          ) : null}
 
-    checkBiometric();
-  }, []);
+          <TouchableOpacity
+            style={styles.biometricCircle}
+            onPress={handleBiometricLogin}
+            disabled={isLoading}
+            activeOpacity={0.7}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="large" color="#D4AF37" />
+            ) : (
+              <Ionicons
+                name={biometricType === 'face' ? 'scan-outline' : 'finger-print'}
+                size={56}
+                color="#D4AF37"
+              />
+            )}
+          </TouchableOpacity>
 
+          <Text style={styles.biometricHint}>
+            {isLoading
+              ? 'Connexion en cours...'
+              : biometricType === 'face'
+                ? 'Appuyez pour Face ID'
+                : 'Appuyez pour l\'empreinte'}
+          </Text>
+        </View>
+
+        {/* Switch to credentials */}
+        <View style={styles.biometricFooter}>
+          <TouchableOpacity
+            style={styles.switchButton}
+            onPress={() => {
+              setScreenMode('credentials');
+              setErrorMsg('');
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="key-outline" size={18} color="#D4AF37" />
+            <Text style={styles.switchButtonText}>Utiliser les identifiants</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── CREDENTIALS SCREEN (classic login form) ──
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -312,18 +398,6 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
-
-          {biometricAvailable && biometricEnabled && (
-            <TouchableOpacity
-              style={[styles.biometricButton, isLoading && styles.buttonDisabled]}
-              onPress={handleBiometricLogin}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="finger-print" size={20} color="#D4AF37" />
-              <Text style={styles.biometricButtonText}>Se connecter avec la biométrie</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Footer */}
@@ -361,6 +435,69 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 40,
   },
+
+  // ── Biometric screen ──
+  biometricScreen: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+  },
+  biometricHeader: {
+    alignItems: 'center',
+  },
+  biometricTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#D4AF37',
+    letterSpacing: 1,
+    marginTop: 16,
+  },
+  biometricEmail: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  biometricCenter: {
+    alignItems: 'center',
+    gap: 24,
+    width: '100%',
+  },
+  biometricCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  biometricHint: {
+    fontSize: 15,
+    color: '#9CA3AF',
+  },
+  biometricFooter: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  switchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+    borderRadius: 12,
+  },
+  switchButtonText: {
+    color: '#D4AF37',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  // ── Credentials screen ──
   header: {
     alignItems: 'center',
     marginBottom: 40,
@@ -462,22 +599,6 @@ const styles = StyleSheet.create({
     color: '#0F0F1A',
     fontSize: 17,
     fontWeight: '700',
-  },
-  biometricButton: {
-    borderWidth: 1,
-    borderColor: '#D4AF37',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  biometricButtonText: {
-    color: '#D4AF37',
-    fontSize: 16,
-    fontWeight: '600',
   },
   footer: {
     marginTop: 32,

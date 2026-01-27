@@ -18,9 +18,14 @@ networkMonitor.init();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30,   // 30 minutes
-      retry: 2,
+      staleTime: 1000 * 60 * 10, // 10 min — reduce refetches on slow networks
+      gcTime: 1000 * 60 * 60,    // 1 hour — keep cache longer to avoid re-downloading
+      retry: 1,                   // Only 1 retry (api client already retries 3x internally)
+      refetchOnWindowFocus: false, // Don't refetch on focus — saves bandwidth
+      refetchOnReconnect: 'always', // Do refetch when network comes back
+    },
+    mutations: {
+      retry: 0, // Mutations use api client retries + idempotency keys
     },
   },
 });

@@ -1,38 +1,39 @@
 /**
- * Network monitor for offline detection and mutation queueing.
- * Uses @react-native-community/netinfo when available, falls back to navigator.onLine.
+ * Network monitor for offline detection.
+ * Uses @react-native-community/netinfo for reliable connectivity detection.
+ * Wires into React Query's onlineManager so queries pause when offline.
  */
 
 import { onlineManager } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
 
 type NetworkListener = (isOnline: boolean) => void;
 
 class NetworkMonitor {
   private listeners: NetworkListener[] = [];
   private _isOnline = true;
+  private _connectionType: string | null = null;
 
   get isOnline() {
     return this._isOnline;
   }
 
+  /** Returns 'wifi', 'cellular', 'ethernet', etc. */
+  get connectionType() {
+    return this._connectionType;
+  }
+
   /**
    * Initialize with React Query's onlineManager.
-   * Call this once in _layout.tsx.
+   * Call once in _layout.tsx.
    */
   init() {
-    // Try to use NetInfo if available (installed as peer dep)
-    try {
-      // Dynamic import to avoid hard crash if not installed
-      const NetInfo = require('@react-native-community/netinfo');
-      NetInfo.addEventListener((state: { isConnected: boolean | null }) => {
-        const online = state.isConnected !== false;
-        this.setOnline(online);
-      });
-    } catch {
-      // Fallback: no NetInfo, just assume online
-      // React Query will handle fetch errors gracefully
-      console.warn('NetInfo not available, using online-only mode');
-    }
+    // Subscribe to NetInfo state changes
+    NetInfo.addEventListener((state) => {
+      const online = state.isConnected !== false && state.isInternetReachable !== false;
+      this._connectionType = state.type;
+      this.setOnline(online);
+    });
 
     // Wire into React Query's online manager
     onlineManager.setEventListener((setOnline) => {

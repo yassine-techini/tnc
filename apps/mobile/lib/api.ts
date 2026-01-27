@@ -51,6 +51,9 @@ const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 15000;
 const RETRYABLE_STATUS_CODES = [408, 429, 502, 503, 504];
 
+// Request timeout (15s — generous for slow African networks, but not infinite)
+const REQUEST_TIMEOUT_MS = 15000;
+
 class MobileApiClient {
   private baseUrl: string;
   private deviceId: string | null = null;
@@ -195,10 +198,20 @@ class MobileApiClient {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const response = await fetch(url, {
-          ...fetchOptions,
-          headers,
-        });
+        // Abort slow requests to avoid hanging on bad connections
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            ...fetchOptions,
+            headers,
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         // Handle 401 Unauthorized — token refresh (no retry count)
         if (response.status === 401 && !isRetry) {
@@ -227,6 +240,11 @@ class MobileApiClient {
         return data as ApiResponse<T>;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Convert AbortError to a user-friendly timeout message
+        if (lastError.name === 'AbortError') {
+          lastError = new Error('Connexion lente. Veuillez réessayer.');
+        }
 
         // Don't retry on auth or business logic errors
         if (isRetry || lastError.message.includes('401')) {
