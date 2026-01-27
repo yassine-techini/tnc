@@ -504,7 +504,8 @@ market.post('/price/refresh', async (c) => {
     const goldApiService = new GoldAPIService(
       c.env.CACHE,
       c.env.GOLD_API_KEY,
-      c.env.EXCHANGE_RATE_API_KEY
+      c.env.EXCHANGE_RATE_API_KEY,
+      c.env.DB
     );
 
     const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
@@ -579,7 +580,8 @@ market.get('/price/health', async (c) => {
   const goldApiService = new GoldAPIService(
     c.env.CACHE,
     c.env.GOLD_API_KEY,
-    c.env.EXCHANGE_RATE_API_KEY
+    c.env.EXCHANGE_RATE_API_KEY,
+    c.env.DB
   );
 
   const health = await goldApiService.checkHealth();

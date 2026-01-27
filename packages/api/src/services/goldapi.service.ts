@@ -55,14 +55,33 @@ const BCEAO_EUR_XOF_RATE = 655.957;
 export class GoldAPIService {
   private goldApiKey: string;
   private exchangeApiKey: string;
+  private db: D1Database | null;
 
   constructor(
     private kv: KVNamespace,
     goldApiKey?: string,
-    exchangeApiKey?: string
+    exchangeApiKey?: string,
+    db?: D1Database
   ) {
     this.goldApiKey = goldApiKey || '';
     this.exchangeApiKey = exchangeApiKey || '';
+    this.db = db || null;
+  }
+
+  /**
+   * Check if a provider is enabled in the integrations table
+   */
+  private async isProviderEnabled(provider: string): Promise<boolean> {
+    if (!this.db) return true;
+    try {
+      const row = await this.db
+        .prepare('SELECT enabled FROM integrations WHERE provider = ?')
+        .bind(provider)
+        .first<{ enabled: number }>();
+      return row?.enabled === 1;
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -197,11 +216,15 @@ export class GoldAPIService {
    * Fetch current gold price with exchange rate
    */
   async fetchCurrentPrice(): Promise<GoldPriceData | null> {
-    // Try primary source (GoldAPI)
-    let goldData = await this.fetchFromGoldAPI();
+    // Try primary source (GoldAPI) if enabled
+    let goldData: { priceUsd: number } | null = null;
     let source = 'goldapi';
 
-    // Fallback to Metals-API
+    if (await this.isProviderEnabled('goldapi')) {
+      goldData = await this.fetchFromGoldAPI();
+    }
+
+    // Fallback to Metals-API (free, no integration toggle needed)
     if (!goldData) {
       goldData = await this.fetchFromMetalsAPI();
       source = 'metals-api';

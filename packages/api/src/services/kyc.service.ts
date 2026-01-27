@@ -123,9 +123,28 @@ export class KycService {
   }
 
   /**
+   * Check if Smile Identity provider is enabled
+   */
+  private async isProviderEnabled(): Promise<boolean> {
+    try {
+      const row = await this.db
+        .prepare('SELECT enabled FROM integrations WHERE provider = ?')
+        .bind('smile_identity')
+        .first<{ enabled: number }>();
+      return row?.enabled === 1;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Submit KYC verification request to Smile Identity
    */
   async submitVerification(request: VerificationRequest): Promise<VerificationResult> {
+    if (!await this.isProviderEnabled()) {
+      return { success: false, error: 'Smile Identity is currently disabled' };
+    }
+
     try {
       const timestamp = new Date().toISOString();
       const signature = await this.generateSignature(timestamp);
