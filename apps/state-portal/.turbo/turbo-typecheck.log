@@ -1,0 +1,4 @@
+
+> @tnc-trading/state-portal@0.1.0 typecheck /Users/yastec/devfactory/tnc-burkina/apps/state-portal
+> tsc --noEmit
+

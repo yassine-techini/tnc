@@ -1,0 +1,153 @@
+name: tnc-trading
+version: 1.0.0
+description: "Plateforme de tokenisation d'or souveraine pour le Burkina Faso"
+
+project:
+  type: fullstack
+  client: TNC Trading
+  country: Burkina Faso
+  currency: XOF
+  language: fr
+
+stack:
+  frontend:
+    web:
+      framework: react
+      bundler: vite
+      styling: tailwindcss
+      state: zustand
+      data: tanstack-query
+      forms: react-hook-form
+      validation: zod
+      
+    mobile:
+      framework: react-native
+      platform: expo
+      navigation: react-navigation
+      state: zustand
+      
+  backend:
+    runtime: cloudflare-workers
+    framework: hono
+    database: cloudflare-d1
+    cache: cloudflare-kv
+    storage: cloudflare-r2
+    queues: cloudflare-queues
+    
+  shared:
+    language: typescript
+    validation: zod
+    api-client: openapi-fetch
+
+features:
+  - id: auth
+    name: Authentification
+    priority: P0
+    
+  - id: kyc
+    name: Vérification KYC
+    priority: P0
+    
+  - id: marketplace
+    name: Marketplace (Achat/Vente)
+    priority: P0
+    
+  - id: wallet
+    name: Portefeuille
+    priority: P0
+    
+  - id: payments
+    name: Paiements
+    priority: P0
+    
+  - id: admin
+    name: Back-Office Admin
+    priority: P0
+    
+  - id: state-portal
+    name: Portail État
+    priority: P1
+    
+  - id: notifications
+    name: Notifications
+    priority: P1
+    
+  - id: reports
+    name: Rapports et Analytics
+    priority: P1
+
+integrations:
+  - id: gold-api
+    name: GoldAPI.io
+    type: price-feed
+    
+  - id: smile-identity
+    name: Smile Identity
+    type: kyc-provider
+    
+  - id: orange-money
+    name: Orange Money Burkina
+    type: payment-provider
+    
+  - id: moov-money
+    name: Moov Money Burkina
+    type: payment-provider
+    
+  - id: cinetpay
+    name: CinetPay
+    type: payment-aggregator
+    
+  - id: twilio
+    name: Twilio
+    type: sms-provider
+    
+  - id: resend
+    name: Resend
+    type: email-provider
+
+environments:
+  development:
+    url: http://localhost:5173
+    api: http://localhost:8787
+    
+  staging:
+    url: https://staging.tnc-trading.pages.dev
+    api: https://api-staging.tnc-trading.workers.dev
+    
+  production:
+    url: https://app.tnc-trading.com
+    api: https://api.tnc-trading.com
+
+team:
+  - role: Product Owner
+    name: TBD
+    
+  - role: Tech Lead
+    name: Yassine Techini
+    
+  - role: DevFactory Team
+    size: 3-5
+
+timeline:
+  kickoff: 2026-02-01
+  mvp: 2026-05-01
+  v1: 2026-06-15
+  
+phases:
+  - name: Phase 1 - MVP
+    duration: 4 months
+    features:
+      - auth
+      - kyc
+      - marketplace
+      - wallet
+      - payments
+      - admin
+      
+  - name: Phase 2 - Enhancement
+    duration: 2 months
+    features:
+      - state-portal
+      - notifications
+      - reports
+      - mobile-enhancements

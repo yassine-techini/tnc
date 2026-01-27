@@ -1,0 +1,79 @@
+{
+  "name": "tnc-trading",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plateforme de tokenisation d'or souveraine - Burkina Faso",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tnc-trading/platform.git"
+  },
+  "author": "DevFactory <contact@devfactory.io>",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@tnc-trading/web",
+    "dev:mobile": "turbo dev --filter=@tnc-trading/mobile",
+    "dev:api": "turbo dev --filter=@tnc-trading/api",
+    "dev:admin": "turbo dev --filter=@tnc-trading/admin",
+    "build": "turbo build",
+    "build:web": "turbo build --filter=@tnc-trading/web",
+    "build:mobile": "turbo build --filter=@tnc-trading/mobile",
+    "build:api": "turbo build --filter=@tnc-trading/api",
+    "test": "turbo test",
+    "test:unit": "turbo test:unit",
+    "test:e2e": "turbo test:e2e",
+    "test:coverage": "turbo test:coverage",
+    "lint": "turbo lint",
+    "lint:fix": "turbo lint:fix",
+    "typecheck": "turbo typecheck",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "clean": "turbo clean && rm -rf node_modules",
+    "db:create": "wrangler d1 create tnc-trading-db",
+    "db:migrate": "wrangler d1 migrations apply tnc-trading-db --local",
+    "db:migrate:prod": "wrangler d1 migrations apply tnc-trading-db --remote",
+    "db:seed": "pnpm --filter @tnc-trading/api db:seed",
+    "db:studio": "wrangler d1 studio tnc-trading-db",
+    "deploy:api": "pnpm --filter @tnc-trading/api deploy",
+    "deploy:api:staging": "pnpm --filter @tnc-trading/api deploy:staging",
+    "deploy:api:prod": "pnpm --filter @tnc-trading/api deploy:prod",
+    "deploy:web": "pnpm --filter @tnc-trading/web deploy",
+    "deploy:admin": "pnpm --filter @tnc-trading/admin deploy",
+    "deploy:state-portal": "pnpm --filter @tnc-trading/state-portal deploy",
+    "deploy:all": "turbo deploy",
+    "generate:types": "pnpm --filter @tnc-trading/api generate:types",
+    "generate:api-client": "pnpm --filter @tnc-trading/shared generate:api-client",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.5.3",
+    "@changesets/cli": "^2.27.1",
+    "@types/node": "^20.11.0",
+    "husky": "^9.0.10",
+    "lint-staged": "^15.2.0",
+    "turbo": "^1.12.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.25.0"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx,jsx,json,md}": [
+      "biome format --write"
+    ],
+    "*.{ts,tsx}": [
+      "biome lint --apply"
+    ]
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "@babel/*",
+        "babel-*"
+      ]
+    }
+  }
+}

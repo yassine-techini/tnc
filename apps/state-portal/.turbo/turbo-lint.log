@@ -1,0 +1,6 @@
+
+> @tnc-trading/state-portal@0.1.0 lint /Users/yastec/devfactory/tnc-burkina/apps/state-portal
+> eslint .
+
+sh: eslint: command not found
+ ELIFECYCLE  Command failed.

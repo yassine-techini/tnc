@@ -1,0 +1,411 @@
+feature: auth
+name: Authentification
+description: |
+  Module d'authentification complet incluant inscription, connexion, 
+  2FA, et réinitialisation de mot de passe.
+priority: P0
+
+actors:
+  - user: Utilisateur non connecté
+  - authenticated_user: Utilisateur connecté
+
+user_stories:
+  - id: US-AUTH-01
+    title: Inscription utilisateur
+    as: user
+    i_want: créer un compte sur la plateforme
+    so_that: je puisse accéder aux services de TNC Trading
+    acceptance_criteria:
+      - Email unique et format valide requis
+      - Téléphone unique format international (+226...) requis
+      - Mot de passe min 12 caractères avec complexité
+      - CGU doivent être acceptées
+      - Email de vérification envoyé automatiquement
+      - SMS de vérification envoyé automatiquement
+      - Compte actif après double vérification (email + SMS)
+      - Wallet créé automatiquement à l'activation
+    priority: P0
+    
+  - id: US-AUTH-02
+    title: Connexion utilisateur
+    as: user
+    i_want: me connecter à mon compte
+    so_that: je puisse accéder à mes tokens et effectuer des transactions
+    acceptance_criteria:
+      - Connexion par email OU téléphone + mot de passe
+      - 2FA requis si activé (code 6 chiffres)
+      - Blocage après 5 tentatives échouées (15 min)
+      - Token JWT généré avec refresh token
+      - Session expirée après 30 min d'inactivité
+    priority: P0
+    
+  - id: US-AUTH-03
+    title: Activer 2FA
+    as: authenticated_user
+    i_want: activer l'authentification à deux facteurs
+    so_that: mon compte soit plus sécurisé
+    acceptance_criteria:
+      - Génération d'un secret TOTP
+      - QR code affichable pour apps authenticator
+      - Codes de récupération générés (10 codes)
+      - Vérification requise avant activation
+      - Notification envoyée lors de l'activation
+    priority: P0
+    
+  - id: US-AUTH-04
+    title: Réinitialiser mot de passe
+    as: user
+    i_want: réinitialiser mon mot de passe oublié
+    so_that: je puisse récupérer l'accès à mon compte
+    acceptance_criteria:
+      - Demande par email vérifié
+      - Lien de réinitialisation valide 1 heure
+      - Nouveau mot de passe avec mêmes règles de complexité
+      - Toutes les sessions existantes invalidées
+      - Notification de changement envoyée
+    priority: P0
+    
+  - id: US-AUTH-05
+    title: Déconnexion
+    as: authenticated_user
+    i_want: me déconnecter de l'application
+    so_that: ma session soit sécurisée
+    acceptance_criteria:
+      - Session invalidée côté serveur
+      - Refresh token révoqué
+      - Redirection vers page de connexion
+    priority: P0
+
+  - id: US-AUTH-06
+    title: Connexion biométrique (Mobile)
+    as: authenticated_user
+    i_want: me connecter avec mon empreinte ou Face ID
+    so_that: l'accès soit plus rapide et sécurisé
+    acceptance_criteria:
+      - Disponible sur iOS (Face ID/Touch ID) et Android (Fingerprint)
+      - Doit être activé explicitement par l'utilisateur
+      - Credentials stockés dans Keychain/Keystore
+      - Fallback vers mot de passe si biométrie échoue
+    priority: P1
+
+screens:
+  - id: SCR-AUTH-01
+    name: Écran de bienvenue
+    route: /welcome
+    description: Splash avec choix Connexion/Inscription
+    
+  - id: SCR-AUTH-02
+    name: Inscription
+    route: /register
+    fields:
+      - name: email
+        type: email
+        required: true
+        validation: format email unique
+      - name: phone
+        type: tel
+        required: true
+        validation: format international unique
+      - name: password
+        type: password
+        required: true
+        validation: min 12 chars, 1 maj, 1 min, 1 chiffre, 1 spécial
+      - name: confirmPassword
+        type: password
+        required: true
+        validation: identique à password
+      - name: country
+        type: select
+        required: true
+        options: Liste pays
+      - name: acceptCgu
+        type: checkbox
+        required: true
+        
+  - id: SCR-AUTH-03
+    name: Connexion
+    route: /login
+    fields:
+      - name: identifier
+        type: text
+        required: true
+        placeholder: Email ou téléphone
+      - name: password
+        type: password
+        required: true
+      - name: totpCode
+        type: text
+        required: conditional (si 2FA)
+        
+  - id: SCR-AUTH-04
+    name: Vérification OTP
+    route: /verify-otp
+    fields:
+      - name: code
+        type: text
+        required: true
+        maxLength: 6
+        
+  - id: SCR-AUTH-05
+    name: Mot de passe oublié
+    route: /forgot-password
+    fields:
+      - name: email
+        type: email
+        required: true
+        
+  - id: SCR-AUTH-06
+    name: Réinitialisation mot de passe
+    route: /reset-password
+    fields:
+      - name: newPassword
+        type: password
+        required: true
+      - name: confirmNewPassword
+        type: password
+        required: true
+        
+  - id: SCR-AUTH-07
+    name: Configuration 2FA
+    route: /settings/2fa
+    fields:
+      - name: totpCode
+        type: text
+        required: true
+        maxLength: 6
+
+api_endpoints:
+  - method: POST
+    path: /api/v1/auth/register
+    description: Inscription nouvel utilisateur
+    request:
+      body:
+        email: string
+        phone: string
+        password: string
+        country: string
+    response:
+      201:
+        userId: string
+        message: string
+      400:
+        error: ValidationError
+      409:
+        error: EmailOrPhoneAlreadyExists
+        
+  - method: POST
+    path: /api/v1/auth/login
+    description: Connexion utilisateur
+    request:
+      body:
+        identifier: string
+        password: string
+        totpCode?: string
+    response:
+      200:
+        accessToken: string
+        refreshToken: string
+        expiresIn: number
+        user: UserDTO
+      401:
+        error: InvalidCredentials
+      403:
+        error: AccountLocked | TwoFactorRequired
+        
+  - method: POST
+    path: /api/v1/auth/refresh
+    description: Rafraîchir le token d'accès
+    request:
+      body:
+        refreshToken: string
+    response:
+      200:
+        accessToken: string
+        expiresIn: number
+      401:
+        error: InvalidRefreshToken
+        
+  - method: POST
+    path: /api/v1/auth/logout
+    description: Déconnexion
+    auth: required
+    response:
+      200:
+        success: true
+        
+  - method: POST
+    path: /api/v1/auth/verify-email
+    description: Vérifier email avec code
+    request:
+      body:
+        email: string
+        code: string
+    response:
+      200:
+        verified: true
+      400:
+        error: InvalidOrExpiredCode
+        
+  - method: POST
+    path: /api/v1/auth/verify-phone
+    description: Vérifier téléphone avec code
+    request:
+      body:
+        phone: string
+        code: string
+    response:
+      200:
+        verified: true
+      400:
+        error: InvalidOrExpiredCode
+        
+  - method: POST
+    path: /api/v1/auth/forgot-password
+    description: Demander réinitialisation mot de passe
+    request:
+      body:
+        email: string
+    response:
+      200:
+        message: string
+        
+  - method: POST
+    path: /api/v1/auth/reset-password
+    description: Réinitialiser mot de passe
+    request:
+      body:
+        token: string
+        newPassword: string
+    response:
+      200:
+        success: true
+      400:
+        error: InvalidOrExpiredToken
+        
+  - method: POST
+    path: /api/v1/auth/2fa/setup
+    description: Initialiser 2FA
+    auth: required
+    response:
+      200:
+        secret: string
+        qrCodeUrl: string
+        recoveryCodes: string[]
+        
+  - method: POST
+    path: /api/v1/auth/2fa/verify
+    description: Vérifier et activer 2FA
+    auth: required
+    request:
+      body:
+        code: string
+    response:
+      200:
+        enabled: true
+      400:
+        error: InvalidCode
+
+database_entities:
+  - name: users
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+        description: UUID v4
+      - name: email
+        type: TEXT
+        unique: true
+        not_null: true
+      - name: phone
+        type: TEXT
+        unique: true
+        not_null: true
+      - name: password_hash
+        type: TEXT
+        not_null: true
+      - name: email_verified
+        type: INTEGER
+        default: 0
+      - name: phone_verified
+        type: INTEGER
+        default: 0
+      - name: country
+        type: TEXT
+        not_null: true
+      - name: kyc_level
+        type: TEXT
+        default: "'BASIC'"
+      - name: kyc_status
+        type: TEXT
+        default: "'PENDING'"
+      - name: two_factor_enabled
+        type: INTEGER
+        default: 0
+      - name: two_factor_secret
+        type: TEXT
+      - name: failed_login_attempts
+        type: INTEGER
+        default: 0
+      - name: locked_until
+        type: TEXT
+      - name: created_at
+        type: TEXT
+        not_null: true
+      - name: updated_at
+        type: TEXT
+        not_null: true
+        
+  - name: sessions
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        not_null: true
+        foreign_key: users.id
+      - name: refresh_token_hash
+        type: TEXT
+        not_null: true
+      - name: device_info
+        type: TEXT
+      - name: ip_address
+        type: TEXT
+      - name: expires_at
+        type: TEXT
+        not_null: true
+      - name: created_at
+        type: TEXT
+        not_null: true
+        
+  - name: verification_codes
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        foreign_key: users.id
+      - name: type
+        type: TEXT
+        not_null: true
+        description: "EMAIL | PHONE | PASSWORD_RESET"
+      - name: code
+        type: TEXT
+        not_null: true
+      - name: expires_at
+        type: TEXT
+        not_null: true
+      - name: used
+        type: INTEGER
+        default: 0
+      - name: created_at
+        type: TEXT
+        not_null: true
+
+security_requirements:
+  - Mots de passe hachés avec Argon2id
+  - Tokens JWT signés avec clé secrète
+  - Rate limiting sur endpoints login/register
+  - HTTPS obligatoire
+  - Headers sécurité (CSP, HSTS, etc.)

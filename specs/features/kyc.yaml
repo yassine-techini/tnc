@@ -1,0 +1,373 @@
+feature: kyc
+name: Vérification KYC
+description: |
+  Module de vérification d'identité (Know Your Customer) permettant 
+  aux utilisateurs de soumettre leurs documents et d'être vérifiés 
+  pour accéder aux fonctionnalités de trading.
+priority: P0
+
+actors:
+  - user: Utilisateur avec compte actif
+  - admin: Administrateur TNC
+
+user_stories:
+  - id: US-KYC-01
+    title: Soumettre documents KYC
+    as: user
+    i_want: soumettre mes documents d'identité
+    so_that: je puisse acheter et vendre des tokens
+    acceptance_criteria:
+      - Choix du type de document (CNIB, Passeport, Permis)
+      - Photo recto du document requise
+      - Photo verso si applicable (CNIB, Permis)
+      - Selfie avec liveness detection
+      - Informations personnelles complétées
+      - Document envoyé au provider KYC automatiquement
+      - Statut "Soumis" après envoi
+    priority: P0
+    
+  - id: US-KYC-02
+    title: Consulter statut KYC
+    as: user
+    i_want: voir le statut de ma vérification KYC
+    so_that: je sache si je peux trader
+    acceptance_criteria:
+      - Affichage du niveau actuel (Basic, Standard, Verified)
+      - Affichage du statut (En attente, Soumis, Approuvé, Rejeté)
+      - Si rejeté, motif affiché clairement
+      - Possibilité de resoumettre si rejeté
+    priority: P0
+    
+  - id: US-KYC-03
+    title: Valider KYC (Admin)
+    as: admin
+    i_want: valider ou rejeter une demande KYC
+    so_that: les utilisateurs puissent trader en conformité
+    acceptance_criteria:
+      - Liste des KYC en attente avec filtres
+      - Visualisation des documents soumis
+      - Résultat automatique du provider affiché
+      - Possibilité d'approuver ou rejeter
+      - Motif obligatoire en cas de rejet
+      - Notification envoyée à l'utilisateur
+      - Audit trail de l'action
+    priority: P0
+
+screens:
+  - id: SCR-KYC-01
+    name: Introduction KYC
+    route: /kyc
+    description: Explication du processus et documents requis
+    
+  - id: SCR-KYC-02
+    name: Choix document
+    route: /kyc/document-type
+    options:
+      - CNIB (Carte Nationale d'Identité Burkinabè)
+      - Passeport
+      - Permis de conduire
+      - Carte CEDEAO
+      
+  - id: SCR-KYC-03
+    name: Photo document recto
+    route: /kyc/document-front
+    description: Capture ou upload photo recto
+    features:
+      - Guide de cadrage
+      - Détection automatique du document
+      - Vérification qualité image
+      
+  - id: SCR-KYC-04
+    name: Photo document verso
+    route: /kyc/document-back
+    description: Capture ou upload photo verso (si requis)
+    
+  - id: SCR-KYC-05
+    name: Selfie avec liveness
+    route: /kyc/selfie
+    description: Prise de selfie avec vérification liveness
+    features:
+      - Guide de cadrage visage
+      - Instructions vocales/textuelles
+      - Liveness detection (mouvement, clignement)
+      
+  - id: SCR-KYC-06
+    name: Informations personnelles
+    route: /kyc/personal-info
+    fields:
+      - name: firstName
+        type: text
+        required: true
+      - name: lastName
+        type: text
+        required: true
+      - name: dateOfBirth
+        type: date
+        required: true
+        validation: age >= 18
+      - name: nationality
+        type: select
+        required: true
+      - name: address
+        type: text
+        required: true
+      - name: city
+        type: text
+        required: true
+      - name: documentNumber
+        type: text
+        required: true
+        
+  - id: SCR-KYC-07
+    name: Confirmation soumission
+    route: /kyc/confirm
+    description: Récapitulatif avant envoi
+    
+  - id: SCR-KYC-08
+    name: Statut KYC
+    route: /kyc/status
+    states:
+      - PENDING: "Documents non soumis"
+      - SUBMITTED: "En cours de vérification"
+      - APPROVED: "Vérifié ✓"
+      - REJECTED: "Rejeté - [motif]"
+      - EXPIRED: "Document expiré"
+
+api_endpoints:
+  - method: GET
+    path: /api/v1/users/me/kyc/status
+    description: Obtenir le statut KYC actuel
+    auth: required
+    response:
+      200:
+        level: "BASIC" | "STANDARD" | "VERIFIED"
+        status: "PENDING" | "SUBMITTED" | "APPROVED" | "REJECTED" | "EXPIRED"
+        rejectionReason?: string
+        submittedAt?: string
+        verifiedAt?: string
+        expiresAt?: string
+        
+  - method: POST
+    path: /api/v1/users/me/kyc
+    description: Soumettre une demande KYC complète
+    auth: required
+    request:
+      body:
+        documentType: "CNIB" | "PASSPORT" | "PERMIT" | "CEDEAO"
+        firstName: string
+        lastName: string
+        dateOfBirth: string
+        nationality: string
+        address: string
+        city: string
+        documentNumber: string
+    response:
+      201:
+        kycId: string
+        status: "SUBMITTED"
+      400:
+        error: ValidationError
+      409:
+        error: KycAlreadyPending
+        
+  - method: POST
+    path: /api/v1/users/me/kyc/documents
+    description: Upload des documents KYC
+    auth: required
+    request:
+      contentType: multipart/form-data
+      body:
+        documentFront: file (image/jpeg, image/png)
+        documentBack?: file (image/jpeg, image/png)
+        selfie: file (image/jpeg, image/png)
+    response:
+      200:
+        frontUrl: string
+        backUrl?: string
+        selfieUrl: string
+      400:
+        error: InvalidFileFormat | FileTooLarge
+        
+  - method: POST
+    path: /api/v1/webhooks/kyc
+    description: Webhook pour résultats KYC provider
+    request:
+      body:
+        providerId: string
+        userId: string
+        status: string
+        result: object
+    response:
+      200:
+        received: true
+
+admin_endpoints:
+  - method: GET
+    path: /api/v1/admin/kyc
+    description: Liste des demandes KYC
+    auth: admin
+    query:
+      status?: string
+      page?: number
+      limit?: number
+    response:
+      200:
+        items: KycDocument[]
+        total: number
+        page: number
+        
+  - method: GET
+    path: /api/v1/admin/kyc/:id
+    description: Détail d'une demande KYC
+    auth: admin
+    response:
+      200:
+        kyc: KycDocument
+        user: UserBasicInfo
+        providerResult?: object
+        
+  - method: PATCH
+    path: /api/v1/admin/kyc/:id
+    description: Valider ou rejeter KYC
+    auth: admin
+    request:
+      body:
+        action: "APPROVE" | "REJECT"
+        rejectionReason?: string
+    response:
+      200:
+        success: true
+        newStatus: string
+
+database_entities:
+  - name: kyc_documents
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        not_null: true
+        foreign_key: users.id
+      - name: document_type
+        type: TEXT
+        not_null: true
+      - name: document_number
+        type: TEXT
+      - name: first_name
+        type: TEXT
+        not_null: true
+      - name: last_name
+        type: TEXT
+        not_null: true
+      - name: date_of_birth
+        type: TEXT
+        not_null: true
+      - name: nationality
+        type: TEXT
+        not_null: true
+      - name: address
+        type: TEXT
+      - name: city
+        type: TEXT
+      - name: front_image_url
+        type: TEXT
+        not_null: true
+      - name: back_image_url
+        type: TEXT
+      - name: selfie_url
+        type: TEXT
+        not_null: true
+      - name: status
+        type: TEXT
+        default: "'SUBMITTED'"
+      - name: provider_job_id
+        type: TEXT
+      - name: provider_result
+        type: TEXT
+        description: JSON du résultat provider
+      - name: rejection_reason
+        type: TEXT
+      - name: reviewed_by
+        type: TEXT
+        foreign_key: admins.id
+      - name: reviewed_at
+        type: TEXT
+      - name: document_expiry_date
+        type: TEXT
+      - name: created_at
+        type: TEXT
+        not_null: true
+      - name: updated_at
+        type: TEXT
+        not_null: true
+
+integrations:
+  - provider: Smile Identity
+    usage: Vérification automatique documents et liveness
+    api_docs: https://docs.usesmileid.com/
+    endpoints:
+      - POST /v1/job - Créer un job de vérification
+      - GET /v1/job/:id - Récupérer le résultat
+    webhook: Notification résultat automatique
+
+kyc_levels:
+  BASIC:
+    requirements:
+      - Email vérifié
+      - Téléphone vérifié
+    limits:
+      daily_buy: 0
+      monthly_buy: 0
+      can_sell: false
+      daily_withdraw: 0
+      
+  STANDARD:
+    requirements:
+      - Basic complété
+      - Nom, prénom, date de naissance
+      - Adresse complète
+    limits:
+      daily_buy: 100g
+      monthly_buy: 500g
+      can_sell: true
+      daily_withdraw: 500000 XOF
+      
+  VERIFIED:
+    requirements:
+      - Standard complété
+      - Document d'identité vérifié
+      - Selfie avec liveness
+    limits:
+      daily_buy: 1000g
+      monthly_buy: 5000g
+      can_sell: true
+      daily_withdraw: 5000000 XOF
+
+documents_accepted:
+  - type: CNIB
+    name: Carte Nationale d'Identité Burkinabè
+    requires_back: true
+    priority: P0
+    
+  - type: PASSPORT
+    name: Passeport
+    requires_back: false
+    priority: P0
+    
+  - type: PERMIT
+    name: Permis de conduire
+    requires_back: true
+    priority: P1
+    
+  - type: CEDEAO
+    name: Carte CEDEAO
+    requires_back: true
+    priority: P1
+
+security_requirements:
+  - Documents stockés chiffrés dans R2
+  - Accès documents limité (signed URLs temporaires)
+  - Logs d'accès aux documents
+  - Suppression après délai légal (5 ans)
+  - HTTPS obligatoire pour uploads

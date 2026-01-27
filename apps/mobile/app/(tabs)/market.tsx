@@ -1,0 +1,575 @@
+import { useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../../stores/auth';
+import { api } from '../../lib/api';
+import InlineMessage from '../../components/InlineMessage';
+import ConfirmDialog from '../../components/ConfirmDialog';
+
+const CHART_WIDTH = Dimensions.get('window').width - 72; // padding + card padding
+const CHART_HEIGHT = 60;
+
+// Simple sparkline chart component
+function MiniChart({ data, color }: { data: number[]; color: string }) {
+  const points = useMemo(() => {
+    if (!data || data.length < 2) return [];
+
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    return data.map((value, index) => ({
+      x: (index / (data.length - 1)) * CHART_WIDTH,
+      y: CHART_HEIGHT - ((value - min) / range) * CHART_HEIGHT,
+    }));
+  }, [data]);
+
+  if (points.length < 2) {
+    return (
+      <View style={[chartStyles.container, { height: CHART_HEIGHT }]}>
+        <Text style={chartStyles.noData}>Chargement...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[chartStyles.container, { height: CHART_HEIGHT }]}>
+      {/* Render line segments */}
+      {points.slice(0, -1).map((point, index) => {
+        const nextPoint = points[index + 1];
+        const dx = nextPoint.x - point.x;
+        const dy = nextPoint.y - point.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+        return (
+          <View
+            key={index}
+            style={[
+              chartStyles.line,
+              {
+                width: length,
+                backgroundColor: color,
+                left: point.x,
+                top: point.y,
+                transform: [{ rotate: `${angle}deg` }],
+              },
+            ]}
+          />
+        );
+      })}
+      {/* Render points */}
+      {points.map((point, index) => (
+        <View
+          key={`point-${index}`}
+          style={[
+            chartStyles.point,
+            {
+              left: point.x - 2,
+              top: point.y - 2,
+              backgroundColor: index === points.length - 1 ? color : 'transparent',
+              borderColor: color,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const chartStyles = StyleSheet.create({
+  container: {
+    width: CHART_WIDTH,
+    position: 'relative',
+    marginTop: 12,
+  },
+  noData: {
+    color: '#6B7280',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  line: {
+    position: 'absolute',
+    height: 2,
+    transformOrigin: 'left center',
+  },
+  point: {
+    position: 'absolute',
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    borderWidth: 1,
+  },
+});
+
+type TabType = 'buy' | 'sell';
+type PaymentMethod = 'orange_money' | 'moov_money' | 'wave' | 'bank_transfer';
+
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
+const PAYMENT_METHODS: { id: PaymentMethod; name: string; icon: IoniconsName; color: string }[] = [
+  { id: 'orange_money', name: 'Orange Money', icon: 'phone-portrait-outline', color: '#F97316' },
+  { id: 'moov_money', name: 'Moov Money', icon: 'phone-portrait-outline', color: '#3B82F6' },
+  { id: 'wave', name: 'Wave', icon: 'water-outline', color: '#06B6D4' },
+  { id: 'bank_transfer', name: 'Virement', icon: 'business-outline', color: '#8B5CF6' },
+];
+
+const QUICK_AMOUNTS_GRAMS = [0.1, 0.5, 1, 5, 10];
+const QUICK_AMOUNTS_XOF = [5000, 10000, 25000, 50000, 100000];
+
+export default function MarketScreen() {
+  const insets = useSafeAreaInsets();
+  const { tokens, user } = useAuthStore();
+  const [tab, setTab] = useState<TabType>('buy');
+  const [amount, setAmount] = useState('');
+  const [amountType, setAmountType] = useState<'grams' | 'xof'>('grams');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('orange_money');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [message, setMessage] = useState<{ type: 'error' | 'success' | 'warning' | 'info'; text: string } | null>(null);
+  const [confirmData, setConfirmData] = useState<{ quoteId: string; tokenAmount: number; total: number; fees: number } | null>(null);
+
+  const { data: priceData, isLoading: priceLoading } = useQuery({
+    queryKey: ['price'],
+    queryFn: () => api.getPrice(),
+    refetchInterval: 60000,
+  });
+
+  const { data: stockData } = useQuery({
+    queryKey: ['stock'],
+    queryFn: () => api.getStock(),
+  });
+
+  const { data: priceHistoryData } = useQuery({
+    queryKey: ['priceHistory'],
+    queryFn: async () => {
+      try {
+        return await api.getPriceHistory('24h');
+      } catch {
+        // Fallback with simulated data if API not available
+        const basePrice = priceData?.data?.priceXof || 50000;
+        const prices = Array.from({ length: 24 }, (_, i) => ({
+          timestamp: new Date(Date.now() - (23 - i) * 3600000).toISOString(),
+          priceXof: basePrice * (1 + (Math.random() - 0.5) * 0.04),
+        }));
+        return { success: true as const, data: { prices, period: '24h' }, requestId: 'local' };
+      }
+    },
+    refetchInterval: 300000, // Refresh every 5 minutes
+  });
+
+  const chartData = useMemo(() => {
+    if (!priceHistoryData?.data?.prices) return [];
+    return priceHistoryData.data.prices.map(p => p.priceXof);
+  }, [priceHistoryData]);
+
+  const { data: walletData } = useQuery({
+    queryKey: ['wallet'],
+    queryFn: () => api.getWallet(tokens!.accessToken),
+    enabled: !!tokens?.accessToken,
+  });
+
+  const price = priceData?.data;
+  const stock = stockData?.data;
+  const wallet = walletData?.data;
+
+  const calculateTotal = () => {
+    const numAmount = parseFloat(amount) || 0;
+    if (amountType === 'grams') {
+      return tab === 'buy'
+        ? numAmount * (price?.buyPrice || 0)
+        : numAmount * (price?.sellPrice || 0);
+    } else {
+      return tab === 'buy'
+        ? numAmount / (price?.buyPrice || 1)
+        : numAmount / (price?.sellPrice || 1);
+    }
+  };
+
+  const getQuickAmounts = () => {
+    return amountType === 'grams' ? QUICK_AMOUNTS_GRAMS : QUICK_AMOUNTS_XOF;
+  };
+
+  const formatQuickAmount = (value: number) => {
+    if (amountType === 'grams') {
+      return `${value}g`;
+    }
+    return value >= 1000 ? `${value / 1000}k` : `${value}`;
+  };
+
+  const handleQuickAmount = (value: number) => {
+    setAmount(value.toString());
+  };
+
+  const handleTransaction = async () => {
+    setMessage(null);
+    setConfirmData(null);
+
+    if (!tokens?.accessToken) {
+      setMessage({ type: 'warning', text: 'Vous devez vous connecter pour effectuer des transactions.' });
+      return;
+    }
+
+    if (user?.kycLevel === 'BASIC') {
+      setMessage({ type: 'warning', text: 'Completez votre KYC pour effectuer des transactions' });
+      return;
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      setMessage({ type: 'error', text: 'Veuillez entrer un montant valide' });
+      return;
+    }
+
+    if (tab === 'sell' && wallet) {
+      const tokenAmount = amountType === 'grams'
+        ? parseFloat(amount)
+        : parseFloat(amount) / (price?.sellPrice || 1);
+      if (tokenAmount > wallet.tokenBalance) {
+        setMessage({ type: 'error', text: `Solde insuffisant. Vous n'avez que ${wallet.tokenBalance.toFixed(3)}g d'or` });
+        return;
+      }
+    }
+
+    setIsProcessing(true);
+    try {
+      const quoteResponse = await api.getQuote(
+        tab === 'buy' ? 'BUY' : 'SELL',
+        parseFloat(amount),
+        amountType,
+        tokens!.accessToken
+      );
+      const quote = quoteResponse.data;
+      setConfirmData({ quoteId: quote.quoteId, tokenAmount: quote.tokenAmount, total: quote.total, fees: quote.fees || 0 });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Erreur lors du devis' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const executeTransaction = async () => {
+    if (!confirmData || !tokens?.accessToken) return;
+    setIsProcessing(true);
+    try {
+      if (tab === 'buy') {
+        await api.executeBuy(confirmData.quoteId, paymentMethod, tokens.accessToken);
+      } else {
+        await api.executeSell(confirmData.quoteId, paymentMethod, tokens.accessToken);
+      }
+      setMessage({
+        type: 'success',
+        text: tab === 'buy'
+          ? `Vous avez achete ${confirmData.tokenAmount.toFixed(3)}g d'or !`
+          : `Vous avez vendu ${confirmData.tokenAmount.toFixed(3)}g d'or !`
+      });
+      setAmount('');
+      setConfirmData(null);
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Echec de la transaction' });
+      setConfirmData(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top + 8 }} keyboardShouldPersistTaps="handled">
+        {/* Price Card */}
+      <View style={styles.priceCard}>
+        <View style={styles.priceHeader}>
+          <View>
+            <Text style={styles.priceLabel}>Prix actuel de l'or</Text>
+            {priceLoading ? (
+              <View style={styles.skeleton} />
+            ) : (
+              <Text style={styles.priceValue}>
+                {price?.priceXof?.toLocaleString() || '—'} XOF/g
+              </Text>
+            )}
+          </View>
+          <View style={styles.priceChange}>
+            <Text style={styles.priceChangeLabel}>24h</Text>
+            <Text style={[
+              styles.priceChangeValue,
+              { color: (price?.change24h || 0) >= 0 ? '#10B981' : '#EF4444' }
+            ]}>
+              {(price?.change24h || 0) >= 0 ? '+' : ''}{(price?.change24h || 0).toFixed(2)}%
+            </Text>
+          </View>
+        </View>
+        {/* Mini Chart */}
+        {chartData.length > 0 && (
+          <View style={styles.chartContainer}>
+            <MiniChart
+              data={chartData}
+              color={(price?.change24h || 0) >= 0 ? '#10B981' : '#EF4444'}
+            />
+            <Text style={styles.chartLabel}>Dernières 24h</Text>
+          </View>
+        )}
+        <View style={styles.priceRow}>
+          <View style={styles.priceItem}>
+            <Text style={styles.priceItemLabel}>Achat</Text>
+            <Text style={styles.priceItemValue}>{price?.buyPrice?.toLocaleString()} XOF</Text>
+          </View>
+          <View style={styles.priceItem}>
+            <Text style={styles.priceItemLabel}>Vente</Text>
+            <Text style={styles.priceItemValue}>{price?.sellPrice?.toLocaleString()} XOF</Text>
+          </View>
+        </View>
+        <View style={styles.stockInfo}>
+          <Text style={styles.stockText}>Stock disponible: {stock?.availableStock?.toFixed(0) || '—'}g</Text>
+        </View>
+      </View>
+
+      {/* Wallet Balance Summary */}
+      {wallet && (
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceItem}>
+            <Text style={styles.balanceLabel}>Mon or</Text>
+            <Text style={styles.balanceValue}>{wallet.tokenBalance.toFixed(3)}g</Text>
+          </View>
+          <View style={styles.balanceDivider} />
+          <View style={styles.balanceItem}>
+            <Text style={styles.balanceLabel}>Mon solde</Text>
+            <Text style={styles.balanceValue}>{wallet.cashBalance.toLocaleString()} XOF</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Buy/Sell Tabs */}
+      <View style={styles.tabs}>
+        <TouchableOpacity
+          style={[styles.tab, tab === 'buy' && styles.tabActiveBuy]}
+          onPress={() => setTab('buy')}
+        >
+          <Text style={[styles.tabText, tab === 'buy' && styles.tabTextActive]}>Acheter</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, tab === 'sell' && styles.tabActiveSell]}
+          onPress={() => setTab('sell')}
+        >
+          <Text style={[styles.tabText, tab === 'sell' && styles.tabTextActive]}>Vendre</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Amount Input */}
+      <View style={styles.inputSection}>
+        <View style={styles.inputHeader}>
+          <Text style={styles.inputLabel}>Montant</Text>
+          <View style={styles.amountTypeButtons}>
+            <TouchableOpacity
+              style={[styles.amountTypeBtn, amountType === 'grams' && styles.amountTypeBtnActive]}
+              onPress={() => { setAmountType('grams'); setAmount(''); }}
+            >
+              <Text style={[styles.amountTypeBtnText, amountType === 'grams' && styles.amountTypeBtnTextActive]}>Grammes</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.amountTypeBtn, amountType === 'xof' && styles.amountTypeBtnActive]}
+              onPress={() => { setAmountType('xof'); setAmount(''); }}
+            >
+              <Text style={[styles.amountTypeBtnText, amountType === 'xof' && styles.amountTypeBtnTextActive]}>XOF</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="0.000"
+            placeholderTextColor="#6B7280"
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+          />
+          <Text style={styles.inputSuffix}>{amountType === 'grams' ? 'g' : 'XOF'}</Text>
+        </View>
+
+        {/* Quick Amount Buttons */}
+        <View style={styles.quickAmounts}>
+          {getQuickAmounts().map((value) => (
+            <TouchableOpacity
+              key={value}
+              style={[
+                styles.quickAmountBtn,
+                amount === value.toString() && styles.quickAmountBtnActive
+              ]}
+              onPress={() => handleQuickAmount(value)}
+            >
+              <Text style={[
+                styles.quickAmountText,
+                amount === value.toString() && styles.quickAmountTextActive
+              ]}>
+                {formatQuickAmount(value)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Payment Method Selector */}
+      <View style={styles.paymentSection}>
+        <Text style={styles.sectionLabel}>Mode de paiement</Text>
+        <View style={styles.paymentMethods}>
+          {PAYMENT_METHODS.map((method) => (
+            <TouchableOpacity
+              key={method.id}
+              style={[
+                styles.paymentMethod,
+                paymentMethod === method.id && styles.paymentMethodActive
+              ]}
+              onPress={() => setPaymentMethod(method.id)}
+            >
+              <Ionicons name={method.icon} size={16} color={paymentMethod === method.id ? method.color : '#9CA3AF'} />
+              <Text style={[
+                styles.paymentName,
+                paymentMethod === method.id && styles.paymentNameActive
+              ]}>
+                {method.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Transaction Summary */}
+      <View style={styles.summary}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Prix unitaire</Text>
+          <Text style={styles.summaryValue}>
+            {tab === 'buy' ? price?.buyPrice?.toLocaleString() : price?.sellPrice?.toLocaleString()} XOF/g
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>{amountType === 'grams' ? 'Total estimé' : 'Or équivalent'}</Text>
+          <Text style={styles.summaryValueBold}>
+            {amountType === 'grams' ? `${calculateTotal().toLocaleString()} XOF` : `${calculateTotal().toFixed(3)} g`}
+          </Text>
+        </View>
+      </View>
+
+      {message && (
+        <InlineMessage
+          type={message.type}
+          message={message.text}
+          onDismiss={() => setMessage(null)}
+        />
+      )}
+
+      {confirmData && (
+        <ConfirmDialog
+          title={tab === 'buy' ? "Confirmer l'achat" : 'Confirmer la vente'}
+          message={`${tab === 'buy' ? 'Acheter' : 'Vendre'} ${confirmData.tokenAmount.toFixed(3)}g d'or\n\nPrix unitaire: ${(tab === 'buy' ? price?.buyPrice : price?.sellPrice)?.toLocaleString()} XOF/g\nFrais: ${confirmData.fees.toLocaleString()} XOF\nTotal: ${confirmData.total.toLocaleString()} XOF`}
+          confirmText={tab === 'buy' ? 'Acheter' : 'Vendre'}
+          cancelText="Annuler"
+          onConfirm={executeTransaction}
+          onCancel={() => setConfirmData(null)}
+        />
+      )}
+
+      {/* Action Button */}
+      <TouchableOpacity
+        style={[
+          styles.actionButton,
+          tab === 'buy' ? styles.actionButtonBuy : styles.actionButtonSell,
+          (!amount || parseFloat(amount) <= 0) && styles.actionButtonDisabled,
+        ]}
+        onPress={handleTransaction}
+        disabled={!amount || parseFloat(amount) <= 0 || isProcessing}
+      >
+        {isProcessing ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.actionButtonText}>
+            {tab === 'buy' ? "Acheter de l'or" : 'Vendre mon or'}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <Text style={styles.disclaimer}>
+        Le prix est valide pendant 60 secondes. Les transactions sont soumises aux limites KYC.
+      </Text>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0F0F1A', padding: 16 },
+  priceCard: { backgroundColor: '#1A1A2E', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.3)' },
+  priceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  priceLabel: { fontSize: 14, color: '#9CA3AF' },
+  priceValue: { fontSize: 28, fontWeight: 'bold', color: '#D4AF37', marginTop: 4 },
+  skeleton: { height: 36, width: 150, backgroundColor: '#374151', borderRadius: 8, marginTop: 4 },
+  priceChange: { alignItems: 'flex-end' },
+  priceChangeLabel: { fontSize: 12, color: '#9CA3AF' },
+  priceChangeValue: { fontSize: 20, fontWeight: '600' },
+  chartContainer: { marginTop: 8, alignItems: 'center' },
+  chartLabel: { fontSize: 11, color: '#6B7280', marginTop: 4 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.1)' },
+  priceItem: { alignItems: 'center' },
+  priceItemLabel: { fontSize: 12, color: '#9CA3AF' },
+  priceItemValue: { fontSize: 16, fontWeight: '600', color: '#fff', marginTop: 4 },
+  stockInfo: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.1)' },
+  stockText: { fontSize: 14, color: '#9CA3AF', textAlign: 'center' },
+  balanceCard: { flexDirection: 'row', backgroundColor: '#1A1A2E', borderRadius: 12, padding: 16, marginBottom: 16 },
+  balanceItem: { flex: 1, alignItems: 'center' },
+  balanceDivider: { width: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' },
+  balanceLabel: { fontSize: 12, color: '#9CA3AF' },
+  balanceValue: { fontSize: 18, fontWeight: 'bold', color: '#D4AF37', marginTop: 4 },
+  tabs: { flexDirection: 'row', backgroundColor: '#1A1A2E', borderRadius: 12, padding: 4, marginBottom: 16 },
+  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
+  tabActiveBuy: { backgroundColor: '#10B981' },
+  tabActiveSell: { backgroundColor: '#EF4444' },
+  tabText: { fontSize: 16, fontWeight: '600', color: '#9CA3AF' },
+  tabTextActive: { color: '#fff' },
+  inputSection: { marginBottom: 16 },
+  inputHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  inputLabel: { fontSize: 14, fontWeight: '500', color: '#D1D5DB' },
+  amountTypeButtons: { flexDirection: 'row', gap: 8 },
+  amountTypeBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#374151' },
+  amountTypeBtnActive: { backgroundColor: '#D4AF37' },
+  amountTypeBtnText: { fontSize: 12, color: '#9CA3AF' },
+  amountTypeBtnTextActive: { color: '#0F0F1A', fontWeight: '600' },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A2E', borderWidth: 1, borderColor: '#374151', borderRadius: 12 },
+  input: { flex: 1, padding: 16, color: '#fff', fontSize: 18 },
+  inputSuffix: { paddingRight: 16, color: '#9CA3AF', fontSize: 16 },
+  quickAmounts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  quickAmountBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, backgroundColor: '#374151', minWidth: 60, alignItems: 'center' },
+  quickAmountBtnActive: { backgroundColor: '#D4AF37' },
+  quickAmountText: { fontSize: 14, fontWeight: '600', color: '#9CA3AF' },
+  quickAmountTextActive: { color: '#0F0F1A' },
+  paymentSection: { marginBottom: 16 },
+  sectionLabel: { fontSize: 14, fontWeight: '500', color: '#D1D5DB', marginBottom: 8 },
+  paymentMethods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  paymentMethod: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1A1A2E', borderWidth: 1, borderColor: '#374151' },
+  paymentMethodActive: { borderColor: '#D4AF37', backgroundColor: 'rgba(212, 175, 55, 0.1)' },
+  paymentIcon: { marginRight: 6 },
+  paymentName: { fontSize: 12, color: '#9CA3AF' },
+  paymentNameActive: { color: '#D4AF37', fontWeight: '600' },
+  summary: { backgroundColor: '#1A1A2E', borderRadius: 12, padding: 16, marginBottom: 16 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
+  summaryLabel: { fontSize: 14, color: '#9CA3AF' },
+  summaryValue: { fontSize: 14, color: '#fff' },
+  summaryValueBold: { fontSize: 16, fontWeight: 'bold', color: '#D4AF37' },
+  actionButton: { borderRadius: 12, padding: 18, alignItems: 'center', marginBottom: 16 },
+  actionButtonBuy: { backgroundColor: '#10B981' },
+  actionButtonSell: { backgroundColor: '#EF4444' },
+  actionButtonDisabled: { opacity: 0.5 },
+  actionButtonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
+  disclaimer: { fontSize: 12, color: '#6B7280', textAlign: 'center', marginBottom: 32 },
+});

@@ -1,0 +1,138 @@
+# TNC Trading - Cloudflare Workers Configuration
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "tnc-trading-api-dev"
+main = "packages/api/src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Account settings
+account_id = "6435a77d3ce17b7de468c6618e7b2b14"
+
+# Default environment variables
+[vars]
+ENVIRONMENT = "development"
+
+# D1 Database - Development
+[[d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db-dev-v2"
+database_id = "f7988856-d5eb-473f-b253-2ef86a83141b"
+preview_database_id = "f7988856-d5eb-473f-b253-2ef86a83141b"
+
+# KV Namespace - Cache
+[[kv_namespaces]]
+binding = "CACHE"
+id = "beb8b11d293347418c089c5d97b4d9a5"
+preview_id = "beb8b11d293347418c089c5d97b4d9a5"
+
+# R2 Bucket - Storage
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-storage-dev"
+preview_bucket_name = "tnc-trading-storage-dev"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["PriceTracker", "TransactionSession"]
+
+# ============================================
+# Staging Environment
+# ============================================
+
+[env.staging]
+name = "tnc-trading-api-staging"
+vars = { ENVIRONMENT = "staging" }
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db-staging"
+database_id = "a0d0262f-de43-465e-abf2-e4ec6a2c8423"
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "418b5d6606a2473ab540b91e9b1b05d9"
+
+[[env.staging.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-storage-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[env.staging.durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+# ============================================
+# Production Environment
+# ============================================
+
+[env.production]
+name = "tnc-trading-api"
+vars = { ENVIRONMENT = "production" }
+routes = [
+  { pattern = "api.tnc-trading.com", custom_domain = true }
+]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db-production"
+database_id = "b575d75c-4e3f-4bc7-ab49-2e63b04ead53"
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "54194aac4f444552b47da843c1b28288"
+
+[[env.production.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-storage"
+
+[[env.production.durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[env.production.durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+[[env.production.migrations]]
+tag = "v1"
+new_classes = ["PriceTracker", "TransactionSession"]
+
+# ============================================
+# Secrets (set via wrangler secret put)
+# ============================================
+# - JWT_SECRET
+# - ENCRYPTION_KEY
+# - GOLD_API_KEY
+# - SMILE_IDENTITY_API_KEY
+# - SMILE_IDENTITY_PARTNER_ID
+# - ORANGE_MONEY_API_KEY
+# - MOOV_MONEY_API_KEY
+# - CINETPAY_API_KEY
+# - CINETPAY_SITE_ID
+# - TWILIO_ACCOUNT_SID
+# - TWILIO_AUTH_TOKEN
+# - RESEND_API_KEY
+
+# ============================================
+# Observability
+# ============================================
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1

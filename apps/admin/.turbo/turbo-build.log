@@ -1,0 +1,26 @@
+
+> @tnc-trading/admin@0.1.0 build /Users/yastec/devfactory/tnc-burkina/apps/admin
+> tsc -b && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 905 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                           0.65 kB │ gzip:  0.38 kB
+dist/assets/index-Ci_4fcaL.css           46.32 kB │ gzip:  6.90 kB
+dist/assets/api-Dao6QSKS.js               4.14 kB │ gzip:  1.41 kB
+dist/assets/Login-C98yASr5.js             6.01 kB │ gzip:  2.05 kB
+dist/assets/Withdrawals-CxqwnlvX.js       8.45 kB │ gzip:  2.50 kB
+dist/assets/UserDetail-CvqCFHWj.js       10.90 kB │ gzip:  2.73 kB
+dist/assets/Stock-Bd_NFUVR.js            11.23 kB │ gzip:  3.04 kB
+dist/assets/Users-D8tWUugf.js            12.29 kB │ gzip:  3.45 kB
+dist/assets/Reconciliation-DePyFXW6.js   13.45 kB │ gzip:  3.37 kB
+dist/assets/KycReview-DZ_k15RJ.js        14.31 kB │ gzip:  3.58 kB
+dist/assets/Dashboard-CkHcaUhE.js        14.31 kB │ gzip:  3.43 kB
+dist/assets/Transactions-Bzvt3AEC.js     14.43 kB │ gzip:  3.85 kB
+dist/assets/index-C-2gXhnm.js            19.13 kB │ gzip:  6.63 kB
+dist/assets/query-CoPFeybR.js            49.13 kB │ gzip: 15.00 kB
+dist/assets/vendor-C4kM_9FL.js          156.62 kB │ gzip: 51.30 kB
+dist/assets/charts-BA6wncRp.js          359.58 kB │ gzip: 99.42 kB
+✓ built in 37.75s

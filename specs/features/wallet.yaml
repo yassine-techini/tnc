@@ -1,0 +1,487 @@
+feature: wallet
+name: Portefeuille & Paiements
+description: |
+  Module de gestion du portefeuille utilisateur incluant 
+  les soldes, l'historique des transactions, les retraits 
+  et la génération de certificats de propriété.
+priority: P0
+
+actors:
+  - user: Utilisateur avec compte actif
+
+user_stories:
+  - id: US-WAL-01
+    title: Consulter mon portefeuille
+    as: user
+    i_want: voir mon solde et la valeur de mes tokens
+    so_that: je connaisse mon patrimoine
+    acceptance_criteria:
+      - Solde tokens affiché en grammes
+      - Valeur estimée en XOF (solde × prix actuel)
+      - Solde cash disponible (XOF non investi)
+      - Variation de valeur vs prix d'achat moyen
+      - Graphique évolution du portefeuille
+    priority: P0
+    
+  - id: US-WAL-02
+    title: Consulter l'historique des transactions
+    as: user
+    i_want: voir toutes mes transactions passées
+    so_that: je puisse suivre mes opérations
+    acceptance_criteria:
+      - Liste chronologique (plus récent en premier)
+      - Filtres par type (Achat, Vente, Retrait, Dépôt)
+      - Filtres par période
+      - Détail de chaque transaction accessible
+      - Statut visible (En cours, Complété, Échoué)
+      - Export CSV possible
+    priority: P0
+    
+  - id: US-WAL-03
+    title: Retirer mes fonds
+    as: user
+    i_want: transférer mon solde cash vers mon Mobile Money ou compte bancaire
+    so_that: je puisse utiliser mon argent
+    acceptance_criteria:
+      - Choix méthode de retrait (Mobile Money, Virement)
+      - Saisie du montant à retirer
+      - Vérification solde suffisant
+      - Frais de retrait affichés
+      - Confirmation avec 2FA
+      - Mobile Money: transfert instantané (< 5 min)
+      - Virement: sous 24-48h
+      - Notification de confirmation
+    priority: P0
+    
+  - id: US-WAL-04
+    title: Télécharger mon certificat de propriété
+    as: user
+    i_want: obtenir un certificat PDF de mes tokens
+    so_that: j'aie une preuve de propriété
+    acceptance_criteria:
+      - PDF généré avec solde actuel
+      - Informations utilisateur (nom, ID)
+      - Horodatage et numéro unique
+      - QR code de vérification
+      - Mention "Certifié TNC Trading"
+      - Téléchargeable et partageable
+    priority: P1
+    
+  - id: US-WAL-05
+    title: Déposer des fonds
+    as: user
+    i_want: ajouter de l'argent sur mon compte TNC
+    so_that: je puisse acheter des tokens
+    acceptance_criteria:
+      - Choix méthode (Mobile Money, Carte, Virement)
+      - Saisie du montant
+      - Redirection vers le fournisseur de paiement
+      - Fonds crédités après confirmation
+      - Notification de confirmation
+    priority: P0
+
+screens:
+  - id: SCR-WAL-01
+    name: Wallet - Accueil
+    route: /wallet
+    sections:
+      - Solde tokens (grammes)
+      - Valeur estimée (XOF)
+      - Solde cash (XOF)
+      - Performance (+ ou - %)
+      - Actions rapides (Acheter, Vendre, Retirer)
+      - Dernières transactions (5)
+      
+  - id: SCR-WAL-02
+    name: Historique des transactions
+    route: /wallet/history
+    features:
+      - Liste paginée
+      - Filtres (type, période, statut)
+      - Recherche par référence
+      - Pull to refresh
+      
+  - id: SCR-WAL-03
+    name: Détail transaction
+    route: /wallet/transaction/:id
+    display:
+      - Type et statut
+      - Montant tokens / XOF
+      - Prix au moment de la transaction
+      - Frais
+      - Méthode de paiement
+      - Référence externe
+      - Date et heure
+      - Bouton support si problème
+      
+  - id: SCR-WAL-04
+    name: Retrait - Saisie
+    route: /wallet/withdraw
+    fields:
+      - name: method
+        type: select
+        options: ["Orange Money", "Moov Money", "Virement bancaire"]
+      - name: amount
+        type: number
+        required: true
+        validation: min 1000 XOF, max solde disponible
+      - name: phoneNumber
+        type: tel
+        required: conditional (Mobile Money)
+      - name: bankAccount
+        type: text
+        required: conditional (Virement)
+    display:
+      - Solde disponible
+      - Frais de retrait
+      - Montant net à recevoir
+      
+  - id: SCR-WAL-05
+    name: Retrait - Confirmation 2FA
+    route: /wallet/withdraw/confirm
+    fields:
+      - name: totpCode
+        type: text
+        required: true
+    display:
+      - Récapitulatif complet
+      - Délai estimé
+      
+  - id: SCR-WAL-06
+    name: Dépôt
+    route: /wallet/deposit
+    fields:
+      - name: method
+        type: select
+        options: ["Orange Money", "Moov Money", "Carte bancaire"]
+      - name: amount
+        type: number
+        required: true
+        validation: min 1000 XOF
+    display:
+      - Frais éventuels
+      - Instructions selon méthode
+      
+  - id: SCR-WAL-07
+    name: Certificat de propriété
+    route: /wallet/certificate
+    display:
+      - Aperçu du certificat
+      - Bouton télécharger PDF
+      - Bouton partager
+      - Date de génération
+      - Avertissement: valeur au moment de la génération
+
+api_endpoints:
+  - method: GET
+    path: /api/v1/wallet
+    description: Obtenir les informations du wallet
+    auth: required
+    response:
+      200:
+        walletId: string
+        tokenBalance: number      # Grammes
+        cashBalance: number       # XOF
+        estimatedValue: number    # tokenBalance × currentPrice
+        averageBuyPrice: number   # Prix d'achat moyen
+        profitLoss: number        # En XOF
+        profitLossPercent: number # En %
+        
+  - method: GET
+    path: /api/v1/wallet/transactions
+    description: Historique des transactions
+    auth: required
+    query:
+      type?: "BUY" | "SELL" | "DEPOSIT" | "WITHDRAWAL" | "FEE"
+      status?: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"
+      from?: string             # ISO date
+      to?: string               # ISO date
+      page?: number
+      limit?: number
+    response:
+      200:
+        items:
+          - id: string
+            type: string
+            status: string
+            tokenAmount: number
+            cashAmount: number
+            pricePerGram: number
+            fees: number
+            paymentMethod: string
+            createdAt: string
+            completedAt: string
+        total: number
+        page: number
+        hasMore: boolean
+        
+  - method: GET
+    path: /api/v1/wallet/transactions/:id
+    description: Détail d'une transaction
+    auth: required
+    response:
+      200:
+        id: string
+        type: string
+        status: string
+        tokenAmount: number
+        cashAmount: number
+        pricePerGram: number
+        fees: number
+        paymentMethod: string
+        paymentReference: string
+        payoutMethod: string
+        payoutReference: string
+        failureReason: string
+        createdAt: string
+        completedAt: string
+        
+  - method: POST
+    path: /api/v1/wallet/deposit
+    description: Initier un dépôt
+    auth: required
+    request:
+      body:
+        amount: number
+        method: "orange_money" | "moov_money" | "card"
+    response:
+      201:
+        transactionId: string
+        paymentUrl: string
+        paymentInstructions: object
+        expiresAt: string
+        
+  - method: POST
+    path: /api/v1/wallet/withdraw
+    description: Demander un retrait
+    auth: required
+    request:
+      body:
+        amount: number
+        method: "orange_money" | "moov_money" | "bank"
+        totpCode: string
+        details:
+          phoneNumber?: string
+          bankAccount?: string
+          bankName?: string
+    response:
+      201:
+        transactionId: string
+        status: "PROCESSING"
+        estimatedArrival: string
+        netAmount: number
+        fees: number
+      400:
+        error: InsufficientBalance | LimitExceeded | Invalid2FA
+        
+  - method: GET
+    path: /api/v1/wallet/certificate
+    description: Générer un certificat de propriété
+    auth: required
+    response:
+      200:
+        contentType: application/pdf
+        body: binary PDF
+    headers:
+      Content-Disposition: attachment; filename="certificate.pdf"
+
+webhooks:
+  - path: /api/v1/webhooks/payment/orange
+    description: Webhook Orange Money
+    provider: Orange Money
+    events:
+      - payment_success
+      - payment_failed
+      - disbursement_success
+      - disbursement_failed
+      
+  - path: /api/v1/webhooks/payment/moov
+    description: Webhook Moov Money
+    provider: Moov Money
+    events:
+      - transaction_complete
+      - transaction_failed
+      
+  - path: /api/v1/webhooks/payment/cinetpay
+    description: Webhook CinetPay
+    provider: CinetPay
+    events:
+      - PAYMENT_SUCCESS
+      - PAYMENT_FAILED
+
+database_entities:
+  - name: wallets
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        not_null: true
+        unique: true
+        foreign_key: users.id
+      - name: token_balance
+        type: REAL
+        default: 0
+        description: Solde en grammes (precision 0.001)
+      - name: cash_balance
+        type: REAL
+        default: 0
+        description: Solde en XOF
+      - name: total_bought
+        type: REAL
+        default: 0
+        description: Total grammes achetés (pour calcul prix moyen)
+      - name: total_spent
+        type: REAL
+        default: 0
+        description: Total XOF dépensés (pour calcul prix moyen)
+      - name: created_at
+        type: TEXT
+        not_null: true
+      - name: updated_at
+        type: TEXT
+        not_null: true
+        
+  - name: withdrawals
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: transaction_id
+        type: TEXT
+        not_null: true
+        foreign_key: transactions.id
+      - name: method
+        type: TEXT
+        not_null: true
+      - name: amount
+        type: REAL
+        not_null: true
+      - name: fees
+        type: REAL
+        not_null: true
+      - name: net_amount
+        type: REAL
+        not_null: true
+      - name: phone_number
+        type: TEXT
+      - name: bank_account
+        type: TEXT
+      - name: bank_name
+        type: TEXT
+      - name: status
+        type: TEXT
+        default: "'PENDING'"
+        description: "PENDING | PROCESSING | COMPLETED | FAILED"
+      - name: provider_reference
+        type: TEXT
+      - name: failure_reason
+        type: TEXT
+      - name: approved_by
+        type: TEXT
+        foreign_key: admins.id
+      - name: approved_at
+        type: TEXT
+      - name: created_at
+        type: TEXT
+        not_null: true
+      - name: completed_at
+        type: TEXT
+
+fees_structure:
+  storage_fee:
+    rate: 0.005          # 0.5% par an
+    frequency: monthly   # Prélevé au prorata mensuel
+    minimum: 0           # Pas de minimum
+    
+  withdrawal_mobile_money:
+    rate: 0.01           # 1%
+    minimum: 500         # XOF
+    maximum: null        # Pas de maximum
+    
+  withdrawal_bank:
+    rate: 0.005          # 0.5%
+    minimum: 1000        # XOF
+    maximum: null
+    
+  deposit:
+    rate: 0              # Gratuit
+    
+limits:
+  withdrawal:
+    STANDARD:
+      daily: 500000      # XOF
+    VERIFIED:
+      daily: 5000000     # XOF
+      
+  deposit:
+    minimum: 1000        # XOF
+    maximum: null        # Pas de maximum (limité par provider)
+
+payment_providers:
+  orange_money:
+    name: Orange Money Burkina
+    type: mobile_money
+    country: BF
+    currency: XOF
+    operations:
+      - collect
+      - disburse
+    api:
+      base_url: https://api.orange.com/orange-money-burkina
+      auth: oauth2
+    limits:
+      min_transaction: 100
+      max_transaction: 2000000
+      
+  moov_money:
+    name: Moov Money Burkina
+    type: mobile_money
+    country: BF
+    currency: XOF
+    operations:
+      - collect
+      - disburse
+    api:
+      base_url: https://api.moov-africa.bf
+      auth: api_key
+      
+  cinetpay:
+    name: CinetPay
+    type: aggregator
+    countries: [BF, CI, SN, ML, TG, BJ]
+    currency: XOF
+    operations:
+      - collect
+    api:
+      base_url: https://api-checkout.cinetpay.com/v2
+      auth: api_key
+    supported_methods:
+      - orange_money
+      - moov_money
+      - mtn_money
+      - wave
+      - card
+
+certificate_generation:
+  format: PDF
+  template:
+    header:
+      - Logo TNC Trading
+      - "CERTIFICAT DE PROPRIÉTÉ D'OR"
+      - Numéro unique
+    body:
+      - Nom complet utilisateur
+      - ID utilisateur (masqué partiellement)
+      - Quantité de tokens (grammes)
+      - Valeur estimée (XOF au moment de génération)
+      - Date et heure de génération
+    footer:
+      - QR code de vérification
+      - Mention légale
+      - Contact TNC Trading
+  security:
+    - Signature numérique
+    - QR code avec hash de vérification
+    - Watermark "TNC Trading"

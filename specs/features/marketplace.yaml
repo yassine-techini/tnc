@@ -1,0 +1,478 @@
+feature: marketplace
+name: Marketplace (Achat/Vente)
+description: |
+  Module central permettant l'achat et la vente de tokens d'or.
+  Affichage du prix temps réel et exécution des transactions.
+priority: P0
+
+actors:
+  - user: Utilisateur avec KYC validé (Standard ou Verified)
+
+business_rules:
+  price_calculation:
+    description: Calcul des prix d'achat et de vente
+    formulas:
+      local_price: "LBMA_USD * exchange_rate"
+      buy_price: "local_price * (1 + spread_buy)"
+      sell_price: "local_price * (1 - spread_sell)"
+    parameters:
+      spread_buy: 0.02  # 2% par défaut, configurable
+      spread_sell: 0.02 # 2% par défaut, configurable
+      exchange_rate: 615 # USD/XOF (fixe, arrimé à l'Euro)
+      price_validity: 60 # secondes
+      
+  stock_management:
+    invariant: "tokens_issued <= total_gold_allocated"
+    rules:
+      - Vérification stock avant tout achat
+      - Alerte admin si stock < 10% du total
+      - Blocage automatique des achats si stock insuffisant
+      - Rachat augmente le stock disponible
+      
+  limits:
+    STANDARD:
+      daily_buy_max: 100 # grammes
+      monthly_buy_max: 500 # grammes
+    VERIFIED:
+      daily_buy_max: 1000 # grammes
+      monthly_buy_max: 5000 # grammes
+
+user_stories:
+  - id: US-MKT-01
+    title: Consulter le prix de l'or
+    as: user
+    i_want: voir le prix actuel de l'or
+    so_that: je puisse décider d'acheter ou vendre
+    acceptance_criteria:
+      - Prix LBMA affiché en temps réel
+      - Prix d'achat et de vente affichés séparément
+      - Variation 24h affichée (pourcentage + flèche)
+      - Dernière mise à jour horodatée
+      - Graphique historique disponible (1J, 1S, 1M, 3M, 1A)
+      - Rafraîchissement automatique toutes les 60 secondes
+    priority: P0
+    
+  - id: US-MKT-02
+    title: Acheter des tokens
+    as: user
+    i_want: acheter des tokens d'or
+    so_that: je puisse investir mon argent dans l'or
+    acceptance_criteria:
+      - Saisie quantité en grammes OU montant en XOF
+      - Calcul automatique de l'autre valeur
+      - Affichage du récapitulatif (quantité, prix unitaire, total, frais)
+      - Prix garanti pendant 60 secondes
+      - Vérification du stock disponible
+      - Vérification des limites KYC
+      - Redirection vers paiement (Mobile Money, Carte)
+      - Tokens crédités après confirmation paiement
+      - Email + push notification de confirmation
+      - Transaction visible dans l'historique immédiatement
+    priority: P0
+    
+  - id: US-MKT-03
+    title: Vendre des tokens (Rachat)
+    as: user
+    i_want: vendre mes tokens à TNC
+    so_that: je puisse récupérer mon argent
+    acceptance_criteria:
+      - Sélection de la quantité à vendre (max: solde disponible)
+      - Affichage du montant à recevoir (après spread)
+      - Confirmation obligatoire avec 2FA
+      - Tokens débités immédiatement après validation
+      - Choix méthode de paiement (Mobile Money, Virement)
+      - Paiement Mobile Money instantané (< 5 min)
+      - Virement bancaire sous 24-48h
+      - Notification de confirmation envoyée
+    priority: P0
+    
+  - id: US-MKT-04
+    title: Obtenir un devis
+    as: user
+    i_want: obtenir un devis avant d'acheter/vendre
+    so_that: je connaisse le montant exact
+    acceptance_criteria:
+      - Devis valide pendant 60 secondes
+      - ID de devis unique pour tracking
+      - Prix verrouillé pendant la validité
+      - Expiration automatique après 60s
+    priority: P0
+
+screens:
+  - id: SCR-MKT-01
+    name: Marketplace - Accueil
+    route: /market
+    sections:
+      - Prix actuel (achat/vente)
+      - Variation 24h
+      - Graphique historique
+      - Boutons Acheter / Vendre
+      - Stock disponible (optionnel)
+      
+  - id: SCR-MKT-02
+    name: Achat - Saisie
+    route: /market/buy
+    fields:
+      - name: inputType
+        type: toggle
+        options: ["Grammes", "XOF"]
+      - name: amount
+        type: number
+        required: true
+        validation: min 1g, max selon KYC et stock
+    display:
+      - Prix unitaire actuel
+      - Montant converti
+      - Frais (spread)
+      - Total à payer
+      - Temps restant (countdown 60s)
+      
+  - id: SCR-MKT-03
+    name: Achat - Confirmation
+    route: /market/buy/confirm
+    display:
+      - Récapitulatif complet
+      - Choix méthode de paiement
+      - CGV à accepter
+    actions:
+      - Confirmer et payer
+      - Annuler
+      
+  - id: SCR-MKT-04
+    name: Achat - Paiement en cours
+    route: /market/buy/processing
+    display:
+      - Animation de chargement
+      - Statut en temps réel
+      - Timeout après 5 minutes
+      
+  - id: SCR-MKT-05
+    name: Achat - Succès
+    route: /market/buy/success
+    display:
+      - Animation de succès
+      - Quantité acquise
+      - Nouveau solde
+      - Lien vers wallet
+      - Bouton partager (optionnel)
+      
+  - id: SCR-MKT-06
+    name: Achat - Échec
+    route: /market/buy/failure
+    display:
+      - Message d'erreur clair
+      - Code erreur pour support
+      - Bouton réessayer
+      - Contact support
+      
+  - id: SCR-MKT-07
+    name: Vente - Saisie
+    route: /market/sell
+    fields:
+      - name: amount
+        type: number
+        required: true
+        validation: min 1g, max solde disponible
+    display:
+      - Solde actuel
+      - Prix de vente unitaire
+      - Montant à recevoir
+      - Frais éventuels
+      
+  - id: SCR-MKT-08
+    name: Vente - Confirmation 2FA
+    route: /market/sell/confirm
+    fields:
+      - name: totpCode
+        type: text
+        required: true
+        maxLength: 6
+    display:
+      - Récapitulatif
+      - Méthode de paiement sélectionnée
+      - Avertissement: action irréversible
+
+api_endpoints:
+  - method: GET
+    path: /api/v1/market/price
+    description: Obtenir le prix actuel de l'or
+    auth: optional
+    response:
+      200:
+        lbmaUsd: number        # Prix LBMA en USD/g
+        priceXof: number       # Prix local XOF/g
+        buyPrice: number       # Prix d'achat (avec spread)
+        sellPrice: number      # Prix de vente (avec spread)
+        spreadBuy: number      # Spread achat (0.02 = 2%)
+        spreadSell: number     # Spread vente
+        exchangeRate: number   # Taux USD/XOF
+        change24h: number      # Variation 24h en %
+        updatedAt: string      # ISO timestamp
+        
+  - method: GET
+    path: /api/v1/market/price/history
+    description: Historique des prix
+    auth: optional
+    query:
+      period: "1D" | "1W" | "1M" | "3M" | "1Y"
+    response:
+      200:
+        points:
+          - timestamp: string
+            priceXof: number
+            
+  - method: POST
+    path: /api/v1/market/quote
+    description: Obtenir un devis d'achat ou vente
+    auth: required
+    request:
+      body:
+        type: "BUY" | "SELL"
+        amount: number          # Quantité en grammes
+        amountType: "GRAMS" | "XOF"  # Type de montant
+    response:
+      200:
+        quoteId: string
+        type: "BUY" | "SELL"
+        tokenAmount: number     # Grammes
+        cashAmount: number      # XOF
+        pricePerGram: number
+        fees: number
+        total: number
+        expiresAt: string       # ISO timestamp (+60s)
+      400:
+        error: InsufficientStock | LimitExceeded | KycLevelInsufficient
+        
+  - method: POST
+    path: /api/v1/market/buy
+    description: Exécuter un achat de tokens
+    auth: required
+    request:
+      body:
+        quoteId: string
+        paymentMethod: "orange_money" | "moov_money" | "card" | "bank"
+    response:
+      201:
+        transactionId: string
+        status: "PENDING"
+        paymentUrl?: string     # URL de redirection paiement
+        paymentInstructions?: object
+      400:
+        error: QuoteExpired | InsufficientStock | LimitExceeded
+      402:
+        error: PaymentRequired
+        
+  - method: POST
+    path: /api/v1/market/sell
+    description: Exécuter une vente de tokens
+    auth: required
+    request:
+      body:
+        quoteId: string
+        totpCode: string        # 2FA obligatoire
+        payoutMethod: "orange_money" | "moov_money" | "bank"
+        payoutDetails:
+          phoneNumber?: string  # Pour Mobile Money
+          bankAccount?: string  # Pour virement
+    response:
+      201:
+        transactionId: string
+        status: "PROCESSING"
+        estimatedArrival: string
+      400:
+        error: QuoteExpired | InsufficientBalance | Invalid2FA
+
+  - method: GET
+    path: /api/v1/market/stock
+    description: Obtenir l'état du stock (public limité)
+    auth: optional
+    response:
+      200:
+        available: boolean      # true si stock > 0
+        lowStock: boolean       # true si stock < 10%
+
+database_entities:
+  - name: gold_prices
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: price_usd
+        type: REAL
+        not_null: true
+      - name: price_xof
+        type: REAL
+        not_null: true
+      - name: exchange_rate
+        type: REAL
+        not_null: true
+      - name: buy_price
+        type: REAL
+        not_null: true
+      - name: sell_price
+        type: REAL
+        not_null: true
+      - name: source
+        type: TEXT
+        not_null: true
+      - name: timestamp
+        type: TEXT
+        not_null: true
+        
+  - name: gold_stock
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: total_allocated
+        type: REAL
+        not_null: true
+        description: Total alloué par l'État (grammes)
+      - name: tokens_issued
+        type: REAL
+        not_null: true
+        description: Tokens en circulation
+      - name: available_stock
+        type: REAL
+        not_null: true
+        description: Computed: total_allocated - tokens_issued
+      - name: last_audit_date
+        type: TEXT
+      - name: last_audit_result
+        type: TEXT
+      - name: updated_at
+        type: TEXT
+        not_null: true
+        
+  - name: quotes
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        not_null: true
+        foreign_key: users.id
+      - name: type
+        type: TEXT
+        not_null: true
+        description: "BUY | SELL"
+      - name: token_amount
+        type: REAL
+        not_null: true
+      - name: cash_amount
+        type: REAL
+        not_null: true
+      - name: price_per_gram
+        type: REAL
+        not_null: true
+      - name: fees
+        type: REAL
+        not_null: true
+      - name: status
+        type: TEXT
+        default: "'PENDING'"
+        description: "PENDING | USED | EXPIRED"
+      - name: expires_at
+        type: TEXT
+        not_null: true
+      - name: created_at
+        type: TEXT
+        not_null: true
+        
+  - name: transactions
+    columns:
+      - name: id
+        type: TEXT
+        primary: true
+      - name: user_id
+        type: TEXT
+        not_null: true
+        foreign_key: users.id
+      - name: wallet_id
+        type: TEXT
+        not_null: true
+        foreign_key: wallets.id
+      - name: quote_id
+        type: TEXT
+        foreign_key: quotes.id
+      - name: type
+        type: TEXT
+        not_null: true
+        description: "BUY | SELL | DEPOSIT | WITHDRAWAL | FEE"
+      - name: status
+        type: TEXT
+        default: "'PENDING'"
+        description: "PENDING | PROCESSING | COMPLETED | FAILED | CANCELLED"
+      - name: token_amount
+        type: REAL
+      - name: cash_amount
+        type: REAL
+        not_null: true
+      - name: price_per_gram
+        type: REAL
+      - name: fees
+        type: REAL
+        default: 0
+      - name: payment_method
+        type: TEXT
+      - name: payment_reference
+        type: TEXT
+      - name: payout_method
+        type: TEXT
+      - name: payout_reference
+        type: TEXT
+      - name: failure_reason
+        type: TEXT
+      - name: created_at
+        type: TEXT
+        not_null: true
+      - name: completed_at
+        type: TEXT
+      - name: updated_at
+        type: TEXT
+        not_null: true
+
+integrations:
+  gold_price_api:
+    provider: GoldAPI.io
+    endpoint: https://www.goldapi.io/api/XAU/USD
+    frequency: every 5 minutes
+    fallback: cache last known price for 1 hour max
+    
+  payment_providers:
+    - name: Orange Money
+      type: direct
+      operations: [collect, disburse]
+      
+    - name: Moov Money
+      type: direct
+      operations: [collect, disburse]
+      
+    - name: CinetPay
+      type: aggregator
+      operations: [collect]
+      fallback: true
+
+caching_strategy:
+  gold_price:
+    storage: Cloudflare KV
+    ttl: 60 seconds
+    key: "gold:price:current"
+    
+  price_history:
+    storage: Cloudflare KV
+    ttl: 5 minutes
+    key: "gold:price:history:{period}"
+    
+  stock_status:
+    storage: Cloudflare KV
+    ttl: 30 seconds
+    key: "gold:stock:status"
+
+realtime_updates:
+  implementation: Cloudflare Durable Objects
+  use_cases:
+    - Prix en temps réel sur le dashboard
+    - Statut transaction pendant le paiement
+    - Notifications stock bas (admin)

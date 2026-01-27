@@ -1,0 +1,174 @@
+# TNC Trading API - Wrangler Configuration
+# See https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "tnc-trading-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-26"
+compatibility_flags = ["nodejs_compat"]
+
+# ============================================
+# Development Environment (default)
+# ============================================
+
+[vars]
+ENVIRONMENT = "development"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db-dev-v2"
+database_id = "f7988856-d5eb-473f-b253-2ef86a83141b"
+
+# KV Namespace for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "beb8b11d293347418c089c5d97b4d9a5"
+
+# R2 Bucket for file storage
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-documents-dev"
+
+# Queue for async notifications
+[[queues.producers]]
+binding = "NOTIFICATIONS_QUEUE"
+queue = "tnc-notifications-dev"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+# Migrations for Durable Objects
+[[migrations]]
+tag = "v1"
+new_classes = ["PriceTracker", "TransactionSession"]
+
+# Scheduled Jobs (Cron Triggers)
+[triggers]
+crons = [
+  "*/15 * * * *",   # Price refresh every 15 minutes
+  "0 0 * * *",      # Daily reconciliation at midnight UTC
+  "0 2 * * *",      # Session cleanup at 2 AM UTC
+  "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
+  "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
+]
+
+# ============================================
+# Staging Environment
+# ============================================
+
+[env.staging]
+name = "tnc-trading-api-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db-staging"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Replace with staging DB ID
+
+[[env.staging.kv_namespaces]]
+binding = "CACHE"
+id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Replace with staging KV ID
+
+[[env.staging.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-documents-staging"
+
+[[env.staging.queues.producers]]
+binding = "NOTIFICATIONS_QUEUE"
+queue = "tnc-notifications-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[env.staging.durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+[env.staging.triggers]
+crons = [
+  "*/15 * * * *",
+  "0 0 * * *",
+  "0 2 * * *",
+  "0 3 * * *",
+  "0 1 1 * *",
+]
+
+# ============================================
+# Production Environment
+# ============================================
+
+[env.production]
+name = "tnc-trading-api"
+workers_dev = false
+routes = [
+  { pattern = "api.tnc-trading.com/*", zone_name = "tnc-trading.com" }
+]
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "tnc-trading-db"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Replace with production DB ID
+
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Replace with production KV ID
+
+[[env.production.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "tnc-trading-documents"
+
+[[env.production.queues.producers]]
+binding = "NOTIFICATIONS_QUEUE"
+queue = "tnc-notifications"
+
+[[env.production.durable_objects.bindings]]
+name = "PRICE_TRACKER"
+class_name = "PriceTracker"
+
+[[env.production.durable_objects.bindings]]
+name = "TRANSACTION_SESSION"
+class_name = "TransactionSession"
+
+[env.production.triggers]
+crons = [
+  "*/5 * * * *",    # Price refresh every 5 minutes in production
+  "0 0 * * *",      # Daily reconciliation at midnight UTC
+  "0 2 * * *",      # Session cleanup at 2 AM UTC
+  "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
+  "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
+]
+
+# ============================================
+# Build Configuration
+# ============================================
+
+[build]
+command = ""
+
+# ============================================
+# Observability (Tail Workers)
+# ============================================
+
+# [observability]
+# enabled = true
+# head_sampling_rate = 1
+
+# ============================================
+# Analytics Engine (Optional)
+# ============================================
+
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+# dataset = "tnc_trading_events"

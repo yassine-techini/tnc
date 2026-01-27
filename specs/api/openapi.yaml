@@ -1,0 +1,1679 @@
+openapi: 3.1.0
+info:
+  title: TNC Trading API
+  description: |
+    API de la plateforme TNC Trading - Tokenisation d'Or Souveraine pour le Burkina Faso.
+    
+    ## Authentification
+    L'API utilise des JWT Bearer tokens. Après login, incluez le token dans le header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ## Rate Limiting
+    - 100 requêtes/minute par IP
+    - 1000 requêtes/minute par utilisateur authentifié
+    
+    ## Codes d'erreur
+    Toutes les erreurs suivent le format standard avec un code et message.
+  version: 1.0.0
+  contact:
+    name: TNC Trading Support
+    email: support@tnc-trading.com
+  license:
+    name: Proprietary
+    
+servers:
+  - url: https://api.tnc-trading.com/api/v1
+    description: Production
+  - url: https://staging-api.tnc-trading.com/api/v1
+    description: Staging
+  - url: http://localhost:8787/api/v1
+    description: Development
+
+tags:
+  - name: Auth
+    description: Authentification et gestion de compte
+  - name: Users
+    description: Profil utilisateur et KYC
+  - name: Market
+    description: Prix de l'or et trading
+  - name: Wallet
+    description: Portefeuille et transactions
+  - name: Admin
+    description: Back-office administrateur
+  - name: State
+    description: Portail État (lecture seule)
+
+paths:
+  # ==================== AUTH ====================
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Inscription d'un nouvel utilisateur
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Utilisateur créé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email ou téléphone déjà utilisé
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Connexion utilisateur
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Identifiants invalides
+        '423':
+          description: Compte temporairement bloqué
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rafraîchir le token d'accès
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Nouveau token généré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Déconnexion
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Déconnexion réussie
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Vérifier l'adresse email
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Email vérifié
+
+  /auth/verify-phone:
+    post:
+      tags: [Auth]
+      summary: Vérifier le numéro de téléphone
+      operationId: verifyPhone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Téléphone vérifié
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Demande de réinitialisation de mot de passe
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Email envoyé si le compte existe
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Réinitialiser le mot de passe
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 12
+      responses:
+        '200':
+          description: Mot de passe réinitialisé
+
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Configurer l'authentification 2FA
+      operationId: setup2FA
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: QR code et secret pour configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                  qrCode:
+                    type: string
+                    description: Data URL du QR code
+
+  /auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Vérifier et activer le 2FA
+      operationId: verify2FA
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+      responses:
+        '200':
+          description: 2FA activé
+
+  # ==================== USERS ====================
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Obtenir le profil de l'utilisateur connecté
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    patch:
+      tags: [Users]
+      summary: Mettre à jour le profil
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /users/me/kyc:
+    post:
+      tags: [Users]
+      summary: Soumettre une demande KYC
+      operationId: submitKYC
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/KYCSubmissionRequest'
+      responses:
+        '200':
+          description: KYC soumis avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KYCStatus'
+
+  /users/me/kyc/status:
+    get:
+      tags: [Users]
+      summary: Obtenir le statut KYC
+      operationId: getKYCStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statut KYC actuel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KYCStatus'
+
+  # ==================== MARKET ====================
+  /market/price:
+    get:
+      tags: [Market]
+      summary: Obtenir le prix actuel de l'or
+      operationId: getCurrentPrice
+      responses:
+        '200':
+          description: Prix actuels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldPrice'
+
+  /market/price/history:
+    get:
+      tags: [Market]
+      summary: Historique des prix
+      operationId: getPriceHistory
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [1d, 7d, 30d, 90d, 1y]
+            default: 7d
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: [1h, 4h, 1d]
+            default: 1h
+      responses:
+        '200':
+          description: Historique des prix
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GoldPriceHistory'
+
+  /market/stock:
+    get:
+      tags: [Market]
+      summary: État du stock d'or disponible
+      operationId: getStockStatus
+      responses:
+        '200':
+          description: Stock disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockStatus'
+
+  /market/quote:
+    post:
+      tags: [Market]
+      summary: Obtenir un devis pour achat/vente
+      operationId: getQuote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '200':
+          description: Devis valide 60 secondes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+
+  /market/buy:
+    post:
+      tags: [Market]
+      summary: Acheter des tokens d'or
+      operationId: buyTokens
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuyRequest'
+      responses:
+        '200':
+          description: Redirection vers le paiement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRedirect'
+        '400':
+          description: Stock insuffisant ou limite dépassée
+
+  /market/sell:
+    post:
+      tags: [Market]
+      summary: Vendre des tokens d'or
+      operationId: sellTokens
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SellRequest'
+      responses:
+        '200':
+          description: Vente effectuée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+
+  # ==================== WALLET ====================
+  /wallet:
+    get:
+      tags: [Wallet]
+      summary: Obtenir les informations du wallet
+      operationId: getWallet
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Informations du wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+
+  /wallet/transactions:
+    get:
+      tags: [Wallet]
+      summary: Historique des transactions
+      operationId: getTransactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [BUY, SELL, DEPOSIT, WITHDRAWAL, FEE]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Liste paginée des transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionList'
+
+  /wallet/transactions/{id}:
+    get:
+      tags: [Wallet]
+      summary: Détail d'une transaction
+      operationId: getTransaction
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Détail de la transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+
+  /wallet/deposit:
+    post:
+      tags: [Wallet]
+      summary: Déposer des fonds (cash)
+      operationId: deposit
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '200':
+          description: Redirection vers le paiement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRedirect'
+
+  /wallet/withdraw:
+    post:
+      tags: [Wallet]
+      summary: Demander un retrait
+      operationId: withdraw
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Retrait initié
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Withdrawal'
+
+  /wallet/certificate:
+    get:
+      tags: [Wallet]
+      summary: Télécharger le certificat de propriété
+      operationId: getCertificate
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Certificat PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  # ==================== ADMIN ====================
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Dashboard administrateur
+      operationId: getAdminDashboard
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: KPIs et statistiques
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboard'
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Liste des utilisateurs
+      operationId: listUsers
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: kycStatus
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, SUBMITTED, APPROVED, REJECTED, EXPIRED]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Liste paginée des utilisateurs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Détail d'un utilisateur
+      operationId: getUserById
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Détail utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetail'
+
+  /admin/users/{id}/kyc:
+    patch:
+      tags: [Admin]
+      summary: Approuver ou rejeter un KYC
+      operationId: reviewKYC
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [APPROVE, REJECT]
+                reason:
+                  type: string
+                  description: Obligatoire si REJECT
+      responses:
+        '200':
+          description: KYC mis à jour
+
+  /admin/kyc:
+    get:
+      tags: [Admin]
+      summary: Liste des KYC en attente
+      operationId: getPendingKYC
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Liste des KYC à valider
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KYCReview'
+
+  /admin/transactions:
+    get:
+      tags: [Admin]
+      summary: Toutes les transactions
+      operationId: getAllTransactions
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Liste des transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionList'
+
+  /admin/stock:
+    get:
+      tags: [Admin]
+      summary: État du stock d'or
+      operationId: getAdminStock
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Détail du stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldStock'
+
+  /admin/stock/adjust:
+    post:
+      tags: [Admin]
+      summary: Ajuster le stock d'or
+      operationId: adjustStock
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, amount, reason]
+              properties:
+                action:
+                  type: string
+                  enum: [ADD, REMOVE]
+                amount:
+                  type: number
+                  minimum: 0
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Stock ajusté
+
+  /admin/withdrawals:
+    get:
+      tags: [Admin]
+      summary: Retraits en attente
+      operationId: getPendingWithdrawals
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Liste des retraits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Withdrawal'
+
+  /admin/withdrawals/{id}:
+    patch:
+      tags: [Admin]
+      summary: Approuver ou rejeter un retrait
+      operationId: reviewWithdrawal
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [APPROVE, REJECT]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Retrait traité
+
+  /admin/reports/por:
+    get:
+      tags: [Admin]
+      summary: Générer le Proof of Reserve
+      operationId: getProofOfReserve
+      security:
+        - bearerAuth: []
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Rapport Proof of Reserve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofOfReserve'
+
+  # ==================== STATE ====================
+  /state/dashboard:
+    get:
+      tags: [State]
+      summary: Dashboard État
+      operationId: getStateDashboard
+      security:
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Vue d'ensemble pour l'État
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateDashboard'
+
+  /state/stock:
+    get:
+      tags: [State]
+      summary: État du stock d'or
+      operationId: getStateStock
+      security:
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Détail du stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldStock'
+
+  /state/reports/por:
+    get:
+      tags: [State]
+      summary: Proof of Reserve
+      operationId: getStatePOR
+      security:
+        - cloudflareAccess: []
+      responses:
+        '200':
+          description: Rapport Proof of Reserve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofOfReserve'
+
+  /state/reports/monthly:
+    get:
+      tags: [State]
+      summary: Rapport mensuel
+      operationId: getMonthlyReport
+      security:
+        - cloudflareAccess: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: '2026-01'
+      responses:
+        '200':
+          description: Rapport mensuel détaillé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlyReport'
+
+  # ==================== WEBHOOKS ====================
+  /webhooks/payment/orange:
+    post:
+      tags: [Webhooks]
+      summary: Webhook Orange Money
+      operationId: orangeMoneyWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook traité
+
+  /webhooks/payment/moov:
+    post:
+      tags: [Webhooks]
+      summary: Webhook Moov Money
+      operationId: moovMoneyWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook traité
+
+  /webhooks/payment/cinetpay:
+    post:
+      tags: [Webhooks]
+      summary: Webhook CinetPay
+      operationId: cinetpayWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook traité
+
+  /webhooks/kyc:
+    post:
+      tags: [Webhooks]
+      summary: Webhook KYC (Smile Identity)
+      operationId: kycWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook traité
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cloudflareAccess:
+      type: apiKey
+      in: header
+      name: CF-Access-JWT-Assertion
+      description: Cloudflare Access JWT
+
+  responses:
+    ValidationError:
+      description: Erreur de validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    # ===== Common =====
+    ApiError:
+      type: object
+      required: [success, error, requestId]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+        requestId:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    # ===== Auth =====
+    RegisterRequest:
+      type: object
+      required: [email, phone, password, country, acceptTerms]
+      properties:
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          pattern: '^\+226\d{8}$'
+          example: '+22670123456'
+        password:
+          type: string
+          minLength: 12
+        country:
+          type: string
+          default: BF
+        acceptTerms:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: Email ou numéro de téléphone
+        password:
+          type: string
+        twoFactorCode:
+          type: string
+          pattern: '^\d{6}$'
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+
+    # ===== User =====
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        country:
+          type: string
+        kycLevel:
+          type: string
+          enum: [BASIC, STANDARD, VERIFIED]
+        kycStatus:
+          type: string
+          enum: [PENDING, SUBMITTED, APPROVED, REJECTED, EXPIRED]
+        emailVerified:
+          type: boolean
+        phoneVerified:
+          type: boolean
+        twoFactorEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    UserDetail:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            wallet:
+              $ref: '#/components/schemas/Wallet'
+            kycDocuments:
+              type: array
+              items:
+                $ref: '#/components/schemas/KYCDocument'
+            recentTransactions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Transaction'
+
+    # ===== KYC =====
+    KYCSubmissionRequest:
+      type: object
+      required: [documentType, frontImage, selfie]
+      properties:
+        documentType:
+          type: string
+          enum: [CNIB, PASSPORT, PERMIT, CEDEAO]
+        documentNumber:
+          type: string
+        frontImage:
+          type: string
+          format: binary
+        backImage:
+          type: string
+          format: binary
+        selfie:
+          type: string
+          format: binary
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        address:
+          type: string
+
+    KYCStatus:
+      type: object
+      properties:
+        level:
+          type: string
+          enum: [BASIC, STANDARD, VERIFIED]
+        status:
+          type: string
+          enum: [PENDING, SUBMITTED, APPROVED, REJECTED, EXPIRED]
+        submittedAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+        rejectionReason:
+          type: string
+        limits:
+          type: object
+          properties:
+            dailyBuy:
+              type: number
+            monthlyBuy:
+              type: number
+            dailyWithdraw:
+              type: number
+
+    KYCDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        documentType:
+          type: string
+        documentNumber:
+          type: string
+        status:
+          type: string
+        expiryDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+
+    KYCReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/KYCDocument'
+        submittedAt:
+          type: string
+          format: date-time
+
+    # ===== Market =====
+    GoldPrice:
+      type: object
+      properties:
+        priceUsd:
+          type: number
+          description: Prix LBMA en USD/gramme
+        priceXof:
+          type: number
+          description: Prix en XOF/gramme
+        buyPrice:
+          type: number
+          description: Prix d'achat (avec spread)
+        sellPrice:
+          type: number
+          description: Prix de vente (avec spread)
+        exchangeRate:
+          type: number
+          description: Taux USD/XOF
+        spreadBuy:
+          type: number
+        spreadSell:
+          type: number
+        change24h:
+          type: number
+          description: Variation en %
+        updatedAt:
+          type: string
+          format: date-time
+
+    GoldPriceHistory:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        priceXof:
+          type: number
+        priceUsd:
+          type: number
+
+    StockStatus:
+      type: object
+      properties:
+        available:
+          type: number
+          description: Stock disponible à l'achat (grammes)
+        percentAvailable:
+          type: number
+          description: Pourcentage du stock total disponible
+
+    QuoteRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [BUY, SELL]
+        tokenAmount:
+          type: number
+          minimum: 1
+          description: Quantité en grammes (obligatoire si pas de cashAmount)
+        cashAmount:
+          type: number
+          minimum: 0
+          description: Montant en XOF (obligatoire si pas de tokenAmount)
+
+    Quote:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [BUY, SELL]
+        tokenAmount:
+          type: number
+        cashAmount:
+          type: number
+        pricePerGram:
+          type: number
+        fees:
+          type: number
+        total:
+          type: number
+        validUntil:
+          type: string
+          format: date-time
+
+    BuyRequest:
+      type: object
+      required: [quoteId, paymentMethod]
+      properties:
+        quoteId:
+          type: string
+        paymentMethod:
+          type: string
+          enum: [orange_money, moov_money, card, cinetpay]
+        phoneNumber:
+          type: string
+          description: Pour Mobile Money
+
+    SellRequest:
+      type: object
+      required: [quoteId, twoFactorCode]
+      properties:
+        quoteId:
+          type: string
+        twoFactorCode:
+          type: string
+          pattern: '^\d{6}$'
+
+    PaymentRedirect:
+      type: object
+      properties:
+        transactionId:
+          type: string
+        paymentUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+
+    # ===== Wallet =====
+    Wallet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tokenBalance:
+          type: number
+          description: Solde en grammes d'or
+        cashBalance:
+          type: number
+          description: Solde en XOF
+        tokenValueXof:
+          type: number
+          description: Valeur des tokens en XOF
+        totalValueXof:
+          type: number
+          description: Valeur totale (tokens + cash)
+        averageBuyPrice:
+          type: number
+          description: Prix moyen d'achat
+        profitLoss:
+          type: number
+          description: Plus/moins-value
+        profitLossPercent:
+          type: number
+        updatedAt:
+          type: string
+          format: date-time
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [BUY, SELL, DEPOSIT, WITHDRAWAL, FEE]
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+        tokenAmount:
+          type: number
+        cashAmount:
+          type: number
+        pricePerGram:
+          type: number
+        fees:
+          type: number
+        paymentMethod:
+          type: string
+        paymentReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    TransactionList:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    DepositRequest:
+      type: object
+      required: [amount, paymentMethod]
+      properties:
+        amount:
+          type: number
+          minimum: 1000
+        paymentMethod:
+          type: string
+          enum: [orange_money, moov_money, card, cinetpay]
+        phoneNumber:
+          type: string
+
+    WithdrawRequest:
+      type: object
+      required: [amount, method, twoFactorCode]
+      properties:
+        amount:
+          type: number
+          minimum: 1000
+        method:
+          type: string
+          enum: [orange_money, moov_money, bank]
+        phoneNumber:
+          type: string
+          description: Pour Mobile Money
+        bankDetails:
+          type: object
+          properties:
+            bankName:
+              type: string
+            accountNumber:
+              type: string
+            accountName:
+              type: string
+        twoFactorCode:
+          type: string
+          pattern: '^\d{6}$'
+
+    Withdrawal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        amount:
+          type: number
+        fees:
+          type: number
+        netAmount:
+          type: number
+        method:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, PROCESSING, COMPLETED, REJECTED, FAILED]
+        rejectionReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        processedAt:
+          type: string
+          format: date-time
+
+    # ===== Admin =====
+    GoldStock:
+      type: object
+      properties:
+        totalAllocated:
+          type: number
+          description: Total alloué par l'État (grammes)
+        tokensIssued:
+          type: number
+          description: Tokens en circulation
+        availableStock:
+          type: number
+          description: Disponible à la vente
+        reserveRatio:
+          type: number
+          description: Ratio de couverture (>=100%)
+        lastAuditDate:
+          type: string
+          format: date-time
+        lastAuditResult:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    AdminDashboard:
+      type: object
+      properties:
+        users:
+          type: object
+          properties:
+            total:
+              type: integer
+            verified:
+              type: integer
+            pendingKYC:
+              type: integer
+            newToday:
+              type: integer
+        transactions:
+          type: object
+          properties:
+            todayCount:
+              type: integer
+            todayVolume:
+              type: number
+            monthCount:
+              type: integer
+            monthVolume:
+              type: number
+        stock:
+          $ref: '#/components/schemas/StockStatus'
+        revenue:
+          type: object
+          properties:
+            todayFees:
+              type: number
+            monthFees:
+              type: number
+        alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              message:
+                type: string
+              severity:
+                type: string
+                enum: [info, warning, error]
+
+    ProofOfReserve:
+      type: object
+      properties:
+        reportId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        goldStock:
+          $ref: '#/components/schemas/GoldStock'
+        tokensInCirculation:
+          type: number
+        coverageRatio:
+          type: number
+        isFullyCovered:
+          type: boolean
+        auditor:
+          type: string
+        signature:
+          type: string
+
+    # ===== State =====
+    StateDashboard:
+      type: object
+      properties:
+        goldAllocated:
+          type: number
+        tokensIssued:
+          type: number
+        coverageRatio:
+          type: number
+        totalUsers:
+          type: integer
+        monthlyVolume:
+          type: number
+        monthlyTransactions:
+          type: integer
+        lastProofOfReserve:
+          type: string
+          format: date-time
+
+    MonthlyReport:
+      type: object
+      properties:
+        month:
+          type: string
+        stockSummary:
+          $ref: '#/components/schemas/GoldStock'
+        transactionSummary:
+          type: object
+          properties:
+            totalBuys:
+              type: integer
+            totalSells:
+              type: integer
+            totalVolume:
+              type: number
+            totalFees:
+              type: number
+        userSummary:
+          type: object
+          properties:
+            newUsers:
+              type: integer
+            verifiedUsers:
+              type: integer
+            activeUsers:
+              type: integer
+        proofOfReserve:
+          $ref: '#/components/schemas/ProofOfReserve'
