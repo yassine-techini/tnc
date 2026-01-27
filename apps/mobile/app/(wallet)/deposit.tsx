@@ -51,10 +51,21 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     icon: 'card-outline',
     iconColor: '#8B5CF6',
     iconBg: 'rgba(139, 92, 246, 0.12)',
-    description: 'Visa, Mastercard',
+    description: 'Visa, Mastercard (CinetPay)',
     minAmount: 5000,
     maxAmount: 5000000,
     fees: '2.5%',
+  },
+  {
+    id: 'stripe',
+    name: 'Carte Internationale',
+    icon: 'card-outline',
+    iconColor: '#635BFF',
+    iconBg: 'rgba(99, 91, 255, 0.12)',
+    description: 'Visa, Mastercard, Apple Pay (Stripe)',
+    minAmount: 5000,
+    maxAmount: 5000000,
+    fees: '2.9%',
   },
 ];
 

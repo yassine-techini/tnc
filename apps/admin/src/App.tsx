@@ -13,6 +13,10 @@ const Stock = lazy(() => import('./pages/Stock'));
 const Withdrawals = lazy(() => import('./pages/Withdrawals'));
 const KycReview = lazy(() => import('./pages/KycReview'));
 const Reconciliation = lazy(() => import('./pages/Reconciliation'));
+const Admins = lazy(() => import('./pages/Admins'));
+const AdminDetail = lazy(() => import('./pages/AdminDetail'));
+const Integrations = lazy(() => import('./pages/Integrations'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAdminStore();
@@ -49,6 +53,10 @@ export default function App() {
                     <Route path="/stock" element={<Stock />} />
                     <Route path="/reconciliation" element={<Reconciliation />} />
                     <Route path="/withdrawals" element={<Withdrawals />} />
+                    <Route path="/admins" element={<Admins />} />
+                    <Route path="/admins/:id" element={<AdminDetail />} />
+                    <Route path="/integrations" element={<Integrations />} />
+                    <Route path="/audit" element={<AuditLog />} />
                   </Routes>
                   </ErrorBoundary>
                 </AdminLayout>

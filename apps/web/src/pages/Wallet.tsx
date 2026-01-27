@@ -69,8 +69,10 @@ export default function Wallet() {
       if (!amount || amount < 1000) {
         throw new Error('Montant minimum: 1,000 FCFA');
       }
-      const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `+226${phoneNumber}`;
-      return api.deposit(amount, paymentMethod, fullPhone, tokens.accessToken);
+      const fullPhone = paymentMethod === 'stripe' || paymentMethod === 'card'
+        ? undefined
+        : (phoneNumber.startsWith('+') ? phoneNumber : `+226${phoneNumber}`);
+      return api.deposit(amount, paymentMethod, fullPhone || '', tokens.accessToken);
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -388,7 +390,7 @@ export default function Wallet() {
                 variant="primary"
                 className="flex-1"
                 onClick={() => depositMutation.mutate()}
-                disabled={!amount || !phoneNumber || user?.kycLevel === 'BASIC'}
+                disabled={!amount || (paymentMethod !== 'stripe' && paymentMethod !== 'card' && !phoneNumber) || user?.kycLevel === 'BASIC'}
                 isLoading={depositMutation.isPending}
                 loadingText="Traitement..."
               >

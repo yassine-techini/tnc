@@ -53,6 +53,10 @@ export interface Env {
   SENDGRID_API_KEY: string;
   FCM_SERVER_KEY: string;
 
+  // Stripe (International card payments)
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
+
   // Exchange Rate API
   EXCHANGE_RATE_API_KEY: string;
 

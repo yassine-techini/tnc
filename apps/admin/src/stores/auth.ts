@@ -1,10 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+export type PermissionMap = Record<string, string[]>;
+
 interface AdminUser {
   id: string;
   email: string;
-  role: 'ADMIN' | 'SUPER_ADMIN';
+  name?: string;
+  role: string;
 }
 
 interface AdminTokens {
@@ -16,37 +19,49 @@ interface AdminTokens {
 interface AdminState {
   user: AdminUser | null;
   tokens: AdminTokens | null;
+  permissions: PermissionMap | null;
   isAuthenticated: boolean;
   lastActivity: number;
-  login: (user: AdminUser, tokens: AdminTokens) => void;
+  login: (user: AdminUser, tokens: AdminTokens, permissions?: PermissionMap) => void;
+  setPermissions: (permissions: PermissionMap) => void;
   logout: () => void;
   touch: () => void;
+  hasPermission: (module: string, action: string) => boolean;
 }
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export const useAdminStore = create<AdminState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       tokens: null,
+      permissions: null,
       isAuthenticated: false,
       lastActivity: Date.now(),
-      login: (user, tokens) =>
+      login: (user, tokens, permissions) =>
         set({
           user,
           tokens,
+          permissions: permissions || null,
           isAuthenticated: true,
           lastActivity: Date.now(),
         }),
+      setPermissions: (permissions) => set({ permissions }),
       logout: () =>
         set({
           user: null,
           tokens: null,
+          permissions: null,
           isAuthenticated: false,
           lastActivity: 0,
         }),
       touch: () => set({ lastActivity: Date.now() }),
+      hasPermission: (module: string, action: string) => {
+        const perms = get().permissions;
+        if (!perms) return false;
+        return perms[module]?.includes(action) ?? false;
+      },
     }),
     {
       name: 'tnc-admin-auth',

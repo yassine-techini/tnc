@@ -381,6 +381,21 @@ export class NotificationService {
   }
 
   /**
+   * Check if a provider is enabled in the integrations table
+   */
+  private async isProviderEnabled(provider: string): Promise<boolean> {
+    try {
+      const row = await this.db
+        .prepare('SELECT enabled FROM integrations WHERE provider = ?')
+        .bind(provider)
+        .first<{ enabled: number }>();
+      return row?.enabled === 1;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Enqueue a notification for async delivery. Falls back to sync if queue unavailable.
    */
   async enqueueNotification(message: NotificationQueueMessage): Promise<void> {
@@ -489,11 +504,15 @@ export class NotificationService {
    * Send email with fallback
    */
   async sendEmail(options: EmailOptions): Promise<NotificationResult> {
-    // Try Resend first
-    let result = await this.sendViaResend(options);
+    // Try Resend first (if enabled)
+    let result: NotificationResult = { success: false, provider: 'none', error: 'No email provider enabled' };
 
-    // Fallback to SendGrid if Resend fails
-    if (!result.success && this.config.sendgridApiKey) {
+    if (await this.isProviderEnabled('resend')) {
+      result = await this.sendViaResend(options);
+    }
+
+    // Fallback to SendGrid if Resend fails or disabled (if SendGrid enabled)
+    if (!result.success && this.config.sendgridApiKey && await this.isProviderEnabled('sendgrid')) {
       result = await this.sendViaSendGrid(options);
     }
 
@@ -507,6 +526,10 @@ export class NotificationService {
    * Send SMS via Twilio
    */
   async sendSms(options: SmsOptions): Promise<NotificationResult> {
+    if (!await this.isProviderEnabled('twilio')) {
+      return { success: false, provider: 'twilio', error: 'Twilio is currently disabled' };
+    }
+
     if (!this.config.twilioAccountSid || !this.config.twilioAuthToken) {
       return { success: false, provider: 'twilio', error: 'Twilio not configured' };
     }
@@ -548,6 +571,10 @@ export class NotificationService {
    * Send push notification via FCM
    */
   async sendPush(options: PushOptions): Promise<NotificationResult> {
+    if (!await this.isProviderEnabled('fcm')) {
+      return { success: false, provider: 'fcm', error: 'FCM is currently disabled' };
+    }
+
     if (!this.config.fcmServerKey) {
       return { success: false, provider: 'fcm', error: 'FCM not configured' };
     }

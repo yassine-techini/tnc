@@ -7,6 +7,7 @@ export const PAYMENT_METHODS = [
   { id: 'orange_money', name: 'Orange Money', icon: '🟠', prefix: '+226' },
   { id: 'moov_money', name: 'Moov Money', icon: '🔵', prefix: '+226' },
   { id: 'card', name: 'Carte Bancaire', icon: '💳', prefix: null },
+  { id: 'stripe', name: 'Carte Internationale', icon: '💳', prefix: null },
 ] as const;
 
 export type PaymentMethodId = typeof PAYMENT_METHODS[number]['id'];

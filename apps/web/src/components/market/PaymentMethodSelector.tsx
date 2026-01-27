@@ -121,7 +121,10 @@ function PaymentMethodOption({
           <p className="text-sm text-slate-400">Paiement mobile {method.prefix}</p>
         )}
         {method.id === 'card' && (
-          <p className="text-sm text-slate-400">Visa, Mastercard</p>
+          <p className="text-sm text-slate-400">Visa, Mastercard (CinetPay)</p>
+        )}
+        {method.id === 'stripe' && (
+          <p className="text-sm text-slate-400">Visa, Mastercard, Apple Pay (Stripe)</p>
         )}
       </div>
 

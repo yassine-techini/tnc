@@ -19,6 +19,8 @@ export interface PaymentConfig {
   cinetpayApiKey?: string;
   cinetpaySiteId?: string;
   webhookSecret?: string;
+  stripeSecretKey?: string;
+  stripeWebhookSecret?: string;
 }
 
 export interface PaymentRequest {
@@ -61,6 +63,22 @@ export class PaymentService {
     private kv: KVNamespace,
     private config: PaymentConfig
   ) {}
+
+  /**
+   * Check if a provider is enabled in the integrations table
+   */
+  private async isProviderEnabled(provider: string): Promise<boolean> {
+    try {
+      const row = await this.db
+        .prepare('SELECT enabled FROM integrations WHERE provider = ?')
+        .bind(provider)
+        .first<{ enabled: number }>();
+      return row?.enabled === 1;
+    } catch {
+      // If table doesn't exist or query fails, allow (fail-open for backwards compat)
+      return true;
+    }
+  }
 
   /**
    * Initialize Orange Money payment
@@ -253,12 +271,95 @@ export class PaymentService {
   }
 
   /**
+   * Initialize Stripe Checkout payment (international cards)
+   * Uses Stripe REST API directly (no SDK — Workers compatible)
+   */
+  async initStripePayment(request: PaymentRequest): Promise<PaymentResponse> {
+    if (!this.config.stripeSecretKey) {
+      return { success: false, provider: 'stripe', error: 'Stripe not configured' };
+    }
+
+    try {
+      // XOF is a zero-decimal currency — amount is in whole units, no *100
+      const params = new URLSearchParams();
+      params.append('mode', 'payment');
+      params.append('line_items[0][price_data][currency]', 'xof');
+      params.append('line_items[0][price_data][product_data][name]', request.description || 'Dépôt TNC Trading');
+      params.append('line_items[0][price_data][unit_amount]', String(request.amount));
+      params.append('line_items[0][quantity]', '1');
+      params.append('success_url', request.returnUrl || 'https://app.tnc-trading.com/payment/callback?session_id={CHECKOUT_SESSION_ID}');
+      params.append('cancel_url', request.cancelUrl || 'https://app.tnc-trading.com/payment/cancel');
+      params.append('client_reference_id', request.reference);
+      if (request.customerEmail) {
+        params.append('customer_email', request.customerEmail);
+      }
+      params.append('metadata[reference]', request.reference);
+      params.append('metadata[platform]', 'tnc-trading');
+
+      const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.stripeSecretKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Stripe error:', error);
+        return { success: false, provider: 'stripe', error };
+      }
+
+      const session = await response.json() as { id: string; url: string };
+
+      // Store payment intent in KV for webhook validation
+      await this.kv.put(
+        `payment:stripe:${request.reference}`,
+        JSON.stringify({
+          amount: request.amount,
+          sessionId: session.id,
+          createdAt: new Date().toISOString(),
+        }),
+        { expirationTtl: 3600 }
+      );
+
+      return {
+        success: true,
+        provider: 'stripe',
+        transactionId: session.id,
+        paymentUrl: session.url,
+        status: 'PENDING',
+      };
+    } catch (error) {
+      console.error('Stripe payment error:', error);
+      return { success: false, provider: 'stripe', error: String(error) };
+    }
+  }
+
+  /**
    * Initialize payment based on method
    */
   async initiatePayment(
-    method: 'orange_money' | 'moov_money' | 'card' | 'bank',
+    method: 'orange_money' | 'moov_money' | 'card' | 'bank' | 'stripe',
     request: PaymentRequest
   ): Promise<PaymentResponse> {
+    // Map method to provider name in integrations table
+    const providerMap: Record<string, string> = {
+      orange_money: 'orange_money',
+      moov_money: 'moov_money',
+      card: 'cinetpay',
+      stripe: 'stripe',
+    };
+
+    const providerName = providerMap[method];
+    if (providerName) {
+      const enabled = await this.isProviderEnabled(providerName);
+      if (!enabled) {
+        return { success: false, provider: providerName, error: `${providerName} is currently disabled` };
+      }
+    }
+
     switch (method) {
       case 'orange_money':
         return this.initOrangeMoneyPayment(request);
@@ -266,6 +367,8 @@ export class PaymentService {
         return this.initMoovMoneyPayment(request);
       case 'card':
         return this.initCinetPayPayment(request);
+      case 'stripe':
+        return this.initStripePayment(request);
       case 'bank':
         // Bank transfers are handled manually
         return {
@@ -302,8 +405,33 @@ export class PaymentService {
       case 'cinetpay':
         return this.verifyCinetPaySignature(payload, signature);
 
+      case 'stripe':
+        return this.verifyStripeSignature(payload, signature);
+
       default:
         return false;
+    }
+  }
+
+  /**
+   * Stripe webhook signature verification.
+   * Stripe-Signature header format: t=timestamp,v1=signature
+   */
+  private async verifyStripeSignature(payload: string, signatureHeader: string): Promise<boolean> {
+    if (!this.config.stripeWebhookSecret) return false;
+
+    try {
+      const elements = signatureHeader.split(',');
+      const timestamp = elements.find(e => e.startsWith('t='))?.slice(2);
+      const signature = elements.find(e => e.startsWith('v1='))?.slice(3);
+
+      if (!timestamp || !signature) return false;
+
+      // Stripe signs: timestamp + '.' + payload
+      const signedPayload = `${timestamp}.${payload}`;
+      return this.verifyHmacSignature(signedPayload, signature, this.config.stripeWebhookSecret);
+    } catch {
+      return false;
     }
   }
 
@@ -479,6 +607,8 @@ export class PaymentService {
         return this.checkMoovMoneyStatus(transactionId);
       case 'cinetpay':
         return this.checkCinetPayStatus(transactionId);
+      case 'stripe':
+        return this.checkStripeStatus(transactionId);
       default:
         return { status: 'UNKNOWN' };
     }
@@ -626,6 +756,37 @@ export class PaymentService {
       };
     } catch (error) {
       return { success: false, provider: 'orange_money', error: String(error) };
+    }
+  }
+
+  private async checkStripeStatus(sessionId: string): Promise<{ status: string; details?: any }> {
+    if (!this.config.stripeSecretKey) {
+      return { status: 'ERROR', details: { error: 'Stripe not configured' } };
+    }
+
+    try {
+      const response = await fetch(
+        `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.config.stripeSecretKey}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return { status: 'ERROR', details: { error: await response.text() } };
+      }
+
+      const session = await response.json() as { payment_status: string; status: string };
+      // Map Stripe session status to our status
+      let status = 'PENDING';
+      if (session.payment_status === 'paid') status = 'SUCCESS';
+      else if (session.status === 'expired') status = 'CANCELLED';
+
+      return { status, details: session };
+    } catch (error) {
+      return { status: 'ERROR', details: { error: String(error) } };
     }
   }
 

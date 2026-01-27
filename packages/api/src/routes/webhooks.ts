@@ -23,6 +23,8 @@ function getServices(env: Env) {
     cinetpayApiKey: env.CINETPAY_API_KEY,
     cinetpaySiteId: env.CINETPAY_SITE_ID,
     webhookSecret: env.WEBHOOK_SECRET,
+    stripeSecretKey: env.STRIPE_SECRET_KEY,
+    stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET,
   });
 
   const notificationService = new NotificationService(env.DB, {
@@ -228,6 +230,90 @@ webhooks.post('/payment/cinetpay', async (c) => {
     return c.json({ success: result.success, requestId });
   } catch (error) {
     console.error('CinetPay webhook error:', error);
+    return c.json({ success: false, error: 'Processing error', requestId }, 500);
+  }
+});
+
+/**
+ * Stripe Webhook
+ * POST /webhooks/payment/stripe
+ */
+webhooks.post('/payment/stripe', async (c) => {
+  const requestId = crypto.randomUUID();
+
+  try {
+    const rawBody = await c.req.text();
+    const signatureHeader = c.req.header('Stripe-Signature') || '';
+
+    const { paymentService, notificationService } = getServices(c.env);
+
+    // Verify Stripe signature
+    if (!(await paymentService.verifyWebhookSignature('stripe', rawBody, signatureHeader))) {
+      console.error('Invalid Stripe webhook signature');
+      return c.json({ success: false, error: 'Invalid signature' }, 401);
+    }
+
+    const event = JSON.parse(rawBody) as {
+      type: string;
+      data: {
+        object: {
+          id: string;
+          client_reference_id?: string;
+          amount_total?: number;
+          currency?: string;
+          payment_status?: string;
+          metadata?: Record<string, string>;
+        };
+      };
+    };
+
+    // Only process checkout.session.completed and checkout.session.expired
+    let status: WebhookPayload['status'] = 'PENDING';
+    if (event.type === 'checkout.session.completed') {
+      status = event.data.object.payment_status === 'paid' ? 'SUCCESS' : 'PENDING';
+    } else if (event.type === 'checkout.session.expired') {
+      status = 'CANCELLED';
+    } else {
+      // Acknowledge other events without processing
+      return c.json({ success: true, requestId });
+    }
+
+    const session = event.data.object;
+    const reference = session.client_reference_id || session.metadata?.reference || session.id;
+
+    const webhook: WebhookPayload = {
+      provider: 'stripe',
+      transactionId: session.id,
+      status,
+      amount: session.amount_total || 0,
+      currency: (session.currency || 'xof').toUpperCase(),
+      reference,
+      timestamp: new Date().toISOString(),
+      signature: signatureHeader,
+      raw: event,
+    };
+
+    const result = await paymentService.processWebhook(webhook);
+
+    if (result.success && status === 'SUCCESS') {
+      const transaction = await c.env.DB
+        .prepare('SELECT t.*, u.email, u.phone FROM transactions t JOIN users u ON t.user_id = u.id WHERE t.id = ?')
+        .bind(result.transactionId)
+        .first<any>();
+
+      if (transaction) {
+        await notificationService.sendTransactionCompleted(
+          transaction.email,
+          'DEPOSIT',
+          webhook.amount,
+          0
+        );
+      }
+    }
+
+    return c.json({ success: result.success, requestId });
+  } catch (error) {
+    console.error('Stripe webhook error:', error);
     return c.json({ success: false, error: 'Processing error', requestId }, 500);
   }
 });

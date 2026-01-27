@@ -40,13 +40,15 @@ export default function Login() {
         {
           id: response.data.user.id,
           email: response.data.user.email,
+          name: response.data.user.name,
           role: response.data.user.role,
         },
         {
           accessToken: response.data.tokens.accessToken,
           refreshToken: response.data.tokens.refreshToken,
           expiresIn: response.data.tokens.expiresIn,
-        }
+        },
+        response.data.user.permissions
       );
 
       navigate('/');

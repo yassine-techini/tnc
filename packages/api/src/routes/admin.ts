@@ -4,6 +4,8 @@ import { AuthService } from '../services/auth.service';
 import { PaymentService } from '../services/payment.service';
 import { NotificationService } from '../services/notification.service';
 import { ReconciliationService } from '../services/reconciliation.service';
+import { requirePermission } from '../middleware/rbac';
+import { resolvePermissions } from '../lib/rbac';
 
 const admin = new Hono<{ Bindings: Env }>();
 
@@ -142,6 +144,9 @@ admin.post('/login', async (c) => {
       kycLevel: 'VERIFIED', // Admins are always verified
     });
 
+    // Resolve effective permissions (role defaults + overrides)
+    const permissions = await resolvePermissions(c.env.DB, adminUser.id, adminUser.role);
+
     return c.json({
       success: true,
       data: {
@@ -150,6 +155,7 @@ admin.post('/login', async (c) => {
           email: adminUser.email,
           name: adminUser.name,
           role: adminUser.role,
+          permissions,
         },
         tokens,
       },
@@ -172,7 +178,7 @@ admin.post('/login', async (c) => {
 admin.use('/*', adminJwtMiddleware);
 
 // GET /admin/dashboard
-admin.get('/dashboard', async (c) => {
+admin.get('/dashboard', requirePermission('dashboard', 'view'), async (c) => {
   try {
     // Total users
     const totalUsersResult = await c.env.DB
@@ -260,7 +266,7 @@ admin.get('/dashboard', async (c) => {
 });
 
 // GET /admin/users
-admin.get('/users', async (c) => {
+admin.get('/users', requirePermission('users', 'view'), async (c) => {
   try {
     const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
     const search = c.req.query('search') || '';
@@ -322,7 +328,7 @@ admin.get('/users', async (c) => {
 });
 
 // GET /admin/users/:id
-admin.get('/users/:id', async (c) => {
+admin.get('/users/:id', requirePermission('users', 'view'), async (c) => {
   try {
     const { id } = c.req.param();
 
@@ -400,7 +406,7 @@ admin.get('/users/:id', async (c) => {
 });
 
 // PATCH /admin/users/:id/kyc
-admin.patch('/users/:id/kyc', async (c) => {
+admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => {
   try {
     const { id } = c.req.param();
     const body = await c.req.json();
@@ -450,7 +456,7 @@ admin.patch('/users/:id/kyc', async (c) => {
 });
 
 // GET /admin/kyc/pending - List pending KYC submissions
-admin.get('/kyc/pending', async (c) => {
+admin.get('/kyc/pending', requirePermission('kyc', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
   try {
     const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
@@ -516,7 +522,7 @@ admin.get('/kyc/pending', async (c) => {
 });
 
 // GET /admin/kyc/:id - Get KYC submission details
-admin.get('/kyc/:id', async (c) => {
+admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -591,7 +597,7 @@ admin.get('/kyc/:id', async (c) => {
 });
 
 // POST /admin/kyc/:id/review - Approve or reject a KYC submission
-admin.post('/kyc/:id/review', async (c) => {
+admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -689,7 +695,7 @@ admin.post('/kyc/:id/review', async (c) => {
 });
 
 // POST /admin/users/:id/suspend - Suspend a user account
-admin.post('/users/:id/suspend', async (c) => {
+admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -792,7 +798,7 @@ admin.post('/users/:id/suspend', async (c) => {
 });
 
 // POST /admin/users/:id/unsuspend - Reactivate a suspended user
-admin.post('/users/:id/unsuspend', async (c) => {
+admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -878,7 +884,7 @@ admin.post('/users/:id/unsuspend', async (c) => {
 });
 
 // GET /admin/users/:id/audit - Get user audit trail
-admin.get('/users/:id/audit', async (c) => {
+admin.get('/users/:id/audit', requirePermission('users', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -953,7 +959,7 @@ admin.get('/users/:id/audit', async (c) => {
 });
 
 // GET /admin/audit-logs - Global audit logs
-admin.get('/audit-logs', async (c) => {
+admin.get('/audit-logs', requirePermission('audit', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -961,6 +967,8 @@ admin.get('/audit-logs', async (c) => {
     const action = c.req.query('action');
     const entityType = c.req.query('entityType');
     const adminId = c.req.query('adminId');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
 
     let query = `
       SELECT al.*, a.email as admin_email, a.name as admin_name, u.email as user_email
@@ -994,6 +1002,20 @@ admin.get('/audit-logs', async (c) => {
       countParams.push(adminId);
     }
 
+    if (startDate) {
+      query += ' AND al.created_at >= ?';
+      countQuery += ' AND created_at >= ?';
+      params.push(startDate);
+      countParams.push(startDate);
+    }
+
+    if (endDate) {
+      query += ' AND al.created_at <= ?';
+      countQuery += ' AND created_at <= ?';
+      params.push(endDate);
+      countParams.push(endDate);
+    }
+
     query += ' ORDER BY al.created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
@@ -1021,7 +1043,7 @@ admin.get('/audit-logs', async (c) => {
 });
 
 // POST /admin/bulk/kyc-approve - Bulk approve KYC submissions
-admin.post('/bulk/kyc-approve', async (c) => {
+admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1092,7 +1114,7 @@ admin.post('/bulk/kyc-approve', async (c) => {
 });
 
 // GET /admin/suspended-users - List all suspended users
-admin.get('/suspended-users', async (c) => {
+admin.get('/suspended-users', requirePermission('users', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1124,7 +1146,7 @@ admin.get('/suspended-users', async (c) => {
 });
 
 // GET /admin/transactions
-admin.get('/transactions', async (c) => {
+admin.get('/transactions', requirePermission('transactions', 'view'), async (c) => {
   try {
     const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
     const type = c.req.query('type');
@@ -1184,7 +1206,7 @@ admin.get('/transactions', async (c) => {
 });
 
 // GET /admin/stock
-admin.get('/stock', async (c) => {
+admin.get('/stock', requirePermission('stock', 'view'), async (c) => {
   try {
     const stock = await c.env.DB
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
@@ -1221,7 +1243,7 @@ admin.get('/stock', async (c) => {
 });
 
 // POST /admin/stock/adjust
-admin.post('/stock/adjust', async (c) => {
+admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
   try {
     const body = await c.req.json();
     const { amount, reason } = body;
@@ -1281,7 +1303,7 @@ admin.post('/stock/adjust', async (c) => {
 });
 
 // GET /admin/withdrawals
-admin.get('/withdrawals', async (c) => {
+admin.get('/withdrawals', requirePermission('withdrawals', 'view'), async (c) => {
   try {
     const status = c.req.query('status') || 'PENDING';
 
@@ -1328,7 +1350,7 @@ admin.get('/withdrawals', async (c) => {
 });
 
 // PATCH /admin/withdrawals/:id
-admin.patch('/withdrawals/:id', async (c) => {
+admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1550,7 +1572,7 @@ admin.patch('/withdrawals/:id', async (c) => {
 });
 
 // GET /admin/reports/por - Proof of Reserve (Enhanced)
-admin.get('/reports/por', async (c) => {
+admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
   try {
     // Get gold stock
     const stock = await c.env.DB
@@ -1679,7 +1701,7 @@ admin.get('/reports/por', async (c) => {
 // ============================================
 
 // GET /admin/reconciliation/stuck - Get stuck transactions
-admin.get('/reconciliation/stuck', async (c) => {
+admin.get('/reconciliation/stuck', requirePermission('reconciliation', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1711,7 +1733,7 @@ admin.get('/reconciliation/stuck', async (c) => {
 });
 
 // GET /admin/reconciliation/pending - Get transactions pending reconciliation
-admin.get('/reconciliation/pending', async (c) => {
+admin.get('/reconciliation/pending', requirePermission('reconciliation', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1740,7 +1762,7 @@ admin.get('/reconciliation/pending', async (c) => {
 });
 
 // POST /admin/reconciliation/transaction/:id - Reconcile a transaction
-admin.post('/reconciliation/transaction/:id', async (c) => {
+admin.post('/reconciliation/transaction/:id', requirePermission('reconciliation', 'update'), async (c) => {
   const requestId = crypto.randomUUID();
   const { id } = c.req.param();
 
@@ -1806,7 +1828,7 @@ admin.post('/reconciliation/transaction/:id', async (c) => {
 });
 
 // GET /admin/reconciliation/report - Generate reconciliation report
-admin.get('/reconciliation/report', async (c) => {
+admin.get('/reconciliation/report', requirePermission('reconciliation', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1835,7 +1857,7 @@ admin.get('/reconciliation/report', async (c) => {
 });
 
 // GET /admin/reconciliation/discrepancies - Check wallet balance discrepancies
-admin.get('/reconciliation/discrepancies', async (c) => {
+admin.get('/reconciliation/discrepancies', requirePermission('reconciliation', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1865,7 +1887,7 @@ admin.get('/reconciliation/discrepancies', async (c) => {
 });
 
 // GET /admin/reconciliation/daily - Get daily transaction summary
-admin.get('/reconciliation/daily', async (c) => {
+admin.get('/reconciliation/daily', requirePermission('reconciliation', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1891,7 +1913,7 @@ admin.get('/reconciliation/daily', async (c) => {
 });
 
 // POST /admin/reconciliation/bulk - Bulk reconcile multiple transactions
-admin.post('/reconciliation/bulk', async (c) => {
+admin.post('/reconciliation/bulk', requirePermission('reconciliation', 'update'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
@@ -1977,6 +1999,578 @@ admin.post('/reconciliation/bulk', async (c) => {
       },
       requestId,
     }, 500);
+  }
+});
+
+// ============================================
+// ADMIN PERMISSIONS (current admin)
+// ============================================
+
+// GET /admin/me/permissions - Get current admin's resolved permissions
+admin.get('/me/permissions', async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const adminId = c.get('adminId' as never) as string;
+    const adminRole = c.get('adminRole' as never) as string;
+    const permissions = await resolvePermissions(c.env.DB, adminId, adminRole);
+    return c.json({ success: true, data: { permissions }, requestId });
+  } catch (error) {
+    console.error('Get permissions error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// ============================================
+// ADMIN MANAGEMENT ENDPOINTS
+// ============================================
+
+// GET /admin/admins - List all admins
+admin.get('/admins', requirePermission('admins', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const admins = await c.env.DB
+      .prepare('SELECT id, email, name, role, active, last_login_at, created_at FROM admins ORDER BY created_at DESC')
+      .all<any>();
+
+    return c.json({
+      success: true,
+      data: {
+        items: (admins.results || []).map((a: any) => ({
+          id: a.id,
+          email: a.email,
+          name: a.name,
+          role: a.role,
+          active: Boolean(a.active),
+          lastLoginAt: a.last_login_at,
+          createdAt: a.created_at,
+        })),
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('List admins error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// GET /admin/admins/:id - Get admin detail
+admin.get('/admins/:id', requirePermission('admins', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+
+  try {
+    const adminUser = await c.env.DB
+      .prepare('SELECT id, email, name, role, active, last_login_at, created_at FROM admins WHERE id = ?')
+      .bind(id)
+      .first<any>();
+
+    if (!adminUser) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin non trouvé' }, requestId }, 404);
+    }
+
+    // Get permission overrides
+    const overrides = await c.env.DB
+      .prepare('SELECT module, action, granted FROM admin_permissions WHERE admin_id = ?')
+      .bind(id)
+      .all<{ module: string; action: string; granted: number }>();
+
+    // Resolve effective permissions
+    const permissions = await resolvePermissions(c.env.DB, id, adminUser.role);
+
+    return c.json({
+      success: true,
+      data: {
+        id: adminUser.id,
+        email: adminUser.email,
+        name: adminUser.name,
+        role: adminUser.role,
+        active: Boolean(adminUser.active),
+        lastLoginAt: adminUser.last_login_at,
+        createdAt: adminUser.created_at,
+        permissions,
+        overrides: (overrides.results || []).map((o) => ({
+          module: o.module,
+          action: o.action,
+          granted: Boolean(o.granted),
+        })),
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Admin detail error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// POST /admin/admins - Create a new admin
+admin.post('/admins', requirePermission('admins', 'create'), async (c) => {
+  const requestId = crypto.randomUUID();
+
+  try {
+    const body = await c.req.json();
+    const { email, name, password, role } = body;
+
+    if (!email || !password || !role) {
+      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Email, mot de passe et rôle requis' }, requestId }, 400);
+    }
+
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT'];
+    if (!validRoles.includes(role)) {
+      return c.json({ success: false, error: { code: 'INVALID_ROLE', message: `Rôle invalide. Valeurs: ${validRoles.join(', ')}` }, requestId }, 400);
+    }
+
+    // Check duplicate
+    const existing = await c.env.DB.prepare('SELECT id FROM admins WHERE email = ?').bind(email).first();
+    if (existing) {
+      return c.json({ success: false, error: { code: 'DUPLICATE_EMAIL', message: 'Cet email est déjà utilisé' }, requestId }, 409);
+    }
+
+    const authService = new AuthService(c.env.JWT_SECRET);
+    const passwordHash = await authService.hashPassword(password);
+    const id = crypto.randomUUID();
+
+    await c.env.DB
+      .prepare('INSERT INTO admins (id, email, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, datetime(\'now\'))')
+      .bind(id, email, name || email.split('@')[0], passwordHash, role)
+      .run();
+
+    // Audit log
+    await c.env.DB
+      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, \'ADMIN_CREATE\', \'admin\', ?, ?, datetime(\'now\'))')
+      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify({ email, role }))
+      .run();
+
+    return c.json({
+      success: true,
+      data: { id, email, name: name || email.split('@')[0], role },
+      requestId,
+    }, 201);
+  } catch (error) {
+    console.error('Create admin error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// PATCH /admin/admins/:id - Update an admin (role, active, name)
+admin.patch('/admins/:id', requirePermission('admins', 'update'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+
+  try {
+    const body = await c.req.json();
+    const { role, active, name } = body;
+
+    const adminUser = await c.env.DB.prepare('SELECT * FROM admins WHERE id = ?').bind(id).first<any>();
+    if (!adminUser) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin non trouvé' }, requestId }, 404);
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (role !== undefined) {
+      const validRoles = ['SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT'];
+      if (!validRoles.includes(role)) {
+        return c.json({ success: false, error: { code: 'INVALID_ROLE', message: 'Rôle invalide' }, requestId }, 400);
+      }
+      updates.push('role = ?');
+      params.push(role);
+    }
+    if (active !== undefined) {
+      updates.push('active = ?');
+      params.push(active ? 1 : 0);
+    }
+    if (name !== undefined) {
+      updates.push('name = ?');
+      params.push(name);
+    }
+
+    if (updates.length === 0) {
+      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Aucune modification' }, requestId }, 400);
+    }
+
+    params.push(id);
+    await c.env.DB
+      .prepare(`UPDATE admins SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...params)
+      .run();
+
+    // Audit
+    await c.env.DB
+      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at) VALUES (?, ?, \'ADMIN_UPDATE\', \'admin\', ?, ?, ?, datetime(\'now\'))')
+      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify({ role: adminUser.role, active: adminUser.active, name: adminUser.name }), JSON.stringify(body))
+      .run();
+
+    return c.json({ success: true, data: { message: 'Admin mis à jour' }, requestId });
+  } catch (error) {
+    console.error('Update admin error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// DELETE /admin/admins/:id - Deactivate an admin
+admin.delete('/admins/:id', requirePermission('admins', 'delete'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+
+  try {
+    // Prevent self-deactivation
+    if (id === (c.get('adminId' as never) as string)) {
+      return c.json({ success: false, error: { code: 'SELF_DELETE', message: 'Impossible de se désactiver soi-même' }, requestId }, 400);
+    }
+
+    await c.env.DB.prepare('UPDATE admins SET active = 0 WHERE id = ?').bind(id).run();
+
+    await c.env.DB
+      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, created_at) VALUES (?, ?, \'ADMIN_DELETE\', \'admin\', ?, datetime(\'now\'))')
+      .bind(crypto.randomUUID(), c.get('adminId' as never), id)
+      .run();
+
+    return c.json({ success: true, data: { message: 'Admin désactivé' }, requestId });
+  } catch (error) {
+    console.error('Delete admin error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// GET /admin/admins/:id/permissions - Get admin permission overrides
+admin.get('/admins/:id/permissions', requirePermission('admins', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+
+  try {
+    const overrides = await c.env.DB
+      .prepare('SELECT module, action, granted FROM admin_permissions WHERE admin_id = ?')
+      .bind(id)
+      .all<{ module: string; action: string; granted: number }>();
+
+    return c.json({
+      success: true,
+      data: {
+        overrides: (overrides.results || []).map((o) => ({
+          module: o.module,
+          action: o.action,
+          granted: Boolean(o.granted),
+        })),
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Get permissions error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// PUT /admin/admins/:id/permissions - Replace all permission overrides for an admin
+admin.put('/admins/:id/permissions', requirePermission('admins', 'update'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+
+  try {
+    const body = await c.req.json();
+    const { overrides } = body; // Array of { module, action, granted }
+
+    if (!Array.isArray(overrides)) {
+      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'overrides doit être un tableau' }, requestId }, 400);
+    }
+
+    // Delete existing overrides
+    await c.env.DB.prepare('DELETE FROM admin_permissions WHERE admin_id = ?').bind(id).run();
+
+    // Insert new overrides
+    for (const o of overrides) {
+      if (!o.module || !o.action || typeof o.granted !== 'boolean') continue;
+      await c.env.DB
+        .prepare('INSERT INTO admin_permissions (id, admin_id, module, action, granted, created_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))')
+        .bind(crypto.randomUUID(), id, o.module, o.action, o.granted ? 1 : 0)
+        .run();
+    }
+
+    // Audit
+    await c.env.DB
+      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, \'PERMISSION_UPDATE\', \'admin\', ?, ?, datetime(\'now\'))')
+      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify(overrides))
+      .run();
+
+    return c.json({ success: true, data: { message: 'Permissions mises à jour' }, requestId });
+  } catch (error) {
+    console.error('Update permissions error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// ============================================
+// INTEGRATIONS ENDPOINTS
+// ============================================
+
+// GET /admin/integrations - List all integrations
+admin.get('/integrations', requirePermission('integrations', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const integrations = await c.env.DB
+      .prepare('SELECT * FROM integrations ORDER BY category, display_name')
+      .all<any>();
+
+    const items = (integrations.results || []).map((i: any) => ({
+      id: i.id,
+      provider: i.provider,
+      displayName: i.display_name,
+      category: i.category,
+      enabled: Boolean(i.enabled),
+      config: JSON.parse(i.config || '{}'),
+      lastTestedAt: i.last_tested_at,
+      lastTestResult: i.last_test_result,
+      updatedAt: i.updated_at,
+    }));
+
+    return c.json({ success: true, data: { items }, requestId });
+  } catch (error) {
+    console.error('List integrations error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// GET /admin/integrations/:provider - Get integration detail
+admin.get('/integrations/:provider', requirePermission('integrations', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { provider } = c.req.param();
+
+  try {
+    const integration = await c.env.DB
+      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .bind(provider)
+      .first<any>();
+
+    if (!integration) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
+    }
+
+    // Map provider to env var names (for display — do NOT expose values)
+    const secretEnvVars: Record<string, string[]> = {
+      orange_money: ['ORANGE_MONEY_API_KEY', 'ORANGE_MONEY_MERCHANT_ID'],
+      moov_money: ['MOOV_MONEY_API_KEY', 'MOOV_MERCHANT_ID'],
+      cinetpay: ['CINETPAY_API_KEY', 'CINETPAY_SITE_ID'],
+      stripe: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
+      twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'],
+      resend: ['RESEND_API_KEY'],
+      sendgrid: ['SENDGRID_API_KEY'],
+      fcm: ['FCM_SERVER_KEY'],
+      smile_identity: ['SMILE_IDENTITY_API_KEY', 'SMILE_IDENTITY_PARTNER_ID'],
+      gold_api: ['GOLD_API_KEY'],
+    };
+
+    // Check which secrets are configured (non-empty in env)
+    const envVars = secretEnvVars[provider] || [];
+    const secretsStatus: Record<string, boolean> = {};
+    for (const key of envVars) {
+      secretsStatus[key] = Boolean((c.env as any)[key]);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        id: integration.id,
+        provider: integration.provider,
+        displayName: integration.display_name,
+        category: integration.category,
+        enabled: Boolean(integration.enabled),
+        config: JSON.parse(integration.config || '{}'),
+        lastTestedAt: integration.last_tested_at,
+        lastTestResult: integration.last_test_result,
+        updatedAt: integration.updated_at,
+        secretsStatus,
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Integration detail error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// PATCH /admin/integrations/:provider - Update integration config + enabled
+admin.patch('/integrations/:provider', requirePermission('integrations', 'update'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { provider } = c.req.param();
+
+  try {
+    const body = await c.req.json();
+    const { enabled, config } = body;
+
+    const integration = await c.env.DB
+      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .bind(provider)
+      .first<any>();
+
+    if (!integration) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (enabled !== undefined) {
+      updates.push('enabled = ?');
+      params.push(enabled ? 1 : 0);
+    }
+    if (config !== undefined) {
+      updates.push('config = ?');
+      params.push(JSON.stringify(config));
+    }
+
+    updates.push('updated_at = datetime(\'now\')');
+    updates.push('updated_by = ?');
+    params.push(c.get('adminId' as never));
+    params.push(provider);
+
+    await c.env.DB
+      .prepare(`UPDATE integrations SET ${updates.join(', ')} WHERE provider = ?`)
+      .bind(...params)
+      .run();
+
+    // Audit
+    await c.env.DB
+      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at) VALUES (?, ?, \'INTEGRATION_UPDATE\', \'integration\', ?, ?, ?, datetime(\'now\'))')
+      .bind(
+        crypto.randomUUID(),
+        c.get('adminId' as never),
+        provider,
+        JSON.stringify({ enabled: Boolean(integration.enabled), config: JSON.parse(integration.config || '{}') }),
+        JSON.stringify(body)
+      )
+      .run();
+
+    return c.json({ success: true, data: { message: 'Intégration mise à jour' }, requestId });
+  } catch (error) {
+    console.error('Update integration error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// POST /admin/integrations/:provider/test - Test integration connection
+admin.post('/integrations/:provider/test', requirePermission('integrations', 'update'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { provider } = c.req.param();
+
+  try {
+    const integration = await c.env.DB
+      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .bind(provider)
+      .first<any>();
+
+    if (!integration) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
+    }
+
+    let testResult: { success: boolean; message: string } = { success: false, message: 'Test non implémenté pour ce provider' };
+
+    // Provider-specific connection tests
+    switch (provider) {
+      case 'stripe': {
+        const key = c.env.STRIPE_SECRET_KEY;
+        if (!key) { testResult = { success: false, message: 'STRIPE_SECRET_KEY non configurée' }; break; }
+        try {
+          const res = await fetch('https://api.stripe.com/v1/balance', {
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          testResult = res.ok
+            ? { success: true, message: 'Connexion Stripe OK' }
+            : { success: false, message: `Stripe erreur: ${res.status}` };
+        } catch (e: any) {
+          testResult = { success: false, message: `Stripe: ${e.message}` };
+        }
+        break;
+      }
+      case 'gold_api': {
+        const key = c.env.GOLD_API_KEY;
+        if (!key) { testResult = { success: false, message: 'GOLD_API_KEY non configurée' }; break; }
+        try {
+          const res = await fetch('https://www.goldapi.io/api/XAU/USD', {
+            headers: { 'x-access-token': key },
+          });
+          testResult = res.ok
+            ? { success: true, message: 'Connexion GoldAPI OK' }
+            : { success: false, message: `GoldAPI erreur: ${res.status}` };
+        } catch (e: any) {
+          testResult = { success: false, message: `GoldAPI: ${e.message}` };
+        }
+        break;
+      }
+      case 'resend': {
+        const key = c.env.RESEND_API_KEY;
+        if (!key) { testResult = { success: false, message: 'RESEND_API_KEY non configurée' }; break; }
+        try {
+          const res = await fetch('https://api.resend.com/api-keys', {
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          testResult = res.ok
+            ? { success: true, message: 'Connexion Resend OK' }
+            : { success: false, message: `Resend erreur: ${res.status}` };
+        } catch (e: any) {
+          testResult = { success: false, message: `Resend: ${e.message}` };
+        }
+        break;
+      }
+      case 'twilio': {
+        const sid = c.env.TWILIO_ACCOUNT_SID;
+        const token = c.env.TWILIO_AUTH_TOKEN;
+        if (!sid || !token) { testResult = { success: false, message: 'TWILIO credentials non configurées' }; break; }
+        try {
+          const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}.json`, {
+            headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}` },
+          });
+          testResult = res.ok
+            ? { success: true, message: 'Connexion Twilio OK' }
+            : { success: false, message: `Twilio erreur: ${res.status}` };
+        } catch (e: any) {
+          testResult = { success: false, message: `Twilio: ${e.message}` };
+        }
+        break;
+      }
+      case 'sendgrid': {
+        const key = c.env.SENDGRID_API_KEY;
+        if (!key) { testResult = { success: false, message: 'SENDGRID_API_KEY non configurée' }; break; }
+        try {
+          const res = await fetch('https://api.sendgrid.com/v3/scopes', {
+            headers: { Authorization: `Bearer ${key}` },
+          });
+          testResult = res.ok
+            ? { success: true, message: 'Connexion SendGrid OK' }
+            : { success: false, message: `SendGrid erreur: ${res.status}` };
+        } catch (e: any) {
+          testResult = { success: false, message: `SendGrid: ${e.message}` };
+        }
+        break;
+      }
+      default: {
+        // For providers without a test endpoint, check if required config fields are non-empty
+        const config = JSON.parse(integration.config || '{}');
+        const hasConfig = Object.values(config).some((v: any) => v && String(v).length > 0);
+        testResult = hasConfig
+          ? { success: true, message: 'Configuration présente (test de connexion non disponible)' }
+          : { success: false, message: 'Configuration vide' };
+      }
+    }
+
+    // Update test result in DB
+    await c.env.DB
+      .prepare('UPDATE integrations SET last_tested_at = datetime(\'now\'), last_test_result = ? WHERE provider = ?')
+      .bind(testResult.success ? 'success' : 'error', provider)
+      .run();
+
+    return c.json({
+      success: true,
+      data: {
+        provider,
+        testResult: testResult.success ? 'success' : 'error',
+        message: testResult.message,
+        testedAt: new Date().toISOString(),
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Test integration error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
   }
 });
 

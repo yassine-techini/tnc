@@ -138,7 +138,8 @@ class AdminApiClient {
         id: string;
         email: string;
         name: string;
-        role: 'ADMIN' | 'SUPER_ADMIN';
+        role: string;
+        permissions: Record<string, string[]>;
       };
       tokens: {
         accessToken: string;
@@ -384,6 +385,169 @@ class AdminApiClient {
       method: 'POST',
       token,
     });
+  }
+
+  // My permissions
+  async getMyPermissions(token: string) {
+    return this.request<{ permissions: Record<string, string[]> }>('/api/v1/admin/me/permissions', { token });
+  }
+
+  // Admin Management
+  async getAdmins(token: string) {
+    return this.request<{
+      items: Array<{
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        active: boolean;
+        lastLoginAt: string | null;
+        createdAt: string;
+      }>;
+    }>('/api/v1/admin/admins', { token });
+  }
+
+  async getAdmin(token: string, adminId: string) {
+    return this.request<{
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      active: boolean;
+      lastLoginAt: string | null;
+      createdAt: string;
+      permissions: Record<string, string[]>;
+      overrides: Array<{ module: string; action: string; granted: boolean }>;
+    }>(`/api/v1/admin/admins/${adminId}`, { token });
+  }
+
+  async createAdmin(token: string, data: { email: string; name?: string; password: string; role: string }) {
+    return this.request<{ id: string; email: string; name: string; role: string }>('/api/v1/admin/admins', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async updateAdmin(token: string, adminId: string, data: { role?: string; active?: boolean; name?: string }) {
+    return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async deleteAdmin(token: string, adminId: string) {
+    return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}`, {
+      method: 'DELETE',
+      token,
+    });
+  }
+
+  async getAdminPermissions(token: string, adminId: string) {
+    return this.request<{
+      overrides: Array<{ module: string; action: string; granted: boolean }>;
+    }>(`/api/v1/admin/admins/${adminId}/permissions`, { token });
+  }
+
+  async updateAdminPermissions(token: string, adminId: string, overrides: Array<{ module: string; action: string; granted: boolean }>) {
+    return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}/permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ overrides }),
+      token,
+    });
+  }
+
+  // Integrations
+  async getIntegrations(token: string) {
+    return this.request<{
+      items: Array<{
+        id: string;
+        provider: string;
+        displayName: string;
+        category: string;
+        enabled: boolean;
+        config: Record<string, string>;
+        lastTestedAt: string | null;
+        lastTestResult: string | null;
+        updatedAt: string;
+      }>;
+    }>('/api/v1/admin/integrations', { token });
+  }
+
+  async getIntegration(token: string, provider: string) {
+    return this.request<{
+      id: string;
+      provider: string;
+      displayName: string;
+      category: string;
+      enabled: boolean;
+      config: Record<string, string>;
+      lastTestedAt: string | null;
+      lastTestResult: string | null;
+      updatedAt: string;
+      secretsStatus: Record<string, boolean>;
+    }>(`/api/v1/admin/integrations/${provider}`, { token });
+  }
+
+  async updateIntegration(token: string, provider: string, data: { enabled?: boolean; config?: Record<string, string> }) {
+    return this.request<{ message: string }>(`/api/v1/admin/integrations/${provider}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async testIntegration(token: string, provider: string) {
+    return this.request<{
+      provider: string;
+      testResult: string;
+      message: string;
+      testedAt: string;
+    }>(`/api/v1/admin/integrations/${provider}/test`, {
+      method: 'POST',
+      token,
+    });
+  }
+
+  // Audit Logs
+  async getAuditLogs(token: string, params: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    entityType?: string;
+    adminId?: string;
+    startDate?: string;
+    endDate?: string;
+  } = {}) {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.action) qs.set('action', params.action);
+    if (params.entityType) qs.set('entityType', params.entityType);
+    if (params.adminId) qs.set('adminId', params.adminId);
+    if (params.startDate) qs.set('startDate', params.startDate);
+    if (params.endDate) qs.set('endDate', params.endDate);
+    return this.request<{
+      items: Array<{
+        id: string;
+        admin_id: string;
+        admin_email: string;
+        admin_name: string;
+        user_id: string | null;
+        user_email: string | null;
+        action: string;
+        entity_type: string;
+        entity_id: string;
+        old_value: string | null;
+        new_value: string | null;
+        ip_address: string | null;
+        created_at: string;
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+    }>(`/api/v1/admin/audit-logs?${qs}`, { token });
   }
 }
 

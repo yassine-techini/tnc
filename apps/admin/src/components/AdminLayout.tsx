@@ -3,25 +3,38 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdminStore } from '../stores/auth';
 import { ThemeToggle } from '@tnc-trading/ui';
 
-const navigation = [
+interface NavItem {
+  name: string;
+  href: string;
+  icon: string;
+  permission?: { module: string; action: string };
+}
+
+const navigation: NavItem[] = [
   { name: 'Tableau de bord', href: '/', icon: '📊' },
-  { name: 'Utilisateurs', href: '/users', icon: '👥' },
-  { name: 'Vérification KYC', href: '/kyc', icon: '🪪' },
-  { name: 'Transactions', href: '/transactions', icon: '💳' },
-  { name: 'Stock Or', href: '/stock', icon: '🪙' },
-  { name: 'Reconciliation', href: '/reconciliation', icon: '⚖️' },
-  { name: 'Retraits', href: '/withdrawals', icon: '📤' },
+  { name: 'Utilisateurs', href: '/users', icon: '👥', permission: { module: 'users', action: 'view' } },
+  { name: 'Vérification KYC', href: '/kyc', icon: '🪪', permission: { module: 'kyc', action: 'view' } },
+  { name: 'Transactions', href: '/transactions', icon: '💳', permission: { module: 'transactions', action: 'view' } },
+  { name: 'Stock Or', href: '/stock', icon: '🪙', permission: { module: 'stock', action: 'view' } },
+  { name: 'Reconciliation', href: '/reconciliation', icon: '⚖️', permission: { module: 'reconciliation', action: 'view' } },
+  { name: 'Retraits', href: '/withdrawals', icon: '📤', permission: { module: 'withdrawals', action: 'view' } },
+  { name: 'Intégrations', href: '/integrations', icon: '🔌', permission: { module: 'integrations', action: 'view' } },
+  { name: "Journal d'audit", href: '/audit', icon: '📋', permission: { module: 'audit', action: 'view' } },
+  { name: 'Administrateurs', href: '/admins', icon: '🔐', permission: { module: 'admins', action: 'view' } },
 ];
 
 const getPageTitle = (pathname: string) => {
   const route = navigation.find(n => n.href === pathname);
-  return route?.name || 'Administration';
+  if (route) return route.name;
+  if (pathname.startsWith('/admins/')) return 'Détail administrateur';
+  if (pathname.startsWith('/users/')) return 'Détail utilisateur';
+  return 'Administration';
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAdminStore();
+  const { user, logout, hasPermission } = useAdminStore();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -129,7 +142,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-1">
-            {navigation.map((item) => (
+            {navigation.filter((item) => !item.permission || hasPermission(item.permission.module, item.permission.action)).map((item) => (
               <NavLink
                 key={item.href}
                 to={item.href}
