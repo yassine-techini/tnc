@@ -1,6 +1,13 @@
 import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { preventScreenCapture, allowScreenCapture } from '../../hooks/useSecurityCheck';
 
 export default function KycLayout() {
+  useEffect(() => {
+    preventScreenCapture();
+    return () => { allowScreenCapture(); };
+  }, []);
+
   return (
     <Stack
       screenOptions={{

@@ -34,6 +34,13 @@ bucket_name = "tnc-trading-documents-dev"
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications-dev"
 
+[[queues.consumers]]
+queue = "tnc-notifications-dev"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "tnc-notifications-dlq-dev"
+
 # Durable Objects
 [[durable_objects.bindings]]
 name = "PRICE_TRACKER"
@@ -85,6 +92,13 @@ bucket_name = "tnc-trading-documents-staging"
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications-staging"
 
+[[env.staging.queues.consumers]]
+queue = "tnc-notifications-staging"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "tnc-notifications-dlq-staging"
+
 [[env.staging.durable_objects.bindings]]
 name = "PRICE_TRACKER"
 class_name = "PriceTracker"
@@ -132,6 +146,13 @@ bucket_name = "tnc-trading-documents"
 [[env.production.queues.producers]]
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications"
+
+[[env.production.queues.consumers]]
+queue = "tnc-notifications"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 5
+dead_letter_queue = "tnc-notifications-dlq"
 
 [[env.production.durable_objects.bindings]]
 name = "PRICE_TRACKER"

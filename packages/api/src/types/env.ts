@@ -56,6 +56,9 @@ export interface Env {
   // Exchange Rate API
   EXCHANGE_RATE_API_KEY: string;
 
+  // Error Monitoring
+  SENTRY_DSN?: string;
+
   // Cloudflare Access (for admin/state portals)
   CF_ACCESS_TEAM_DOMAIN?: string;  // e.g., 'tnc-trading' (without .cloudflareaccess.com)
   CF_ACCESS_AUDIENCE?: string;      // Application audience tag for admin

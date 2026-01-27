@@ -7,6 +7,7 @@ import { KycService } from '../services/kyc.service';
 import { AuthService } from '../services/auth.service';
 import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
+import { EncryptionService } from '../services/encryption.service';
 
 const users = new Hono<{ Bindings: Env }>();
 
@@ -517,16 +518,27 @@ users.post('/me/kyc/documents', async (c) => {
     const ext = file.name.split('.').pop() || 'jpg';
     const filename = `kyc/${userId}/${documentType}_${Date.now()}.${ext}`;
 
-    // Upload to R2
+    // Encrypt and upload to R2
     const arrayBuffer = await file.arrayBuffer();
-    await c.env.STORAGE.put(filename, arrayBuffer, {
+    let uploadData: ArrayBuffer = arrayBuffer;
+    let isEncrypted = false;
+
+    if (c.env.ENCRYPTION_KEY) {
+      const encryptionService = new EncryptionService(c.env.ENCRYPTION_KEY);
+      uploadData = await encryptionService.encrypt(arrayBuffer);
+      isEncrypted = true;
+    }
+
+    await c.env.STORAGE.put(filename, uploadData, {
       httpMetadata: {
-        contentType: file.type,
+        contentType: isEncrypted ? 'application/octet-stream' : file.type,
       },
       customMetadata: {
         userId,
         documentType,
         uploadedAt: new Date().toISOString(),
+        encrypted: isEncrypted ? 'aes-256-gcm' : 'none',
+        originalContentType: file.type,
       },
     });
 
@@ -1088,7 +1100,8 @@ users.get('/me/price-alerts', async (c) => {
     // Get current price for reference
     let currentPrice = null;
     try {
-      const priceStr = await c.env.CACHE.get('gold_price_current');
+      const env = c.env.ENVIRONMENT || 'development';
+      const priceStr = await c.env.CACHE.get(`${env}:gold_price:current`);
       if (priceStr) currentPrice = JSON.parse(priceStr);
     } catch {}
 

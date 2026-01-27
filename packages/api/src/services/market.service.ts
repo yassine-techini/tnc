@@ -45,17 +45,27 @@ const TRANSACTION_FEE_PERCENT = 0.005; // 0.5%
 const QUOTE_EXPIRY_MINUTES = 5;
 
 export class MarketService {
+  private kvPrefix: string;
+
   constructor(
     private db: D1Database,
-    private kv: KVNamespace
-  ) {}
+    private kv: KVNamespace,
+    environment: string = 'development'
+  ) {
+    this.kvPrefix = `${environment}:`;
+  }
+
+  /** Prefixed KV key to isolate environments sharing a namespace */
+  private key(k: string): string {
+    return `${this.kvPrefix}${k}`;
+  }
 
   /**
    * Get current gold price from cache or database
    */
   async getCurrentPrice(): Promise<GoldPriceRow | null> {
     // Try cache first
-    const cached = await this.kv.get('gold_price:current', 'json');
+    const cached = await this.kv.get(this.key('gold_price:current'), 'json');
     if (cached) {
       return cached as GoldPriceRow;
     }
@@ -67,7 +77,7 @@ export class MarketService {
 
     if (result) {
       // Cache for 1 minute
-      await this.kv.put('gold_price:current', JSON.stringify(result), {
+      await this.kv.put(this.key('gold_price:current'), JSON.stringify(result), {
         expirationTtl: 60,
       });
     }
@@ -86,7 +96,7 @@ export class MarketService {
     period: '24h' | '7d' | '30d' | '1y' = '24h'
   ): Promise<GoldPriceRow[]> {
     // Try KV cache first
-    const cacheKey = `price_history:${period}`;
+    const cacheKey = this.key(`price_history:${period}`);
     const cacheTtl: Record<string, number> = { '24h': 60, '7d': 300, '30d': 900, '1y': 3600 };
 
     const cached = await this.kv.get(cacheKey, 'json');
@@ -206,7 +216,7 @@ export class MarketService {
     };
 
     // Update cache
-    await this.kv.put('gold_price:current', JSON.stringify(price), {
+    await this.kv.put(this.key('gold_price:current'), JSON.stringify(price), {
       expirationTtl: 60,
     });
 

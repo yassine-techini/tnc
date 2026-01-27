@@ -5,13 +5,56 @@
 @tailwind utilities;
 
 @layer base {
+  /* ==================== THEME VARIABLES ==================== */
+  :root {
+    /* Light mode (default) */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8fafc;
+    --color-bg-tertiary: #f1f5f9;
+    --color-bg-elevated: #ffffff;
+    --color-bg-inset: #e2e8f0;
+    --color-bg-overlay: rgba(255, 255, 255, 0.8);
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-tertiary: #94a3b8;
+    --color-text-inverted: #ffffff;
+    --color-border-primary: #e2e8f0;
+    --color-border-secondary: #cbd5e1;
+    --color-shadow: rgba(0, 0, 0, 0.08);
+    --color-ring-offset: #ffffff;
+  }
+
+  .dark {
+    --color-bg-primary: #020617;
+    --color-bg-secondary: #0f172a;
+    --color-bg-tertiary: #1e293b;
+    --color-bg-elevated: #1e293b;
+    --color-bg-inset: #0f172a;
+    --color-bg-overlay: rgba(15, 23, 42, 0.8);
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-tertiary: #64748b;
+    --color-text-inverted: #0f172a;
+    --color-border-primary: rgba(30, 41, 59, 0.8);
+    --color-border-secondary: #334155;
+    --color-shadow: rgba(0, 0, 0, 0.3);
+    --color-ring-offset: #020617;
+  }
+
   html {
     @apply antialiased scroll-smooth;
   }
 
+  /* Light mode body */
   body {
-    @apply bg-slate-950 text-slate-100 min-h-screen;
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Dark mode body */
+  .dark body {
+    @apply bg-slate-950 text-slate-100;
   }
 
   ::selection {
@@ -24,8 +67,9 @@
   .btn {
     @apply px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
            disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none
-           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950
+           focus:outline-none focus:ring-2 focus:ring-offset-2
            active:scale-[0.98];
+    --tw-ring-offset-color: var(--color-ring-offset);
   }
 
   .btn-primary {
@@ -35,7 +79,16 @@
   }
 
   .btn-secondary {
-    @apply btn bg-slate-800 text-slate-200 border border-slate-700
+    @apply btn border;
+    background-color: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    border-color: var(--color-border-secondary);
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-bg-tertiary);
+  }
+  .dark .btn-secondary {
+    @apply bg-slate-800 text-slate-200 border-slate-700
            hover:bg-slate-700 hover:border-slate-600 focus:ring-slate-500;
   }
 
@@ -54,15 +107,33 @@
   }
 
   .btn-ghost {
-    @apply btn bg-transparent text-slate-400 hover:text-white hover:bg-slate-800;
+    @apply btn bg-transparent;
+    color: var(--color-text-secondary);
+  }
+  .btn-ghost:hover {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-tertiary);
+  }
+  .dark .btn-ghost {
+    @apply text-slate-400 hover:text-white hover:bg-slate-800;
   }
 
   /* ==================== INPUTS ==================== */
   .input {
-    @apply w-full px-4 py-3 bg-slate-900/80 border border-slate-700/80 rounded-xl
-           text-white placeholder-slate-500
-           focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:border-gold-500/50
-           transition-all duration-200 backdrop-blur-sm;
+    @apply w-full px-4 py-3 rounded-xl transition-all duration-200;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    color: var(--color-text-primary);
+  }
+  .input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+  .input:focus {
+    @apply outline-none ring-2 ring-gold-500/50 border-gold-500/50;
+  }
+  .dark .input {
+    @apply bg-slate-900/80 border-slate-700/80 text-white placeholder-slate-500
+           focus:ring-gold-500/50 focus:border-gold-500/50 backdrop-blur-sm;
   }
 
   .input-error {
@@ -71,23 +142,46 @@
 
   /* ==================== CARDS ==================== */
   .card {
-    @apply bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800/80 p-6
+    @apply rounded-2xl p-6;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    box-shadow: 0 4px 6px -1px var(--color-shadow);
+  }
+  .dark .card {
+    @apply bg-slate-900/60 backdrop-blur-md border-slate-800/80
            shadow-xl shadow-black/10;
   }
 
   .card-elevated {
-    @apply card bg-slate-800/80 border-slate-700/60
+    @apply card;
+    background-color: var(--color-bg-elevated);
+    border-color: var(--color-border-secondary);
+  }
+  .card-elevated:hover {
+    border-color: var(--color-border-secondary);
+  }
+  .dark .card-elevated {
+    @apply bg-slate-800/80 border-slate-700/60
            hover:border-slate-600/60 transition-all duration-300;
   }
 
   .card-gold {
-    @apply card border-gold-500/20 bg-gradient-to-br from-gold-500/5 via-slate-900/60 to-slate-900/60;
+    @apply card border-gold-500/20 bg-gradient-to-br from-gold-500/5 via-transparent to-transparent;
+  }
+  .dark .card-gold {
+    @apply border-gold-500/20 bg-gradient-to-br from-gold-500/5 via-slate-900/60 to-slate-900/60;
   }
 
   .card-interactive {
-    @apply card cursor-pointer hover:border-slate-600/80 hover:bg-slate-800/60
-           transition-all duration-300 hover:shadow-2xl hover:shadow-black/20
-           hover:-translate-y-0.5;
+    @apply card cursor-pointer transition-all duration-300 hover:-translate-y-0.5;
+  }
+  .card-interactive:hover {
+    border-color: var(--color-border-secondary);
+    box-shadow: 0 10px 25px -5px var(--color-shadow);
+  }
+  .dark .card-interactive {
+    @apply hover:border-slate-600/80 hover:bg-slate-800/60
+           hover:shadow-2xl hover:shadow-black/20;
   }
 
   /* ==================== BADGES ==================== */
@@ -96,36 +190,66 @@
   }
 
   .badge-success {
-    @apply bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20;
+    @apply bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/20;
+  }
+  .dark .badge-success {
+    @apply text-emerald-400;
   }
 
   .badge-warning {
-    @apply bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20;
+    @apply bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/20;
+  }
+  .dark .badge-warning {
+    @apply text-amber-400;
   }
 
   .badge-error {
-    @apply bg-red-500/15 text-red-400 ring-1 ring-red-500/20;
+    @apply bg-red-500/15 text-red-600 ring-1 ring-red-500/20;
+  }
+  .dark .badge-error {
+    @apply text-red-400;
   }
 
   .badge-info {
-    @apply bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20;
+    @apply bg-blue-500/15 text-blue-600 ring-1 ring-blue-500/20;
+  }
+  .dark .badge-info {
+    @apply text-blue-400;
   }
 
   .badge-gold {
-    @apply bg-gold-500/15 text-gold-400 ring-1 ring-gold-500/20;
+    @apply bg-gold-500/15 text-gold-700 ring-1 ring-gold-500/20;
+  }
+  .dark .badge-gold {
+    @apply text-gold-400;
   }
 
   /* ==================== TABLES ==================== */
   .table-header {
-    @apply px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-widest;
+    @apply px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-widest;
+    color: var(--color-text-tertiary);
+  }
+  .dark .table-header {
+    @apply text-slate-500;
   }
 
   .table-cell {
-    @apply px-5 py-4 text-sm text-slate-300;
+    @apply px-5 py-4 text-sm;
+    color: var(--color-text-secondary);
+  }
+  .dark .table-cell {
+    @apply text-slate-300;
   }
 
   .table-row {
-    @apply border-b border-slate-800/60 transition-colors hover:bg-slate-800/40;
+    @apply transition-colors;
+    border-bottom: 1px solid var(--color-border-primary);
+  }
+  .table-row:hover {
+    background-color: var(--color-bg-tertiary);
+  }
+  .dark .table-row {
+    @apply border-slate-800/60 hover:bg-slate-800/40;
   }
 
   /* ==================== STAT CARD ==================== */
@@ -142,7 +266,11 @@
   }
 
   .stat-label {
-    @apply text-xs font-medium text-slate-500 uppercase tracking-wide;
+    @apply text-xs font-medium uppercase tracking-wide;
+    color: var(--color-text-tertiary);
+  }
+  .dark .stat-label {
+    @apply text-slate-500;
   }
 
   /* ==================== LINKS ==================== */
@@ -168,7 +296,12 @@
 
   .scrollbar-thin {
     scrollbar-width: thin;
+  }
+  .dark .scrollbar-thin {
     scrollbar-color: theme('colors.slate.700') transparent;
+  }
+  .scrollbar-thin {
+    scrollbar-color: theme('colors.slate.300') transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -181,14 +314,20 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-slate-700 rounded-full;
+    @apply rounded-full;
+    background-color: var(--color-border-secondary);
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-600;
+    background-color: var(--color-text-tertiary);
   }
 
   .glass {
-    @apply bg-slate-900/40 backdrop-blur-xl border border-slate-800/50;
+    background-color: var(--color-bg-overlay);
+    @apply backdrop-blur-xl;
+    border: 1px solid var(--color-border-primary);
+  }
+  .dark .glass {
+    @apply bg-slate-900/40 border-slate-800/50;
   }
 }

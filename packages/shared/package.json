@@ -25,6 +25,10 @@
     "./utils": {
       "import": "./src/utils/index.ts",
       "types": "./src/utils/index.ts"
+    },
+    "./utils/theme": {
+      "import": "./src/utils/theme.ts",
+      "types": "./src/utils/theme.ts"
     }
   },
   "scripts": {

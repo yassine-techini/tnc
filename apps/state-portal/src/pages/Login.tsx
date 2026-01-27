@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useStateStore } from '../stores/auth';
 import { stateApi } from '../lib/api';
 
-// Demo accounts for state portal testing
-const DEMO_ACCOUNTS = [
+// Demo accounts (dev only — hidden in production)
+const IS_DEV = import.meta.env.VITE_APP_ENV === 'development' || import.meta.env.DEV;
+const DEMO_ACCOUNTS = IS_DEV ? [
   { label: 'Ministère des Mines', email: 'etat@mines.gov.bf', password: 'StatePass2024', ministry: 'MINES' },
   { label: 'Ministère des Finances', email: 'etat@finances.gov.bf', password: 'StatePass2024', ministry: 'FINANCES' },
-];
+] : [];
 
 export default function Login() {
   const navigate = useNavigate();

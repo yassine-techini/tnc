@@ -4,23 +4,23 @@
 
 vite v5.4.21 building for production...
 transforming...
-✓ 906 modules transformed.
+✓ 926 modules transformed.
 rendering chunks...
 computing gzip size...
-dist/index.html                           0.65 kB │ gzip:  0.38 kB
-dist/assets/index-DHJli48S.css           46.73 kB │ gzip:  7.02 kB
+dist/index.html                           0.73 kB │ gzip:  0.39 kB
+dist/assets/index-ByXk_-O6.css           50.15 kB │ gzip:  7.50 kB
 dist/assets/api-Dao6QSKS.js               4.14 kB │ gzip:  1.41 kB
-dist/assets/Login-C2Zxd_nD.js             6.01 kB │ gzip:  2.06 kB
-dist/assets/Withdrawals-B7PiTT9A.js       8.45 kB │ gzip:  2.50 kB
-dist/assets/UserDetail-BQdbJZFC.js       10.90 kB │ gzip:  2.73 kB
-dist/assets/Stock-DRsK3C_k.js            11.23 kB │ gzip:  3.04 kB
-dist/assets/Users-BMoZPI_q.js            12.29 kB │ gzip:  3.45 kB
-dist/assets/Reconciliation-BWukC3aF.js   13.45 kB │ gzip:  3.37 kB
-dist/assets/KycReview-71ijXNhA.js        14.31 kB │ gzip:  3.58 kB
-dist/assets/Dashboard-DGLJQbhh.js        14.31 kB │ gzip:  3.43 kB
-dist/assets/Transactions-BwSi9ilG.js     14.43 kB │ gzip:  3.85 kB
-dist/assets/index-BGzxMEqG.js            20.11 kB │ gzip:  6.96 kB
+dist/assets/Login-w9yZnQib.js             4.84 kB │ gzip:  1.76 kB
+dist/assets/Withdrawals-BgLOOr96.js       8.48 kB │ gzip:  2.51 kB
+dist/assets/UserDetail-C2mTBW3a.js       10.93 kB │ gzip:  2.75 kB
+dist/assets/Stock-BzyEjXww.js            11.26 kB │ gzip:  3.06 kB
+dist/assets/Users-CR2tA2ZI.js            12.32 kB │ gzip:  3.47 kB
+dist/assets/Reconciliation-3YtExhZE.js   13.48 kB │ gzip:  3.38 kB
+dist/assets/Dashboard-JbHuNnGP.js        14.31 kB │ gzip:  3.43 kB
+dist/assets/KycReview-Bfev7LJI.js        14.33 kB │ gzip:  3.59 kB
+dist/assets/Transactions-S0-6ztq5.js     14.46 kB │ gzip:  3.87 kB
 dist/assets/query-CoPFeybR.js            49.13 kB │ gzip: 15.00 kB
+dist/assets/index-_gyfTFLQ.js            50.42 kB │ gzip: 16.72 kB
 dist/assets/vendor-C4kM_9FL.js          156.62 kB │ gzip: 51.30 kB
-dist/assets/charts-BA6wncRp.js          359.58 kB │ gzip: 99.42 kB
-✓ built in 29.27s
+dist/assets/charts-BgTVJn92.js          359.59 kB │ gzip: 99.42 kB
+✓ built in 18.14s

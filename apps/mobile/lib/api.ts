@@ -3,7 +3,17 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { useAuthStore } from '../stores/auth';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tnc-trading-api-dev.yassine-techini.workers.dev';
+// API URL must be set via environment variable in production builds
+const API_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
+  ? 'https://tnc-trading-api-dev.yassine-techini.workers.dev'
+  : (() => { throw new Error('EXPO_PUBLIC_API_URL must be set in production'); })()
+);
+
+// Expected API host for certificate pinning validation
+const ALLOWED_API_HOSTS = [
+  'tnc-trading-api-dev.yassine-techini.workers.dev',
+  'api.tnc-trading.com',
+];
 
 interface ApiResponse<T> {
   success: true;
@@ -25,6 +35,8 @@ type ApiResult<T> = ApiResponse<T> | ApiError;
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string;
   headers?: Record<string, string>;
+  /** Add an idempotency key header for mutation safety */
+  idempotencyKey?: string;
 }
 
 interface RefreshPromise {
@@ -33,12 +45,27 @@ interface RefreshPromise {
   reject: (error: Error) => void;
 }
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 15000;
+const RETRYABLE_STATUS_CODES = [408, 429, 502, 503, 504];
+
 class MobileApiClient {
   private baseUrl: string;
   private deviceId: string | null = null;
   private refreshPromise: RefreshPromise | null = null;
 
   constructor(baseUrl: string) {
+    // Validate API host against allowlist
+    try {
+      const url = new URL(baseUrl);
+      if (!ALLOWED_API_HOSTS.includes(url.host)) {
+        console.warn(`API host ${url.host} not in allowlist — possible misconfiguration`);
+      }
+    } catch {
+      throw new Error('Invalid API base URL');
+    }
     this.baseUrl = baseUrl;
     this.initializeDeviceId();
   }
@@ -120,8 +147,21 @@ class MobileApiClient {
     }
   }
 
+  /** Generate a unique idempotency key */
+  private generateIdempotencyKey(): string {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+  }
+
+  /** Calculate exponential backoff delay with jitter */
+  private getRetryDelay(attempt: number): number {
+    const delay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
+    // Add +-25% jitter to prevent thundering herd
+    const jitter = delay * 0.25 * (Math.random() * 2 - 1);
+    return Math.round(delay + jitter);
+  }
+
   private async request<T>(endpoint: string, options: RequestOptions = {}, isRetry = false): Promise<ApiResponse<T>> {
-    const { token, ...fetchOptions } = options;
+    const { token, idempotencyKey, ...fetchOptions } = options;
 
     // Wait for device ID to be ready
     if (!this.deviceId) {
@@ -136,49 +176,77 @@ class MobileApiClient {
       ...options.headers,
     };
 
+    // Attach idempotency key for mutation requests
+    if (idempotencyKey) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
+
     // Use provided token, fallback to store token
     const authToken = token || this.getToken();
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
     }
 
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        ...fetchOptions,
-        headers,
-      });
+    const url = `${this.baseUrl}${endpoint}`;
 
-      // Handle 401 Unauthorized
-      if (response.status === 401 && !isRetry) {
-        // Attempt token refresh
-        await this.handleTokenRefresh();
+    // Retry loop with exponential backoff (only for network/server errors)
+    let lastError: Error | null = null;
+    const maxAttempts = isRetry ? 1 : MAX_RETRIES;
 
-        // Retry the original request with new token
-        return this.request<T>(endpoint, options, true);
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...fetchOptions,
+          headers,
+        });
+
+        // Handle 401 Unauthorized — token refresh (no retry count)
+        if (response.status === 401 && !isRetry) {
+          await this.handleTokenRefresh();
+          return this.request<T>(endpoint, options, true);
+        }
+
+        // Retryable server errors (502, 503, 504, 408, 429)
+        if (RETRYABLE_STATUS_CODES.includes(response.status) && attempt < maxAttempts - 1) {
+          // Respect Retry-After header if present
+          const retryAfter = response.headers.get('Retry-After');
+          const delay = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : this.getRetryDelay(attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        const data: ApiResult<T> = await response.json();
+
+        if (!data.success) {
+          const errorData = data as ApiError;
+          throw new Error(errorData.error?.message || 'Une erreur est survenue');
+        }
+
+        return data as ApiResponse<T>;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Don't retry on auth or business logic errors
+        if (isRetry || lastError.message.includes('401')) {
+          if (!isRetry && lastError.message.includes('401')) {
+            await this.handleTokenRefresh();
+            return this.request<T>(endpoint, options, true);
+          }
+          throw lastError;
+        }
+
+        // Network errors are retryable
+        if (attempt < maxAttempts - 1) {
+          const delay = this.getRetryDelay(attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
       }
-
-      const data: ApiResult<T> = await response.json();
-
-      if (!data.success) {
-        const errorData = data as ApiError;
-        throw new Error(errorData.error?.message || 'Une erreur est survenue');
-      }
-
-      return data as ApiResponse<T>;
-    } catch (error) {
-      // If this was a retry that failed, don't retry again
-      if (isRetry) {
-        throw error;
-      }
-
-      // Check if error is due to authentication
-      if (error instanceof Error && error.message.includes('401')) {
-        await this.handleTokenRefresh();
-        return this.request<T>(endpoint, options, true);
-      }
-
-      throw error;
     }
+
+    throw lastError || new Error('Une erreur réseau est survenue');
   }
 
   // Auth
@@ -281,6 +349,7 @@ class MobileApiClient {
       method: 'POST',
       body: JSON.stringify({ quoteId, paymentMethod }),
       token,
+      idempotencyKey: this.generateIdempotencyKey(),
     });
   }
 
@@ -295,6 +364,7 @@ class MobileApiClient {
       method: 'POST',
       body: JSON.stringify({ quoteId, paymentMethod }),
       token,
+      idempotencyKey: this.generateIdempotencyKey(),
     });
   }
 
@@ -341,6 +411,7 @@ class MobileApiClient {
       method: 'POST',
       body: JSON.stringify({ amount, paymentMethod, phoneNumber }),
       token,
+      idempotencyKey: this.generateIdempotencyKey(),
     });
   }
 
@@ -354,6 +425,7 @@ class MobileApiClient {
       method: 'POST',
       body: JSON.stringify({ amount, paymentMethod, phoneNumber }),
       token,
+      idempotencyKey: this.generateIdempotencyKey(),
     });
   }
 

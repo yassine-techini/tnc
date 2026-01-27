@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
 
-// Demo account for admin testing
-const DEMO_ACCOUNT = {
+// Demo account (dev only — hidden in production)
+const IS_DEV = import.meta.env.VITE_APP_ENV === 'development' || import.meta.env.DEV;
+const DEMO_ACCOUNT = IS_DEV ? {
   label: 'Admin Demo',
   email: 'admin@tnc-trading.com',
   password: 'AdminPass2024',
   role: 'ADMIN',
-};
+} : null;
 
 export default function Login() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function Login() {
   const [error, setError] = useState('');
 
   const fillDemoAccount = () => {
+    if (!DEMO_ACCOUNT) return;
     setFormData({ email: DEMO_ACCOUNT.email, password: DEMO_ACCOUNT.password });
     setError('');
   };
@@ -148,7 +150,8 @@ export default function Login() {
             Accès réservé aux administrateurs
           </p>
 
-          {/* Demo Account Section */}
+          {/* Demo Account Section — dev only */}
+          {DEMO_ACCOUNT && (
           <div className="mt-6 pt-5 border-t border-slate-800/60">
             <p className="text-xs font-medium text-slate-500 text-center mb-3">
               Compte de démonstration
@@ -170,6 +173,7 @@ export default function Login() {
               Cliquez pour auto-remplir les identifiants
             </p>
           </div>
+          )}
         </div>
 
         {/* Footer */}

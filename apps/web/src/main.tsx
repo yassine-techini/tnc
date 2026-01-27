@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ToastProvider } from './components/ui/Toast';
+import { initTheme } from '@tnc-trading/shared/utils/theme';
 import './index.css';
+
+// Initialize theme before render to prevent flash
+initTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

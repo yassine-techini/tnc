@@ -9,6 +9,7 @@ import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { timing } from 'hono/timing';
 import { prettyJSON } from 'hono/pretty-json';
+import { compress } from 'hono/compress';
 
 // Types
 import type { Env } from './types/env';
@@ -26,6 +27,7 @@ import { walletRoutes } from './routes/wallet';
 import { adminRoutes } from './routes/admin';
 import { stateRoutes } from './routes/state';
 import { webhookRoutes } from './routes/webhooks';
+import { verifyRoutes } from './routes/verify';
 import { setupRoutes } from './routes/setup';
 import { realtimeRoutes } from './routes/realtime';
 
@@ -36,6 +38,9 @@ const app = new Hono<{ Bindings: Env }>();
 // Global Middleware
 // ============================================
 
+// Response compression (gzip)
+app.use('*', compress());
+
 // Request logging
 app.use('*', logger());
 
@@ -44,6 +49,51 @@ app.use('*', timing());
 
 // Pretty JSON in development
 app.use('*', prettyJSON());
+
+// CSRF Origin validation for mutation requests
+app.use('*', async (c, next) => {
+  const method = c.req.method;
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const origin = c.req.header('Origin');
+    const referer = c.req.header('Referer');
+
+    // Allow webhook routes (authenticated via signature, not origin)
+    if (c.req.path.includes('/webhooks/')) {
+      return next();
+    }
+
+    // Validate origin matches allowed origins
+    if (origin) {
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:5174',
+        'http://localhost:5175',
+        'https://app.tnc-trading.com',
+        'https://admin.tnc-trading.com',
+        'https://state.tnc-trading.com',
+      ];
+      const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)-dev\.pages\.dev$/;
+      const isAllowed = allowedOrigins.includes(origin)
+        || pagesDevPattern.test(origin)
+        || origin.endsWith('.tnc-trading-web-dev.pages.dev')
+        || origin.endsWith('.tnc-trading-admin-dev.pages.dev')
+        || origin.endsWith('.tnc-trading-state-dev.pages.dev');
+
+      if (!isAllowed) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'CSRF_ORIGIN_REJECTED',
+            message: 'Origin non autorisée',
+          },
+          requestId: crypto.randomUUID(),
+        }, 403);
+      }
+    }
+  }
+  return next();
+});
 
 // Security headers
 app.use('*', secureHeaders({
@@ -146,6 +196,9 @@ api.route('/state', stateRoutes);
 
 // Webhook routes (signature verification)
 api.route('/webhooks', webhookRoutes);
+
+// Public certificate verification (no auth required)
+api.route('/verify', verifyRoutes);
 
 // Setup routes (for initial configuration)
 api.route('/setup', setupRoutes);

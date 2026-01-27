@@ -22,7 +22,7 @@ const KYC_LIMITS = {
 // GET /market/price - Public
 market.get('/price', async (c) => {
   const requestId = crypto.randomUUID();
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
 
   const price = await marketService.getFormattedPrice();
 
@@ -49,7 +49,7 @@ market.get('/price/history', async (c) => {
   const requestId = crypto.randomUUID();
   const period = (c.req.query('period') || '24h') as '24h' | '7d' | '30d' | '1y';
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
   const history = await marketService.getPriceHistory(period);
 
   return c.json({
@@ -68,7 +68,7 @@ market.get('/price/history', async (c) => {
 // GET /market/stock - Public
 market.get('/stock', async (c) => {
   const requestId = crypto.randomUUID();
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
 
   const stock = await marketService.getGoldStock();
 
@@ -118,7 +118,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const requestId = crypto.randomUUID();
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
 
   // Check KYC level permissions
   const limits = KYC_LIMITS[kycLevel];
@@ -221,7 +221,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     if (cached) return c.json(cached as Record<string, unknown>);
   }
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
   const walletService = new WalletService(c.env.DB);
 
   // Validate quote
@@ -370,7 +370,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     if (cached) return c.json(cached as Record<string, unknown>);
   }
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
   const walletService = new WalletService(c.env.DB);
 
   // Check KYC can sell
@@ -507,7 +507,7 @@ market.post('/price/refresh', async (c) => {
       c.env.EXCHANGE_RATE_API_KEY
     );
 
-    const marketService = new MarketService(c.env.DB, c.env.CACHE);
+    const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
 
     // Fetch fresh price from external API
     const priceData = await goldApiService.fetchCurrentPrice();

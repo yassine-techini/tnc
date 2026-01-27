@@ -3,14 +3,24 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Linking }
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as Application from 'expo-application';
+import { Ionicons } from '@expo/vector-icons';
+import { useThemeStore, useThemeColors, type ThemeMode } from '../../stores/theme';
 
 const NOTIFICATIONS_KEY = 'tnc_notifications_enabled';
 const PRICE_ALERTS_KEY = 'tnc_price_alerts_enabled';
+
+const themeOptions: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'light', label: 'Clair', icon: 'sunny' },
+  { value: 'dark', label: 'Sombre', icon: 'moon' },
+  { value: 'system', label: 'Système', icon: 'phone-portrait-outline' },
+];
 
 export default function SettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [priceAlertsEnabled, setPriceAlertsEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const { mode, setMode } = useThemeStore();
+  const c = useThemeColors();
 
   useEffect(() => {
     loadSettings();
@@ -44,19 +54,68 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: c.background }]}>
+      {/* Appearance Section */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Apparence</Text>
+
+        <View style={[styles.settingItem, { backgroundColor: c.surface }]}>
+          <View style={styles.settingInfo}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
+              <Ionicons name="color-palette" size={20} color={c.gold} />
+            </View>
+            <View style={styles.settingContent}>
+              <Text style={[styles.settingTitle, { color: c.text }]}>Thème</Text>
+              <Text style={[styles.settingDescription, { color: c.textSecondary }]}>
+                Choisissez l'apparence de l'application
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.themeSelector, { backgroundColor: c.surface }]}>
+          {themeOptions.map((option) => {
+            const isActive = mode === option.value;
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.themeOption,
+                  { borderColor: isActive ? c.gold : c.border },
+                  isActive && { backgroundColor: c.gold + '1A' },
+                ]}
+                onPress={() => setMode(option.value)}
+              >
+                <Ionicons
+                  name={option.icon}
+                  size={22}
+                  color={isActive ? c.gold : c.textSecondary}
+                />
+                <Text style={[
+                  styles.themeOptionLabel,
+                  { color: isActive ? c.gold : c.textSecondary },
+                  isActive && { fontWeight: '700' },
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* Notifications Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
+        <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Notifications</Text>
 
-        <View style={styles.settingItem}>
+        <View style={[styles.settingItem, { backgroundColor: c.surface }]}>
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>🔔</Text>
             </View>
             <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>Notifications push</Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[styles.settingTitle, { color: c.text }]}>Notifications push</Text>
+              <Text style={[styles.settingDescription, { color: c.textSecondary }]}>
                 Recevez des notifications pour les transactions et mises à jour
               </Text>
             </View>
@@ -64,20 +123,20 @@ export default function SettingsScreen() {
           <Switch
             value={notificationsEnabled}
             onValueChange={handleNotificationsToggle}
-            trackColor={{ false: '#374151', true: 'rgba(212, 175, 55, 0.5)' }}
-            thumbColor={notificationsEnabled ? '#D4AF37' : '#9CA3AF'}
+            trackColor={{ false: c.border, true: c.gold + '80' }}
+            thumbColor={notificationsEnabled ? c.gold : c.textSecondary}
             disabled={isLoading}
           />
         </View>
 
-        <View style={styles.settingItem}>
+        <View style={[styles.settingItem, { backgroundColor: c.surface }]}>
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>📊</Text>
             </View>
             <View style={styles.settingContent}>
-              <Text style={styles.settingTitle}>Alertes de prix</Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[styles.settingTitle, { color: c.text }]}>Alertes de prix</Text>
+              <Text style={[styles.settingDescription, { color: c.textSecondary }]}>
                 Soyez alerté quand le prix de l'or atteint vos objectifs
               </Text>
             </View>
@@ -85,118 +144,118 @@ export default function SettingsScreen() {
           <Switch
             value={priceAlertsEnabled}
             onValueChange={handlePriceAlertsToggle}
-            trackColor={{ false: '#374151', true: 'rgba(212, 175, 55, 0.5)' }}
-            thumbColor={priceAlertsEnabled ? '#D4AF37' : '#9CA3AF'}
+            trackColor={{ false: c.border, true: c.gold + '80' }}
+            thumbColor={priceAlertsEnabled ? c.gold : c.textSecondary}
             disabled={isLoading}
           />
         </View>
 
         {priceAlertsEnabled && (
           <TouchableOpacity
-            style={styles.subMenuItem}
+            style={[styles.subMenuItem, { backgroundColor: c.gold + '1A' }]}
             onPress={() => router.push('/(settings)/price-alerts')}
           >
-            <Text style={styles.subMenuText}>Configurer les alertes</Text>
-            <Text style={styles.arrow}>→</Text>
+            <Text style={[styles.subMenuText, { color: c.gold }]}>Configurer les alertes</Text>
+            <Ionicons name="chevron-forward" size={16} color={c.gold} />
           </TouchableOpacity>
         )}
       </View>
 
       {/* Legal Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Légal</Text>
+        <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Légal</Text>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => openURL('https://tnc-trading.com/terms')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>📄</Text>
             </View>
-            <Text style={styles.menuText}>Conditions d'utilisation</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>Conditions d'utilisation</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => openURL('https://tnc-trading.com/privacy')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>🔒</Text>
             </View>
-            <Text style={styles.menuText}>Politique de confidentialité</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>Politique de confidentialité</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
       </View>
 
       {/* Support Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support</Text>
+        <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Support</Text>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => openURL('https://tnc-trading.com/help')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>❓</Text>
             </View>
-            <Text style={styles.menuText}>Centre d'aide</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>Centre d'aide</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => openURL('mailto:support@tnc-trading.com')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>✉️</Text>
             </View>
-            <Text style={styles.menuText}>Contacter le support</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>Contacter le support</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => openURL('tel:+22670000000')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>📞</Text>
             </View>
-            <Text style={styles.menuText}>Appeler le support</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>Appeler le support</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
       </View>
 
       {/* About Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>À propos</Text>
+        <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>À propos</Text>
 
         <TouchableOpacity
-          style={styles.menuItem}
+          style={[styles.menuItem, { backgroundColor: c.surface }]}
           onPress={() => router.push('/(settings)/about')}
         >
           <View style={styles.settingInfo}>
-            <View style={styles.iconContainer}>
+            <View style={[styles.iconContainer, { backgroundColor: c.gold + '1A' }]}>
               <Text style={styles.icon}>ℹ️</Text>
             </View>
-            <Text style={styles.menuText}>À propos de TNC Trading</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>À propos de TNC Trading</Text>
           </View>
-          <Text style={styles.arrow}>→</Text>
+          <Ionicons name="chevron-forward" size={18} color={c.textSecondary} />
         </TouchableOpacity>
 
-        <View style={styles.versionItem}>
-          <Text style={styles.versionLabel}>Version</Text>
-          <Text style={styles.versionValue}>
+        <View style={[styles.versionItem, { backgroundColor: c.surface }]}>
+          <Text style={[styles.versionLabel, { color: c.textSecondary }]}>Version</Text>
+          <Text style={[styles.versionValue, { color: c.text }]}>
             {Application.nativeApplicationVersion || '1.0.0'} ({Application.nativeBuildVersion || '1'})
           </Text>
         </View>
@@ -210,14 +269,12 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F0F1A',
     padding: 16,
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
-    color: '#9CA3AF',
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 12,
@@ -228,7 +285,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1A1A2E',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -242,7 +298,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: 'rgba(212, 175, 55, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -255,27 +310,42 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   settingTitle: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 2,
   },
   settingDescription: {
-    color: '#9CA3AF',
     fontSize: 13,
+  },
+  themeSelector: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  themeOption: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 2,
+    gap: 6,
+  },
+  themeOptionLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   subMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(212, 175, 55, 0.1)',
     borderRadius: 8,
     padding: 12,
     marginLeft: 52,
     marginTop: 4,
   },
   subMenuText: {
-    color: '#D4AF37',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -283,34 +353,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1A1A2E',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
   },
   menuText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '500',
-  },
-  arrow: {
-    color: '#9CA3AF',
-    fontSize: 18,
   },
   versionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1A1A2E',
     borderRadius: 12,
     padding: 16,
   },
   versionLabel: {
-    color: '#9CA3AF',
     fontSize: 14,
   },
   versionValue: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '500',
   },

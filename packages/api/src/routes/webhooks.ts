@@ -49,7 +49,7 @@ webhooks.post('/payment/orange', async (c) => {
     const { paymentService, notificationService } = getServices(c.env);
 
     // Verify signature
-    if (!paymentService.verifyWebhookSignature('orange_money', rawBody, signature)) {
+    if (!(await paymentService.verifyWebhookSignature('orange_money', rawBody, signature))) {
       console.error('Invalid Orange Money webhook signature');
       return c.json({ success: false, error: 'Invalid signature' }, 401);
     }
@@ -119,7 +119,7 @@ webhooks.post('/payment/moov', async (c) => {
     const { paymentService, notificationService } = getServices(c.env);
 
     // Verify signature
-    if (!paymentService.verifyWebhookSignature('moov_money', rawBody, signature)) {
+    if (!(await paymentService.verifyWebhookSignature('moov_money', rawBody, signature))) {
       console.error('Invalid Moov Money webhook signature');
       return c.json({ success: false, error: 'Invalid signature' }, 401);
     }

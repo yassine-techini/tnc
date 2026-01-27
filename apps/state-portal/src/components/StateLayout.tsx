@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useStateStore } from '../stores/auth';
+import { ThemeToggle } from '@tnc-trading/ui';
 
 const navigation = [
   { name: 'Vue d\'ensemble', href: '/', icon: '📊' },
@@ -26,9 +27,9 @@ export default function StateLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-900">
+    <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-900">
       {/* Header */}
-      <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 z-20 sticky top-0">
+      <header className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-4 z-20 sticky top-0">
         <div className="flex items-center gap-4">
           {/* Mobile menu button */}
           <button
@@ -64,7 +65,8 @@ export default function StateLayout({ children }: { children: React.ReactNode })
             <span className="text-xs">🔒</span>
             <span className="text-xs text-state-400">Lecture seule</span>
           </div>
-          <span className="text-sm text-slate-400 hidden lg:block">{user?.ministry}</span>
+          <ThemeToggle />
+          <span className="text-sm text-slate-500 dark:text-slate-400 hidden lg:block">{user?.ministry}</span>
           <div className="w-8 h-8 rounded-full bg-state-500/20 flex items-center justify-center">
             <span className="text-state-500 font-bold text-sm">
               {user?.email?.charAt(0).toUpperCase()}

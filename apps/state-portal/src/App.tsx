@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useStateStore } from './stores/auth';
+import { useStateStore, startInactivityMonitor } from './stores/auth';
 import StateLayout from './components/StateLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -20,6 +20,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => { startInactivityMonitor(); }, []);
+
   return (
     <ErrorBoundary>
     <BrowserRouter>

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tnc-trading/shared": "workspace:*",
+    "@tnc-trading/ui": "workspace:*",
     "@tanstack/react-query": "^5.17.0",
     "@tanstack/react-table": "^8.11.0",
     "react": "^18.3.1",

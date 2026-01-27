@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAdminStore } from '../stores/auth';
+import { ThemeToggle } from '@tnc-trading/ui';
 
 const navigation = [
   { name: 'Tableau de bord', href: '/', icon: '📊' },
@@ -30,9 +31,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950">
+    <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
       {/* Header */}
-      <header className="h-16 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/60 flex items-center justify-between px-6 z-20 sticky top-0">
+      <header className="h-16 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-6 z-20 sticky top-0">
         <div className="flex items-center gap-4">
           {/* Mobile menu button */}
           <button
@@ -75,12 +76,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </svg>
           </button>
 
-          <div className="w-px h-6 bg-slate-800" />
+          <ThemeToggle />
+
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
 
           <div className="flex items-center gap-3">
             <div className="hidden md:block text-right">
-              <p className="text-xs font-medium text-slate-300">{user?.email}</p>
-              <p className="text-[10px] text-slate-600">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}</p>
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">{user?.email}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-600">{user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}</p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center shadow-lg shadow-gold-500/10">
               <span className="text-white font-bold text-sm">

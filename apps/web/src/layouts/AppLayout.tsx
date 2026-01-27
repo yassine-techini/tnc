@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 import { preloadRoute, preloadCriticalRoutes } from '../lib/preload';
+import { ThemeToggle } from '@tnc-trading/ui';
 
 const navigation = [
   { name: 'Tableau de bord', href: '/dashboard', icon: '📊' },
@@ -43,9 +44,9 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950">
+    <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
       {/* Header */}
-      <header className="h-16 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/60 flex items-center justify-between px-6 z-20 sticky top-0">
+      <header className="h-16 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 flex items-center justify-between px-6 z-20 sticky top-0">
         <div className="flex items-center gap-4">
           {/* Mobile menu button */}
           <button
@@ -87,12 +88,14 @@ export default function AppLayout() {
             <span className="text-[11px] font-medium text-gold-400">KYC: {user?.kycLevel || 'BASIC'}</span>
           </div>
 
-          <div className="w-px h-6 bg-slate-800" />
+          <ThemeToggle />
+
+          <div className="w-px h-6 bg-slate-800 dark:bg-slate-800 bg-slate-200" />
 
           <div className="flex items-center gap-3">
             <div className="hidden md:block text-right">
-              <p className="text-xs font-medium text-slate-300">{user?.email}</p>
-              <p className="text-[10px] text-slate-600">{user?.kycLevel || 'BASIC'}</p>
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">{user?.email}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-600">{user?.kycLevel || 'BASIC'}</p>
             </div>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center shadow-lg shadow-gold-500/10">
               <span className="text-white font-bold text-sm">
@@ -118,13 +121,13 @@ export default function AppLayout() {
             fixed lg:relative inset-y-0 left-0 z-40 lg:z-0
             ${sidebarCollapsed ? 'lg:w-[72px]' : 'lg:w-[260px]'}
             ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-            w-[260px] bg-slate-950 border-r border-slate-800/60 flex flex-col
+            w-[260px] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/60 flex flex-col
             transition-all duration-300 ease-in-out
             pt-16 lg:pt-0
           `}
         >
           {/* Logo */}
-          <div className={`p-5 border-b border-slate-800/60 ${sidebarCollapsed ? 'lg:px-3 lg:py-4' : ''}`}>
+          <div className={`p-5 border-b border-slate-200 dark:border-slate-800/60 ${sidebarCollapsed ? 'lg:px-3 lg:py-4' : ''}`}>
             <Link
               to="/dashboard"
               className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}
@@ -134,8 +137,8 @@ export default function AppLayout() {
                 <span className="text-white font-extrabold text-base">T</span>
               </div>
               <div className={`${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-                <h1 className="text-base font-bold text-white tracking-tight">TNC Trading</h1>
-                <p className="text-[10px] text-slate-600 font-medium uppercase tracking-widest">Or Souverain</p>
+                <h1 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">TNC Trading</h1>
+                <p className="text-[10px] text-slate-400 dark:text-slate-600 font-medium uppercase tracking-widest">Or Souverain</p>
               </div>
             </Link>
           </div>
@@ -152,7 +155,7 @@ export default function AppLayout() {
                 className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
                   ${isActive(item.href)
                     ? 'bg-gold-500/10 text-gold-500 font-medium'
-                    : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-200'
+                    : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
                   }
                   ${sidebarCollapsed ? 'lg:justify-center lg:px-2' : ''}
                 `}
@@ -163,7 +166,7 @@ export default function AppLayout() {
               </Link>
             ))}
 
-            <div className="pt-3 mt-3 border-t border-slate-800/60 space-y-1">
+            <div className="pt-3 mt-3 border-t border-slate-200 dark:border-slate-800/60 space-y-1">
               {secondaryNav.map((item) => (
                 <Link
                   key={item.href}
@@ -174,7 +177,7 @@ export default function AppLayout() {
                   className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
                     ${isActive(item.href)
                       ? 'bg-gold-500/10 text-gold-500 font-medium'
-                      : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-200'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
                     }
                     ${sidebarCollapsed ? 'lg:justify-center lg:px-2' : ''}
                   `}
@@ -188,7 +191,7 @@ export default function AppLayout() {
           </nav>
 
           {/* User section */}
-          <div className={`p-3 border-t border-slate-800/60 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
+          <div className={`p-3 border-t border-slate-200 dark:border-slate-800/60 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
             <div className={`flex items-center gap-3 mb-3 px-2 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`}>
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center flex-shrink-0">
                 <span className="text-white font-bold text-xs">
@@ -196,8 +199,8 @@ export default function AppLayout() {
                 </span>
               </div>
               <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-                <p className="text-xs font-medium text-slate-300 truncate">{user?.email}</p>
-                <p className="text-[10px] text-slate-600">KYC: {user?.kycLevel || 'BASIC'}</p>
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{user?.email}</p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-600">KYC: {user?.kycLevel || 'BASIC'}</p>
               </div>
             </div>
             <button
@@ -222,8 +225,8 @@ export default function AppLayout() {
           </div>
 
           {/* Footer */}
-          <footer className="border-t border-slate-800/40 px-6 py-3">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-600">
+          <footer className="border-t border-slate-200 dark:border-slate-800/40 px-6 py-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-400 dark:text-slate-600">
               <p>&copy; {new Date().getFullYear()} TNC Trading - Tokenisation d'Or Souveraine</p>
               <div className="flex items-center gap-4">
                 <a href="#" className="hover:text-slate-400 transition-colors">Conditions</a>

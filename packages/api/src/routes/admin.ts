@@ -7,6 +7,13 @@ import { ReconciliationService } from '../services/reconciliation.service';
 
 const admin = new Hono<{ Bindings: Env }>();
 
+/** Safe pagination parser: ensures page >= 1, 1 <= limit <= 100 */
+function parsePagination(query: { page?: string; limit?: string }): { page: number; limit: number; offset: number } {
+  const page = Math.max(1, Math.floor(Number(query.page)) || 1);
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit)) || 20));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
 // JWT-based auth middleware for admin
 async function adminJwtMiddleware(c: any, next: any) {
   const authHeader = c.req.header('Authorization');
@@ -211,7 +218,8 @@ admin.get('/dashboard', async (c) => {
     // Get current price from KV
     let currentPrice = null;
     try {
-      const priceStr = await c.env.CACHE.get('gold_price_current');
+      const env = c.env.ENVIRONMENT || 'development';
+      const priceStr = await c.env.CACHE.get(`${env}:gold_price:current`);
       if (priceStr) currentPrice = JSON.parse(priceStr);
     } catch {}
 
@@ -254,10 +262,8 @@ admin.get('/dashboard', async (c) => {
 // GET /admin/users
 admin.get('/users', async (c) => {
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
     const search = c.req.query('search') || '';
-    const offset = (page - 1) * limit;
 
     let query = 'SELECT * FROM users';
     let countQuery = 'SELECT COUNT(*) as count FROM users';
@@ -320,11 +326,15 @@ admin.get('/users/:id', async (c) => {
   try {
     const { id } = c.req.param();
 
-    const user = await c.env.DB
-      .prepare('SELECT * FROM users WHERE id = ?')
-      .bind(id)
-      .first<any>();
+    // D1 batch: run all 4 queries in a single roundtrip
+    const [userResult, walletResult, transactionsResult, kycDocsResult] = await c.env.DB.batch([
+      c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id),
+      c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20').bind(id),
+      c.env.DB.prepare('SELECT * FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC').bind(id),
+    ]);
 
+    const user = userResult.results?.[0] as any;
     if (!user) {
       return c.json({
         success: false,
@@ -336,23 +346,9 @@ admin.get('/users/:id', async (c) => {
       }, 404);
     }
 
-    // Get wallet
-    const wallet = await c.env.DB
-      .prepare('SELECT * FROM wallets WHERE user_id = ?')
-      .bind(id)
-      .first<any>();
-
-    // Get transactions
-    const transactions = await c.env.DB
-      .prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20')
-      .bind(id)
-      .all<any>();
-
-    // Get KYC documents
-    const kycDocs = await c.env.DB
-      .prepare('SELECT * FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC')
-      .bind(id)
-      .all<any>();
+    const wallet = walletResult.results?.[0] as any || null;
+    const transactions = transactionsResult as any;
+    const kycDocs = kycDocsResult as any;
 
     return c.json({
       success: true,
@@ -457,9 +453,7 @@ admin.patch('/users/:id/kyc', async (c) => {
 admin.get('/kyc/pending', async (c) => {
   const requestId = crypto.randomUUID();
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '20');
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
 
     // Get users with SUBMITTED kyc_status and their KYC documents
     const submissions = await c.env.DB
@@ -889,9 +883,7 @@ admin.get('/users/:id/audit', async (c) => {
   const { id } = c.req.param();
 
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '50');
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') || '50' });
 
     // Get user audit logs
     const auditLogs = await c.env.DB
@@ -965,12 +957,10 @@ admin.get('/audit-logs', async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '50');
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') || '50' });
     const action = c.req.query('action');
     const entityType = c.req.query('entityType');
     const adminId = c.req.query('adminId');
-    const offset = (page - 1) * limit;
 
     let query = `
       SELECT al.*, a.email as admin_email, a.name as admin_name, u.email as user_email
@@ -1136,10 +1126,8 @@ admin.get('/suspended-users', async (c) => {
 // GET /admin/transactions
 admin.get('/transactions', async (c) => {
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
     const type = c.req.query('type');
-    const offset = (page - 1) * limit;
 
     let query = 'SELECT t.*, u.email as user_email FROM transactions t LEFT JOIN users u ON t.user_id = u.id';
     let countQuery = 'SELECT COUNT(*) as count FROM transactions';

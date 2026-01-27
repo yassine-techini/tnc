@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Suspense, lazy } from 'react';
-import { useAuthStore } from './stores/auth';
+import { Suspense, lazy, useEffect } from 'react';
+import { useAuthStore, startInactivityMonitor } from './stores/auth';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 // Layouts (loaded eagerly as they're needed immediately)
@@ -23,6 +23,7 @@ const Register = lazy(() => import('./pages/auth/Register'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
+const VerifyCertificate = lazy(() => import('./pages/VerifyCertificate'));
 
 // Protected pages (lazy loaded)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -55,6 +56,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  useEffect(() => { startInactivityMonitor(); }, []);
   return (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
@@ -67,6 +69,8 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify" element={<VerifyCertificate />} />
+          <Route path="/verify/:code" element={<VerifyCertificate />} />
         </Route>
 
         {/* Protected routes - each with individual ErrorBoundary */}

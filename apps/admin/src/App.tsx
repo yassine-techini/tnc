@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAdminStore } from './stores/auth';
+import { useAdminStore, startInactivityMonitor } from './stores/auth';
 import AdminLayout from './components/AdminLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -25,6 +25,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => { startInactivityMonitor(); }, []);
+
   return (
     <ErrorBoundary>
     <BrowserRouter>

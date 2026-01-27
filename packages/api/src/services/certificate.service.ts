@@ -1,278 +1,339 @@
 /**
- * Certificate Service - Generate ownership certificates
+ * Certificate Service - Generate and verify ownership certificates
+ * Certificates are persisted in D1 with unique verification codes.
+ * No price/value displayed — gold price is volatile.
  */
 
 export interface CertificateData {
   certificateId: string;
+  verificationCode: string;
   userName: string;
   userEmail: string;
+  userId: string;
+  kycLevel: string;
   tokenBalance: number;
   equivalentGrams: number;
-  currentPriceXof: number;
-  estimatedValueXof: number;
-  generatedAt: string;
+  issuedAt: string;
+}
+
+export interface CertificateRecord {
+  id: string;
+  user_id: string;
+  verification_code: string;
+  token_balance: number;
+  user_name: string;
+  user_email: string;
+  kyc_level: string;
+  status: 'VALID' | 'REVOKED' | 'EXPIRED';
+  issued_at: string;
+  expires_at: string | null;
+  verification_count: number;
+  last_verified_at: string | null;
+}
+
+export interface VerificationResult {
+  valid: boolean;
+  certificate?: {
+    certificateId: string;
+    verificationCode: string;
+    holderName: string;
+    tokenBalance: number;
+    kycLevel: string;
+    status: string;
+    issuedAt: string;
+    verificationCount: number;
+  };
+  reason?: string;
 }
 
 export class CertificateService {
   constructor(
+    private db: D1Database,
     private storage: R2Bucket,
     private cache: KVNamespace
   ) {}
 
   /**
-   * Generate HTML certificate
+   * Generate a unique 12-character verification code: BF-XXXX-XXXX
    */
-  generateHtmlCertificate(data: CertificateData): string {
-    const formattedDate = new Date(data.generatedAt).toLocaleDateString('fr-FR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    const formattedValue = data.estimatedValueXof.toLocaleString('fr-FR');
-    const formattedPrice = data.currentPriceXof.toLocaleString('fr-FR');
-
-    return `
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Certificat de Propriété - TNC Trading</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Georgia', serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
+  private generateVerificationCode(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O, 1/I)
+    let code = '';
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    for (let i = 0; i < 8; i++) {
+      code += chars[bytes[i] % chars.length];
     }
-    .certificate {
-      background: linear-gradient(180deg, #fdf6e3 0%, #f5e6c8 100%);
-      max-width: 800px;
-      padding: 60px;
-      border: 8px double #d4a373;
-      border-radius: 8px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-      position: relative;
-    }
-    .certificate::before {
-      content: '';
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      right: 20px;
-      bottom: 20px;
-      border: 2px solid #d4a373;
-      border-radius: 4px;
-      pointer-events: none;
-    }
-    .logo { text-align: center; margin-bottom: 30px; }
-    .logo h1 {
-      font-size: 2.5em;
-      color: #b8860b;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
-    }
-    .logo .subtitle {
-      font-size: 1.2em;
-      color: #666;
-      margin-top: 5px;
-    }
-    .title {
-      text-align: center;
-      font-size: 2em;
-      color: #333;
-      margin: 30px 0;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-    }
-    .content { text-align: center; margin: 40px 0; }
-    .owner-name {
-      font-size: 1.8em;
-      color: #1a1a2e;
-      border-bottom: 2px solid #d4a373;
-      display: inline-block;
-      padding: 10px 40px;
-      margin-bottom: 20px;
-    }
-    .details {
-      background: rgba(255,255,255,0.5);
-      border-radius: 8px;
-      padding: 30px;
-      margin: 30px 0;
-    }
-    .detail-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 15px 0;
-      border-bottom: 1px dashed #d4a373;
-    }
-    .detail-row:last-child { border-bottom: none; }
-    .detail-label { color: #666; font-size: 1em; }
-    .detail-value {
-      font-size: 1.3em;
-      font-weight: bold;
-      color: #1a1a2e;
-    }
-    .gold-amount {
-      text-align: center;
-      margin: 30px 0;
-      padding: 20px;
-      background: linear-gradient(135deg, #b8860b 0%, #daa520 50%, #b8860b 100%);
-      border-radius: 8px;
-      color: white;
-    }
-    .gold-amount .amount {
-      font-size: 3em;
-      font-weight: bold;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    }
-    .gold-amount .unit { font-size: 1.5em; opacity: 0.9; }
-    .footer {
-      text-align: center;
-      margin-top: 40px;
-      font-size: 0.9em;
-      color: #666;
-    }
-    .certificate-id {
-      font-family: monospace;
-      background: #f5f5f5;
-      padding: 8px 16px;
-      border-radius: 4px;
-      display: inline-block;
-      margin-top: 10px;
-    }
-    .seal {
-      position: absolute;
-      bottom: 60px;
-      right: 60px;
-      width: 100px;
-      height: 100px;
-      border: 3px solid #b8860b;
-      border-radius: 50%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      transform: rotate(-15deg);
-      background: rgba(184, 134, 11, 0.1);
-    }
-    .seal .text { font-size: 10px; color: #b8860b; text-transform: uppercase; }
-    .seal .check { font-size: 32px; color: #b8860b; }
-    @media print {
-      body { background: white; }
-      .certificate { box-shadow: none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="certificate">
-    <div class="logo">
-      <h1>TNC Trading</h1>
-      <div class="subtitle">Plateforme de Tokenisation d'Or du Burkina Faso</div>
-    </div>
-
-    <div class="title">Certificat de Propriété</div>
-
-    <div class="content">
-      <p style="margin-bottom: 20px;">Ce certificat atteste que</p>
-      <div class="owner-name">${data.userName}</div>
-      <p style="color: #666; margin-top: 10px;">${data.userEmail}</p>
-    </div>
-
-    <div class="gold-amount">
-      <div class="amount">${data.tokenBalance.toFixed(3)}</div>
-      <div class="unit">grammes d'or</div>
-    </div>
-
-    <div class="details">
-      <div class="detail-row">
-        <span class="detail-label">Équivalent en tokens</span>
-        <span class="detail-value">${data.tokenBalance.toFixed(3)} TNC</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Prix de l'or (XOF/g)</span>
-        <span class="detail-value">${formattedPrice} XOF</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Valeur estimée</span>
-        <span class="detail-value">${formattedValue} XOF</span>
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>Certificat généré le ${formattedDate}</p>
-      <div class="certificate-id">ID: ${data.certificateId}</div>
-      <p style="margin-top: 20px; font-size: 0.8em;">
-        Ce certificat atteste de la propriété de tokens représentant de l'or physique<br>
-        stocké de manière sécurisée par l'État du Burkina Faso.
-      </p>
-    </div>
-
-    <div class="seal">
-      <span class="check">✓</span>
-      <span class="text">Vérifié</span>
-    </div>
-  </div>
-</body>
-</html>`;
+    return `BF-${code.slice(0, 4)}-${code.slice(4, 8)}`;
   }
 
   /**
-   * Store certificate in R2 and cache
+   * Issue a new certificate — persists to D1 + generates HTML + stores in R2
    */
-  async storeCertificate(data: CertificateData): Promise<string> {
-    const html = this.generateHtmlCertificate(data);
-    const filename = `certificates/${data.certificateId}.html`;
+  async issueCertificate(data: Omit<CertificateData, 'certificateId' | 'verificationCode' | 'issuedAt'>): Promise<CertificateData> {
+    const certificateId = `CERT-${Date.now()}-${data.userId.slice(0, 8).toUpperCase()}`;
+    const verificationCode = this.generateVerificationCode();
+    const issuedAt = new Date().toISOString();
 
-    // Store in R2
-    await this.storage.put(filename, html, {
-      httpMetadata: {
-        contentType: 'text/html; charset=utf-8',
-      },
+    const certData: CertificateData = {
+      ...data,
+      certificateId,
+      verificationCode,
+      issuedAt,
+    };
+
+    // Persist to D1
+    await this.db
+      .prepare(`INSERT INTO certificates (id, user_id, verification_code, token_balance, user_name, user_email, kyc_level, issued_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(
+        certificateId,
+        data.userId,
+        verificationCode,
+        data.tokenBalance,
+        data.userName,
+        data.userEmail,
+        data.kycLevel,
+        issuedAt
+      )
+      .run();
+
+    // Generate and store HTML
+    const html = this.generateHtmlCertificate(certData);
+    await this.storage.put(`certificates/${certificateId}.html`, html, {
+      httpMetadata: { contentType: 'text/html; charset=utf-8' },
       customMetadata: {
-        certificateId: data.certificateId,
+        certificateId,
+        verificationCode,
         userEmail: data.userEmail,
-        generatedAt: data.generatedAt,
+        issuedAt,
       },
     });
 
-    // Cache certificate data for 24 hours
+    // Cache for quick lookups
     await this.cache.put(
-      `certificate:${data.certificateId}`,
-      JSON.stringify(data),
-      { expirationTtl: 86400 }
+      `certificate:${certificateId}`,
+      JSON.stringify(certData),
+      { expirationTtl: 86400 * 30 } // 30 days
     );
 
-    return filename;
+    return certData;
   }
 
   /**
-   * Get certificate by ID
+   * Verify a certificate by its verification code
    */
-  async getCertificate(certificateId: string): Promise<CertificateData | null> {
-    const cached = await this.cache.get(`certificate:${certificateId}`);
-    if (cached) {
-      return JSON.parse(cached) as CertificateData;
+  async verifyCertificate(verificationCode: string): Promise<VerificationResult> {
+    const code = verificationCode.trim().toUpperCase();
+
+    const record = await this.db
+      .prepare('SELECT * FROM certificates WHERE verification_code = ?')
+      .bind(code)
+      .first<CertificateRecord>();
+
+    if (!record) {
+      return { valid: false, reason: 'Certificat introuvable. Vérifiez le code saisi.' };
     }
-    return null;
+
+    if (record.status === 'REVOKED') {
+      return { valid: false, reason: 'Ce certificat a été révoqué.' };
+    }
+
+    if (record.status === 'EXPIRED') {
+      return { valid: false, reason: 'Ce certificat a expiré.' };
+    }
+
+    // Increment verification count
+    await this.db
+      .prepare('UPDATE certificates SET verification_count = verification_count + 1, last_verified_at = datetime(\'now\') WHERE id = ?')
+      .bind(record.id)
+      .run();
+
+    return {
+      valid: true,
+      certificate: {
+        certificateId: record.id,
+        verificationCode: record.verification_code,
+        holderName: record.user_name,
+        tokenBalance: record.token_balance,
+        kycLevel: record.kyc_level,
+        status: record.status,
+        issuedAt: record.issued_at,
+        verificationCount: record.verification_count + 1,
+      },
+    };
   }
 
   /**
    * Get certificate HTML from R2
    */
   async getCertificateHtml(certificateId: string): Promise<string | null> {
-    const filename = `certificates/${certificateId}.html`;
-    const obj = await this.storage.get(filename);
-    if (obj) {
-      return await obj.text();
-    }
-    return null;
+    const obj = await this.storage.get(`certificates/${certificateId}.html`);
+    return obj ? await obj.text() : null;
+  }
+
+  /**
+   * Generate official HTML certificate — no price, with QR code + verification code
+   */
+  generateHtmlCertificate(data: CertificateData): string {
+    const formattedDate = new Date(data.issuedAt).toLocaleDateString('fr-FR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    // QR code via public API (encodes the verification URL)
+    const verifyUrl = `https://app.tnc-trading.com/verify/${encodeURIComponent(data.verificationCode)}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(verifyUrl)}&color=1B4332&bgcolor=FFFEF5`;
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certificat ${data.certificateId} - TNC Trading</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Georgia','Times New Roman',serif;background:#e8e0d0;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:24px}
+    .cert{background:linear-gradient(180deg,#FFFEF5 0%,#FBF7EB 100%);max-width:780px;width:100%;border:3px solid #C9A84C;position:relative;box-shadow:0 8px 40px rgba(0,0,0,.2)}
+    .cert::before{content:'';position:absolute;top:8px;left:8px;right:8px;bottom:8px;border:1px solid #E5D9B6;pointer-events:none}
+    .gold-bar{height:6px;background:linear-gradient(90deg,#B8960C,#D4AF37,#E5C158,#D4AF37,#B8960C)}
+    .header{text-align:center;padding:40px 40px 20px}
+    .republic{font-size:14px;font-weight:800;letter-spacing:4px;color:#1B4332;text-transform:uppercase}
+    .emblem{width:64px;height:64px;border-radius:50%;background:#1B4332;border:3px solid #D4AF37;display:flex;align-items:center;justify-content:center;margin:14px auto;color:#D4AF37;font-size:20px;font-weight:900}
+    .motto{font-size:11px;color:#6B7280;letter-spacing:2.5px;font-style:italic}
+    .sep{width:60px;height:2px;background:#D4AF37;margin:16px auto}
+    .ministry{font-size:11px;color:#374151;font-weight:600;letter-spacing:.5px}
+    .agency{font-size:10px;color:#6B7280;margin-top:2px}
+    .title-block{display:flex;align-items:center;gap:14px;padding:0 40px;margin-top:8px}
+    .title-line{flex:1;height:1px;background:#C9A84C}
+    .title{font-size:16px;font-weight:800;letter-spacing:3px;color:#7C6D3A;white-space:nowrap}
+    .subtitle{text-align:center;font-size:11px;color:#9CA3AF;letter-spacing:1.5px;margin-top:4px}
+    .cert-num{text-align:center;margin:12px 40px;padding:8px;border:1px solid #E5D9B6;border-radius:4px;background:rgba(212,175,55,.06)}
+    .cert-num span{font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#374151;letter-spacing:1.5px}
+    .cert-num small{font-size:11px;color:#9CA3AF;margin-right:6px}
+    .body{padding:20px 40px 24px}
+    .attestation{font-style:italic;color:#374151;font-size:13px;line-height:21px;text-align:justify;margin-bottom:20px}
+    .divider{height:1px;background:#E5D9B6;margin:18px 0}
+    .section-label{display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:10px;font-weight:700;letter-spacing:2px;color:#7C6D3A;text-transform:uppercase}
+    .owner-name{font-size:20px;font-weight:700;color:#1A1A2E}
+    .owner-detail{font-size:13px;color:#6B7280;margin-top:3px}
+    .gold-row{display:flex;align-items:baseline;gap:10px}
+    .gold-amount{font-size:44px;font-weight:800;color:#1B4332}
+    .gold-unit{font-size:17px;color:#6B7280}
+    .gold-purity{font-size:12px;font-weight:600;color:#D4AF37;margin-top:4px;letter-spacing:.5px}
+    .gold-note{font-size:12px;color:#9CA3AF;margin-top:2px}
+    .guarantee{font-size:12px;color:#374151;line-height:19px}
+    .detail-row{display:flex;justify-content:space-between;padding:5px 0;font-size:12px}
+    .detail-label{color:#6B7280}
+    .detail-value{color:#374151;font-weight:600}
+    .footer{display:flex;gap:20px;background:#F5F0E1;padding:24px 40px;border-top:1px solid #E5D9B6;align-items:flex-start}
+    .qr{flex-shrink:0;text-align:center}
+    .qr img{width:100px;height:100px;border:2px solid #E5D9B6;border-radius:4px}
+    .qr-label{font-size:8px;color:#9CA3AF;margin-top:4px;letter-spacing:.5px}
+    .footer-content{flex:1}
+    .footer-legal{font-size:10px;color:#6B7280;line-height:15px;margin-bottom:4px}
+    .verification-box{margin-top:10px;padding:8px 14px;background:rgba(212,175,55,.08);border:1px solid #E5D9B6;border-radius:4px;text-align:center}
+    .verification-box .code{font-family:'Courier New',monospace;font-size:18px;font-weight:800;color:#1B4332;letter-spacing:3px}
+    .verification-box .label{font-size:9px;color:#7C6D3A;letter-spacing:1px;margin-bottom:4px;text-transform:uppercase}
+    .seal{position:absolute;bottom:140px;right:50px;width:80px;height:80px;border:2px solid #D4AF37;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;transform:rotate(-12deg);background:rgba(212,175,55,.06)}
+    .seal .s1{font-size:8px;color:#7C6D3A;font-weight:800;letter-spacing:1px}
+    .seal .s2{font-size:7px;color:#7C6D3A;letter-spacing:.5px}
+    .sig{margin-top:12px;text-align:center}
+    .sig-line{width:140px;height:1px;background:#9CA3AF;margin:0 auto 4px}
+    .sig-label{font-size:9px;color:#9CA3AF}
+    @media print{body{background:#fff;padding:0}.cert{box-shadow:none;max-width:100%}}
+  </style>
+</head>
+<body>
+  <div class="cert">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <div class="republic">Burkina Faso</div>
+      <div class="emblem">BF</div>
+      <div class="motto">Unité – Progrès – Justice</div>
+      <div class="sep"></div>
+      <div class="ministry">Ministère des Mines et des Carrières</div>
+      <div class="agency">Programme National de Tokenisation de l'Or</div>
+    </div>
+    <div class="title-block">
+      <div class="title-line"></div>
+      <div class="title">CERTIFICAT DE PROPRIÉTÉ</div>
+      <div class="title-line"></div>
+    </div>
+    <div class="subtitle">Or Physique Tokenisé</div>
+    <div class="cert-num"><small>N°</small><span>${data.certificateId}</span></div>
+    <div class="body">
+      <div class="attestation">
+        Le présent certificat atteste que le titulaire ci-dessous désigné est propriétaire
+        de la quantité d'or physique indiquée, détenue sous forme de tokens numériques
+        adossés aux réserves aurifères du Burkina Faso.
+      </div>
+      <div class="divider"></div>
+      <div class="section-label">&#9670; Titulaire</div>
+      <div class="owner-name">${this.escapeHtml(data.userName)}</div>
+      <div class="owner-detail">${this.escapeHtml(data.userEmail)}</div>
+      <div class="owner-detail">Identité vérifiée — Niveau ${data.kycLevel}</div>
+      <div class="divider"></div>
+      <div class="section-label">&#9670; Or Physique Détenu</div>
+      <div class="gold-row">
+        <div class="gold-amount">${data.tokenBalance.toFixed(3)}</div>
+        <div class="gold-unit">grammes</div>
+      </div>
+      <div class="gold-purity">Or pur 999,9/1000 (24 carats)</div>
+      <div class="gold-note">Équivalent à ${data.tokenBalance.toFixed(3)} token(s) TNC — 1 token = 1 gramme d'or physique</div>
+      <div class="divider"></div>
+      <div class="section-label">&#9670; Garantie et Couverture</div>
+      <div class="guarantee">
+        L'or physique correspondant aux tokens émis est conservé dans les réserves nationales
+        sous la supervision du Ministère des Mines et des Carrières du Burkina Faso.
+        Le ratio de couverture est vérifié par audit indépendant.
+      </div>
+      <div class="divider"></div>
+      <div class="section-label">&#9670; Informations du Certificat</div>
+      <div class="detail-row"><span class="detail-label">Numéro</span><span class="detail-value">${data.certificateId}</span></div>
+      <div class="detail-row"><span class="detail-label">Date d'émission</span><span class="detail-value">${formattedDate}</span></div>
+      <div class="detail-row"><span class="detail-label">Émetteur</span><span class="detail-value">TNC Trading SA</span></div>
+      <div class="detail-row"><span class="detail-label">Autorité de tutelle</span><span class="detail-value">Min. des Mines — BF</span></div>
+    </div>
+    <div class="seal">
+      <span class="s1">SCEAU</span>
+      <span class="s2">OFFICIEL</span>
+    </div>
+    <div class="footer">
+      <div class="qr">
+        <img src="${qrCodeUrl}" alt="QR Code de vérification" />
+        <div class="qr-label">Scanner pour vérifier</div>
+      </div>
+      <div class="footer-content">
+        <div class="footer-legal">
+          Ce certificat est émis conformément à la réglementation en vigueur
+          relative à la tokenisation des actifs aurifères en zone UEMOA.
+        </div>
+        <div class="footer-legal">
+          Document à valeur probante — Vérifiable sur tnc-trading.com/verify
+        </div>
+        <div class="verification-box">
+          <div class="label">Code de vérification</div>
+          <div class="code">${data.verificationCode}</div>
+        </div>
+        <div class="sig">
+          <div class="sig-line"></div>
+          <div class="sig-label">Signature électronique — TNC Trading SA</div>
+        </div>
+      </div>
+    </div>
+    <div class="gold-bar"></div>
+  </div>
+</body>
+</html>`;
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }

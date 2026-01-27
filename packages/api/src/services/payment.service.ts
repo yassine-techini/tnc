@@ -282,28 +282,24 @@ export class PaymentService {
   /**
    * Verify webhook signature
    */
-  verifyWebhookSignature(
+  async verifyWebhookSignature(
     provider: string,
     payload: string,
     signature: string
-  ): boolean {
+  ): Promise<boolean> {
     if (!this.config.webhookSecret) {
-      console.warn('Webhook secret not configured');
-      return true; // Skip verification in development
+      console.warn('Webhook secret not configured — rejecting webhook');
+      return false;
     }
 
-    // Each provider has different signature verification
     switch (provider) {
       case 'orange_money':
-        // Orange Money uses HMAC SHA256
         return this.verifyHmacSignature(payload, signature, this.config.webhookSecret);
 
       case 'moov_money':
-        // Moov Money uses simple API key verification
-        return signature === this.config.moovApiKey;
+        return this.constantTimeEqual(signature, this.config.moovApiKey || '');
 
       case 'cinetpay':
-        // CinetPay includes site_id in verification
         return this.verifyCinetPaySignature(payload, signature);
 
       default:
@@ -311,20 +307,51 @@ export class PaymentService {
     }
   }
 
-  private verifyHmacSignature(
+  /**
+   * Constant-time string comparison to prevent timing attacks.
+   */
+  private constantTimeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    const encoder = new TextEncoder();
+    const bufA = encoder.encode(a);
+    const bufB = encoder.encode(b);
+    let result = 0;
+    for (let i = 0; i < bufA.length; i++) {
+      result |= bufA[i] ^ bufB[i];
+    }
+    return result === 0;
+  }
+
+  /**
+   * HMAC-SHA256 signature verification using Web Crypto API.
+   */
+  private async verifyHmacSignature(
     payload: string,
     signature: string,
     secret: string
-  ): boolean {
-    // Using Web Crypto API for HMAC verification
-    // In production, implement proper HMAC-SHA256 comparison
-    // This is a placeholder for the actual implementation
-    return true;
+  ): Promise<boolean> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+    const computed = Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    return this.constantTimeEqual(computed, signature.toLowerCase());
   }
 
-  private verifyCinetPaySignature(payload: string, signature: string): boolean {
-    // CinetPay verification logic
-    return true;
+  /**
+   * CinetPay signature verification (HMAC-SHA256 with site_id + apikey).
+   */
+  private async verifyCinetPaySignature(payload: string, signature: string): Promise<boolean> {
+    const secret = `${this.config.cinetpaySiteId}${this.config.cinetpayApiKey}`;
+    if (!secret) return false;
+    return this.verifyHmacSignature(payload, signature, secret);
   }
 
   /**

@@ -24,3 +24,4 @@ export { GoldAmountInput, type GoldAmountInputProps } from './components/GoldAmo
 export { CountdownTimer, InlineCountdown, type CountdownTimerProps, type InlineCountdownProps } from './components/CountdownTimer';
 export { WalletBalance, type WalletBalanceProps } from './components/WalletBalance';
 export { EmptyState, type EmptyStateProps } from './components/EmptyState';
+export { ThemeToggle, useTheme } from './components/ThemeToggle';

@@ -1,8 +1,15 @@
 import { Stack, router } from 'expo-router';
 import { TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
+import { preventScreenCapture, allowScreenCapture } from '../../hooks/useSecurityCheck';
 
 export default function WalletLayout() {
+  useEffect(() => {
+    preventScreenCapture();
+    return () => { allowScreenCapture(); };
+  }, []);
+
   return (
     <Stack
       screenOptions={{

@@ -26,7 +26,7 @@ wallet.get('/', async (c) => {
   const requestId = crypto.randomUUID();
 
   const walletService = new WalletService(c.env.DB);
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
 
   let walletData = await walletService.findByUserId(userId);
 
@@ -473,8 +473,7 @@ wallet.get('/certificate', async (c) => {
   const requestId = crypto.randomUUID();
 
   const walletService = new WalletService(c.env.DB);
-  const marketService = new MarketService(c.env.DB, c.env.CACHE);
-  const certificateService = new CertificateService(c.env.STORAGE, c.env.CACHE);
+  const certificateService = new CertificateService(c.env.DB, c.env.STORAGE, c.env.CACHE);
 
   const walletData = await walletService.findByUserId(userId);
   if (!walletData || walletData.token_balance === 0) {
@@ -501,32 +500,26 @@ wallet.get('/certificate', async (c) => {
     .first<any>();
 
   const userName = kyc ? `${kyc.first_name} ${kyc.last_name}` : user?.email || 'Utilisateur';
-  const currentPrice = await marketService.getCurrentPrice();
 
-  const certificateId = `CERT-${Date.now()}-${userId.slice(0, 8).toUpperCase()}`;
-  const certificateData = {
-    certificateId,
+  // Issue certificate with verification code (persisted to D1)
+  const certData = await certificateService.issueCertificate({
     userName,
     userEmail: user?.email || '',
+    userId,
+    kycLevel: user?.kyc_level || 'BASIC',
     tokenBalance: walletData.token_balance,
     equivalentGrams: walletData.token_balance,
-    currentPriceXof: currentPrice?.price_xof || 52000, // Default fallback price
-    estimatedValueXof: currentPrice
-      ? walletData.token_balance * currentPrice.price_xof
-      : walletData.token_balance * 52000,
-    generatedAt: new Date().toISOString(),
-  };
-
-  // Store certificate in R2 and cache
-  await certificateService.storeCertificate(certificateData);
+  });
 
   return c.json({
     success: true,
     data: {
-      certificateId,
-      downloadUrl: `/api/v1/wallet/certificate/${certificateId}`,
-      expiresAt: new Date(Date.now() + 86400000).toISOString(),
-      ...certificateData,
+      certificateId: certData.certificateId,
+      verificationCode: certData.verificationCode,
+      downloadUrl: `/api/v1/wallet/certificate/${certData.certificateId}`,
+      userName: certData.userName,
+      tokenBalance: certData.tokenBalance,
+      issuedAt: certData.issuedAt,
     },
     requestId,
   });
@@ -536,7 +529,7 @@ wallet.get('/certificate', async (c) => {
 wallet.get('/certificate/:id', async (c) => {
   const { id } = c.req.param();
 
-  const certificateService = new CertificateService(c.env.STORAGE, c.env.CACHE);
+  const certificateService = new CertificateService(c.env.DB, c.env.STORAGE, c.env.CACHE);
   const html = await certificateService.getCertificateHtml(id);
 
   if (!html) {

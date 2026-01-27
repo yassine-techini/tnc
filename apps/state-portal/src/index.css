@@ -3,26 +3,86 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8fafc;
+    --color-bg-tertiary: #f1f5f9;
+    --color-bg-elevated: #ffffff;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-tertiary: #94a3b8;
+    --color-border-primary: #e2e8f0;
+    --color-border-secondary: #cbd5e1;
+    --color-shadow: rgba(0, 0, 0, 0.08);
+  }
+
+  .dark {
+    --color-bg-primary: #0f172a;
+    --color-bg-secondary: #1e293b;
+    --color-bg-tertiary: #334155;
+    --color-bg-elevated: #1e293b;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #94a3b8;
+    --color-text-tertiary: #64748b;
+    --color-border-primary: #334155;
+    --color-border-secondary: #475569;
+    --color-shadow: rgba(0, 0, 0, 0.3);
+  }
+
   body {
-    @apply bg-slate-900 text-slate-100 antialiased;
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    @apply antialiased;
+  }
+
+  .dark body {
+    @apply bg-slate-900 text-slate-100;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply px-4 py-2 bg-state-600 text-white font-semibold rounded-lg hover:bg-state-500 transition-colors;
+    @apply px-4 py-2 font-semibold rounded-lg transition-colors;
+    @apply bg-state-600 text-white hover:bg-state-500;
   }
 
   .btn-secondary {
-    @apply px-4 py-2 bg-slate-700 text-white font-medium rounded-lg hover:bg-slate-600 transition-colors;
+    @apply px-4 py-2 font-medium rounded-lg transition-colors;
+    background-color: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-secondary);
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-bg-tertiary);
+  }
+  .dark .btn-secondary {
+    @apply bg-slate-700 text-white hover:bg-slate-600;
   }
 
   .input {
-    @apply w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-state-500 focus:border-transparent;
+    @apply w-full px-4 py-3 rounded-lg;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    color: var(--color-text-primary);
+  }
+  .input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+  .input:focus {
+    @apply outline-none ring-2 ring-state-500 border-transparent;
+  }
+  .dark .input {
+    @apply bg-slate-800 border-slate-700 text-white placeholder-slate-500;
   }
 
   .card {
-    @apply bg-slate-800 border border-slate-700 rounded-xl p-6;
+    @apply rounded-xl p-6;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+    box-shadow: 0 2px 4px var(--color-shadow);
+  }
+  .dark .card {
+    @apply bg-slate-800 border-slate-700;
   }
 
   .card-state {
@@ -33,24 +93,25 @@
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
 
-  .badge-success {
-    @apply bg-green-500/20 text-green-400;
-  }
-
-  .badge-warning {
-    @apply bg-yellow-500/20 text-yellow-400;
-  }
-
-  .badge-error {
-    @apply bg-red-500/20 text-red-400;
-  }
-
-  .badge-info {
-    @apply bg-blue-500/20 text-blue-400;
-  }
+  .badge-success { @apply bg-green-500/20 text-green-600; }
+  .dark .badge-success { @apply text-green-400; }
+  .badge-warning { @apply bg-yellow-500/20 text-yellow-600; }
+  .dark .badge-warning { @apply text-yellow-400; }
+  .badge-error { @apply bg-red-500/20 text-red-600; }
+  .dark .badge-error { @apply text-red-400; }
+  .badge-info { @apply bg-blue-500/20 text-blue-600; }
+  .dark .badge-info { @apply text-blue-400; }
 
   .sidebar-link {
-    @apply flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors;
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg transition-colors;
+    color: var(--color-text-secondary);
+  }
+  .sidebar-link:hover {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-tertiary);
+  }
+  .dark .sidebar-link {
+    @apply text-slate-400 hover:text-white hover:bg-slate-800;
   }
 
   .sidebar-link.active {
@@ -58,6 +119,11 @@
   }
 
   .stat-card {
-    @apply bg-slate-800/50 border border-slate-700/50 rounded-xl p-4;
+    @apply rounded-xl p-4;
+    background-color: var(--color-bg-primary);
+    border: 1px solid var(--color-border-primary);
+  }
+  .dark .stat-card {
+    @apply bg-slate-800/50 border-slate-700/50;
   }
 }

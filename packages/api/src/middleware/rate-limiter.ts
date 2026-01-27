@@ -34,7 +34,8 @@ export async function rateLimiter(c: Context<{ Bindings: Env }>, next: Next) {
   try {
     // Time-bucket key: auto-expires with KV TTL
     const bucket = Math.floor(Date.now() / (tier.windowSeconds * 1000));
-    const key = `ratelimit:${ip}:${bucket}`;
+    const env = c.env.ENVIRONMENT || 'development';
+    const key = `${env}:ratelimit:${ip}:${bucket}`;
 
     const current = await c.env.CACHE.get(key);
     const count = current ? parseInt(current, 10) : 0;
@@ -66,8 +67,18 @@ export async function rateLimiter(c: Context<{ Bindings: Env }>, next: Next) {
 
     await next();
   } catch (error) {
-    // Fail-open: if KV fails, allow the request through
-    console.error('Rate limiter error:', error);
-    await next();
+    // Fail-closed: if KV is unavailable, reject with 503
+    console.error('Rate limiter KV error:', error);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Service temporairement indisponible. Veuillez réessayer.',
+        },
+        requestId: crypto.randomUUID(),
+      },
+      503
+    );
   }
 }

@@ -276,11 +276,11 @@ export class PriceTracker implements DurableObject {
   }
 
   /**
-   * Handle price alerts
+   * Handle price alerts (per-user key storage: alert:{userId})
    */
   async handleAlerts(request: Request): Promise<Response> {
     if (request.method === 'GET') {
-      const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
+      const alerts = await this.getAllAlerts();
       return new Response(JSON.stringify({ alerts }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -306,35 +306,35 @@ export class PriceTracker implements DurableObject {
   }
 
   /**
-   * Add a price alert
+   * Get all alerts (reads per-user keys)
    */
-  async addAlert(alert: PriceAlert): Promise<void> {
-    const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
-
-    // Remove existing alert for this user
-    const filtered = alerts.filter(a => a.userId !== alert.userId);
-    filtered.push(alert);
-
-    await this.state.storage.put('alerts', filtered);
+  async getAllAlerts(): Promise<PriceAlert[]> {
+    const entries = await this.state.storage.list<PriceAlert>({ prefix: 'alert:' });
+    return Array.from(entries.values());
   }
 
   /**
-   * Remove a price alert
+   * Add a price alert (per-user key)
+   */
+  async addAlert(alert: PriceAlert): Promise<void> {
+    await this.state.storage.put(`alert:${alert.userId}`, alert);
+  }
+
+  /**
+   * Remove a price alert (per-user key)
    */
   async removeAlert(userId: string): Promise<void> {
-    const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
-    const filtered = alerts.filter(a => a.userId !== userId);
-    await this.state.storage.put('alerts', filtered);
+    await this.state.storage.delete(`alert:${userId}`);
   }
 
   /**
    * Check and trigger alerts
    */
   async checkAlerts(price: PriceData): Promise<void> {
-    const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
-    const triggeredUserIds: string[] = [];
+    const entries = await this.state.storage.list<PriceAlert>({ prefix: 'alert:' });
+    const toUpdate: [string, PriceAlert][] = [];
 
-    for (const alert of alerts) {
+    for (const [key, alert] of entries) {
       if (alert.triggered) continue;
 
       const shouldTrigger =
@@ -342,8 +342,8 @@ export class PriceTracker implements DurableObject {
         (alert.direction === 'below' && price.priceXof <= alert.targetPrice);
 
       if (shouldTrigger) {
-        triggeredUserIds.push(alert.userId);
         alert.triggered = true;
+        toUpdate.push([key, alert]);
 
         // Notify the user via their WebSocket if connected
         for (const [ws, meta] of this.sessions) {
@@ -364,10 +364,10 @@ export class PriceTracker implements DurableObject {
       }
     }
 
-    // Update alerts with triggered status
-    await this.state.storage.put('alerts', alerts);
-
-    // Remove triggered alerts after 24h (via cleanup)
+    // Batch-update triggered alerts
+    if (toUpdate.length > 0) {
+      await this.state.storage.put(Object.fromEntries(toUpdate));
+    }
   }
 
   /**
@@ -376,7 +376,7 @@ export class PriceTracker implements DurableObject {
   async getHealth(): Promise<Response> {
     const lastUpdate = await this.state.storage.get<string>('lastUpdate');
     const updateCount = await this.state.storage.get<number>('updateCount') || 0;
-    const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
+    const alertEntries = await this.state.storage.list<PriceAlert>({ prefix: 'alert:' });
 
     // Determine health status
     let status: 'healthy' | 'stale' | 'error' = 'healthy';
@@ -393,7 +393,7 @@ export class PriceTracker implements DurableObject {
       lastUpdate,
       updateCount,
       wsConnections: this.sessions.size,
-      alertsCount: alerts.length,
+      alertsCount: alertEntries.size,
       status,
     };
 
@@ -480,20 +480,24 @@ export class PriceTracker implements DurableObject {
   }
 
   /**
-   * Clean up triggered alerts
+   * Clean up triggered alerts (per-user keys)
    */
   async cleanupAlerts(): Promise<void> {
-    const alerts = await this.state.storage.get<PriceAlert[]>('alerts') || [];
+    const entries = await this.state.storage.list<PriceAlert>({ prefix: 'alert:' });
     const cutoff = Date.now() - HISTORY_RETENTION;
+    const keysToDelete: string[] = [];
 
-    const filtered = alerts.filter(alert => {
-      if (!alert.triggered) return true;
-      const createdAt = new Date(alert.createdAt).getTime();
-      return createdAt > cutoff;
-    });
+    for (const [key, alert] of entries) {
+      if (alert.triggered) {
+        const createdAt = new Date(alert.createdAt).getTime();
+        if (createdAt <= cutoff) {
+          keysToDelete.push(key);
+        }
+      }
+    }
 
-    if (filtered.length !== alerts.length) {
-      await this.state.storage.put('alerts', filtered);
+    if (keysToDelete.length > 0) {
+      await this.state.storage.delete(keysToDelete);
     }
   }
 

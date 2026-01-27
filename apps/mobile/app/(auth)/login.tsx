@@ -17,10 +17,11 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '../../stores/auth';
 import { api } from '../../lib/api';
+import { validateForm, loginSchema } from '../../lib/validation';
 import InlineMessage from '../../components/InlineMessage';
 
 const BIOMETRIC_ENABLED_KEY = 'tnc_biometric_enabled';
-const BIOMETRIC_CREDENTIALS_KEY = 'tnc_biometric_credentials';
+const BIOMETRIC_REFRESH_TOKEN_KEY = 'tnc_biometric_refresh_token';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -39,8 +40,14 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     setErrorMsg('');
-    if (!formData.identifier || !formData.password) {
-      setErrorMsg('Veuillez remplir tous les champs');
+    // Client-side validation with Zod schema
+    const validation = validateForm(loginSchema, {
+      identifier: formData.identifier,
+      password: formData.password,
+      totpCode: formData.totpCode || undefined,
+    });
+    if (!validation.success) {
+      setErrorMsg(validation.firstError || 'Veuillez vérifier vos informations');
       return;
     }
 
@@ -72,12 +79,12 @@ export default function LoginScreen() {
         }
       );
 
-      // Save credentials for biometric login if enabled
-      const biometricEnabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
-      if (biometricEnabled === 'true') {
+      // Save refresh token for biometric login if enabled (never store passwords)
+      const biometricOn = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+      if (biometricOn === 'true') {
         await SecureStore.setItemAsync(
-          BIOMETRIC_CREDENTIALS_KEY,
-          JSON.stringify({ identifier: formData.identifier, password: formData.password })
+          BIOMETRIC_REFRESH_TOKEN_KEY,
+          response.data.refreshToken
         );
       }
 
@@ -106,14 +113,15 @@ export default function LoginScreen() {
         return;
       }
 
-      // Get stored credentials
-      const credentialsJson = await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY);
-      if (!credentialsJson) {
-        setErrorMsg('Aucune information d\'identification enregistrée');
+      // Get stored refresh token (never store passwords)
+      const storedRefreshToken = await SecureStore.getItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY);
+      if (!storedRefreshToken) {
+        setErrorMsg('Session expirée. Veuillez vous reconnecter avec vos identifiants.');
+        // Clear stale biometric flag
+        await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY);
+        setBiometricEnabled(false);
         return;
       }
-
-      const credentials = JSON.parse(credentialsJson);
 
       // Authenticate with biometric
       const result = await LocalAuthentication.authenticateAsync({
@@ -126,20 +134,26 @@ export default function LoginScreen() {
         return;
       }
 
-      // Login with stored credentials
-      const response = await api.login(credentials.identifier, credentials.password);
+      // Use refresh token to obtain new session
+      const response = await api.refreshToken(storedRefreshToken);
+
+      // Save the new refresh token for next biometric login
+      await SecureStore.setItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY, response.data.refreshToken);
+
+      // We need user profile — fetch it with the new access token
+      const profileResponse = await api.getProfile(response.data.accessToken);
 
       login(
         {
-          id: response.data.user.id,
-          email: response.data.user.email,
-          phone: response.data.user.phone,
-          country: response.data.user.country,
-          kycLevel: response.data.user.kycLevel,
-          kycStatus: response.data.user.kycStatus as any,
-          emailVerified: response.data.user.emailVerified,
-          phoneVerified: response.data.user.phoneVerified,
-          twoFactorEnabled: response.data.user.twoFactorEnabled,
+          id: profileResponse.data.id,
+          email: profileResponse.data.email,
+          phone: profileResponse.data.phone,
+          country: 'BF',
+          kycLevel: profileResponse.data.kycLevel,
+          kycStatus: profileResponse.data.kycStatus as any,
+          emailVerified: true,
+          phoneVerified: true,
+          twoFactorEnabled: false,
         },
         {
           accessToken: response.data.accessToken,
@@ -151,7 +165,13 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erreur de connexion biométrique';
-      setErrorMsg(message);
+      // If refresh token is expired/invalid, clear biometric data
+      if (message.includes('expired') || message.includes('invalid') || message.includes('Unauthorized')) {
+        await SecureStore.deleteItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY);
+        setErrorMsg('Session expirée. Veuillez vous reconnecter avec vos identifiants.');
+      } else {
+        setErrorMsg(message);
+      }
     } finally {
       setIsLoading(false);
     }
