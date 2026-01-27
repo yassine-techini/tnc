@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import api from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 
@@ -53,6 +54,7 @@ const KYC_LIMITS: Record<string, number> = {
 };
 
 export default function WithdrawScreen() {
+  const c = useThemeColors();
   const queryClient = useQueryClient();
   const { tokens, user } = useAuthStore();
   const [amount, setAmount] = useState('');
@@ -143,13 +145,13 @@ export default function WithdrawScreen() {
   // KYC Check
   if (kycLevel === 'BASIC') {
     return (
-      <ScrollView style={styles.container}>
+      <ScrollView style={[styles.container, { backgroundColor: c.background }]}>
         <View style={styles.kycRequired}>
           <View style={styles.kycIconBg}>
             <Ionicons name="lock-closed" size={40} color="#F59E0B" />
           </View>
-          <Text style={styles.kycTitle}>Verification requise</Text>
-          <Text style={styles.kycText}>
+          <Text style={[styles.kycTitle, { color: c.text }]}>Verification requise</Text>
+          <Text style={[styles.kycText, { color: c.textSecondary }]}>
             Pour effectuer des retraits, vous devez d'abord completer la verification de votre identite (KYC).
           </Text>
           <TouchableOpacity style={styles.kycButton} onPress={() => router.push('/(kyc)')} activeOpacity={0.8}>
@@ -163,9 +165,9 @@ export default function WithdrawScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Retirer des fonds</Text>
-        <Text style={styles.subtitle}>
+      <ScrollView style={[styles.container, { backgroundColor: c.background }]} keyboardShouldPersistTaps="handled">
+        <Text style={[styles.title, { color: c.text }]}>Retirer des fonds</Text>
+        <Text style={[styles.subtitle, { color: c.textSecondary }]}>
           Transferez votre solde vers votre compte mobile money
         </Text>
 
@@ -173,26 +175,27 @@ export default function WithdrawScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
             <Ionicons name="wallet-outline" size={18} color="#D4AF37" />
-            <Text style={styles.balanceLabel}>Solde disponible</Text>
+            <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde disponible</Text>
           </View>
           <Text style={styles.balanceValue}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
           <View style={styles.limitRow}>
             <View style={styles.limitLeft}>
-              <Ionicons name="speedometer-outline" size={14} color="#9CA3AF" />
-              <Text style={styles.limitLabel}>Limite journaliere ({kycLevel})</Text>
+              <Ionicons name="speedometer-outline" size={14} color={c.textSecondary} />
+              <Text style={[styles.limitLabel, { color: c.textSecondary }]}>Limite journaliere ({kycLevel})</Text>
             </View>
-            <Text style={styles.limitValue}>{dailyLimit.toLocaleString()} XOF</Text>
+            <Text style={[styles.limitValue, { color: c.text }]}>{dailyLimit.toLocaleString()} XOF</Text>
           </View>
         </View>
 
         {/* Withdrawal Methods */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mode de retrait</Text>
+          <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Mode de retrait</Text>
           {WITHDRAWAL_METHODS.map((method) => (
             <TouchableOpacity
               key={method.id}
               style={[
                 styles.methodCard,
+                { backgroundColor: c.surface },
                 selectedMethod === method.id && styles.methodCardSelected,
               ]}
               onPress={() => {
@@ -205,15 +208,16 @@ export default function WithdrawScreen() {
                 <Ionicons name={method.icon} size={22} color={method.iconColor} />
               </View>
               <View style={styles.methodInfo}>
-                <Text style={styles.methodName}>{method.name}</Text>
-                <Text style={styles.methodDesc}>{method.description}</Text>
+                <Text style={[styles.methodName, { color: c.text }]}>{method.name}</Text>
+                <Text style={[styles.methodDesc, { color: c.textSecondary }]}>{method.description}</Text>
                 <View style={styles.methodTimeRow}>
-                  <Ionicons name="time-outline" size={12} color="#6B7280" />
-                  <Text style={styles.methodTime}>{method.processingTime}</Text>
+                  <Ionicons name="time-outline" size={12} color={c.textTertiary} />
+                  <Text style={[styles.methodTime, { color: c.textTertiary }]}>{method.processingTime}</Text>
                 </View>
               </View>
               <View style={[
                 styles.radio,
+                { borderColor: c.textTertiary },
                 selectedMethod === method.id && styles.radioSelected,
               ]}>
                 {selectedMethod === method.id && <View style={styles.radioInner} />}
@@ -225,33 +229,33 @@ export default function WithdrawScreen() {
         {/* Amount */}
         <View style={styles.section}>
           <View style={styles.amountHeader}>
-            <Text style={styles.sectionTitle}>Montant (XOF)</Text>
+            <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Montant (XOF)</Text>
             <TouchableOpacity onPress={handleMaxAmount} style={styles.maxBtn}>
               <Text style={styles.maxButton}>MAX</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.amountInputContainer}>
+          <View style={[styles.amountInputContainer, { backgroundColor: c.surface }]}>
             <TextInput
-              style={styles.amountInput}
+              style={[styles.amountInput, { color: c.text }]}
               placeholder="0"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={c.textTertiary}
               value={amount ? parseInt(amount).toLocaleString() : ''}
               onChangeText={handleAmountChange}
               keyboardType="number-pad"
             />
-            <Text style={styles.currency}>XOF</Text>
+            <Text style={[styles.currency, { color: c.textSecondary }]}>XOF</Text>
           </View>
         </View>
 
         {/* Phone Number */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Numero de telephone</Text>
-          <View style={styles.phoneInputContainer}>
-            <Ionicons name="call-outline" size={18} color="#6B7280" style={{ marginLeft: 14 }} />
+          <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Numero de telephone</Text>
+          <View style={[styles.phoneInputContainer, { backgroundColor: c.surface }]}>
+            <Ionicons name="call-outline" size={18} color={c.textTertiary} style={{ marginLeft: 14 }} />
             <TextInput
-              style={styles.phoneInput}
+              style={[styles.phoneInput, { color: c.text }]}
               placeholder="+226 XX XX XX XX"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={c.textTertiary}
               value={phoneNumber}
               onChangeText={(text) => {
                 setPhoneNumber(text);
@@ -260,7 +264,7 @@ export default function WithdrawScreen() {
               keyboardType="phone-pad"
             />
           </View>
-          <Text style={styles.hint}>
+          <Text style={[styles.hint, { color: c.textTertiary }]}>
             Les fonds seront envoyes sur ce numero
           </Text>
         </View>
@@ -274,17 +278,17 @@ export default function WithdrawScreen() {
 
         {/* Summary */}
         {selectedMethod && amount && parseInt(amount) > 0 && (
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, { backgroundColor: c.surface }]}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Montant du retrait</Text>
-              <Text style={styles.summaryValue}>{parseInt(amount).toLocaleString()} XOF</Text>
+              <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>Montant du retrait</Text>
+              <Text style={[styles.summaryValue, { color: c.text }]}>{parseInt(amount).toLocaleString()} XOF</Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Frais</Text>
+              <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>Frais</Text>
               <Text style={[styles.summaryValue, { color: '#10B981' }]}>0 XOF</Text>
             </View>
             <View style={[styles.summaryRow, styles.summaryTotal]}>
-              <Text style={styles.totalLabel}>Vous recevrez</Text>
+              <Text style={[styles.totalLabel, { color: c.text }]}>Vous recevrez</Text>
               <Text style={styles.totalValue}>{parseInt(amount).toLocaleString()} XOF</Text>
             </View>
           </View>

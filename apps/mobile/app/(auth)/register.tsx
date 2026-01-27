@@ -14,6 +14,7 @@ import { Link, router } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 
@@ -29,6 +30,7 @@ const countries = [
 ];
 
 export default function RegisterScreen() {
+  const c = useThemeColors();
   const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -101,7 +103,7 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: c.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
@@ -111,15 +113,15 @@ export default function RegisterScreen() {
       >
         {/* Back button */}
         <Link href="/(auth)/login" asChild>
-          <TouchableOpacity style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+          <TouchableOpacity style={[styles.backButton, { backgroundColor: c.surface }]}>
+            <Ionicons name="arrow-back" size={24} color={c.text} />
           </TouchableOpacity>
         </Link>
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Creer un compte</Text>
-          <Text style={styles.subtitle}>Rejoignez TNC Trading et investissez dans l'or souverain</Text>
+          <Text style={[styles.title, { color: c.text }]}>Creer un compte</Text>
+          <Text style={[styles.subtitle, { color: c.textSecondary }]}>Rejoignez TNC Trading et investissez dans l'or souverain</Text>
         </View>
 
         {/* Progress steps */}
@@ -128,28 +130,28 @@ export default function RegisterScreen() {
             <Text style={[styles.stepNumber, styles.stepNumberActive]}>1</Text>
             <Text style={[styles.stepLabel, styles.stepLabelActive]}>Inscription</Text>
           </View>
-          <View style={styles.stepLine} />
+          <View style={[styles.stepLine, { backgroundColor: c.border }]} />
           <View style={styles.step}>
-            <Text style={styles.stepNumber}>2</Text>
-            <Text style={styles.stepLabel}>Verification</Text>
+            <Text style={[styles.stepNumber, { backgroundColor: c.border, color: c.textTertiary }]}>2</Text>
+            <Text style={[styles.stepLabel, { color: c.textTertiary }]}>Verification</Text>
           </View>
-          <View style={styles.stepLine} />
+          <View style={[styles.stepLine, { backgroundColor: c.border }]} />
           <View style={styles.step}>
-            <Text style={styles.stepNumber}>3</Text>
-            <Text style={styles.stepLabel}>KYC</Text>
+            <Text style={[styles.stepNumber, { backgroundColor: c.border, color: c.textTertiary }]}>3</Text>
+            <Text style={[styles.stepLabel, { color: c.textTertiary }]}>KYC</Text>
           </View>
         </View>
 
         {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Email</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="email@example.com"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.email}
                 onChangeText={(text) => setFormData({ ...formData, email: text })}
                 autoCapitalize="none"
@@ -159,32 +161,32 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Pays</Text>
-            <View style={styles.pickerContainer}>
-              <Ionicons name="globe-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Pays</Text>
+            <View style={[styles.pickerContainer, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="globe-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <Picker
                 selectedValue={formData.country}
                 onValueChange={(value) => setFormData({ ...formData, country: value })}
-                style={styles.picker}
+                style={[styles.picker, { color: c.text }]}
                 dropdownIconColor="#D4AF37"
               >
-                {countries.map((c) => (
-                  <Picker.Item key={c.code} label={`${c.name} (${c.prefix})`} value={c.code} color="#fff" />
+                {countries.map((country) => (
+                  <Picker.Item key={country.code} label={`${country.name} (${country.prefix})`} value={country.code} color={c.text} />
                 ))}
               </Picker>
             </View>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Telephone</Text>
-            <View style={styles.inputWrapper}>
-              <View style={styles.phonePrefix}>
+            <Text style={[styles.label, { color: c.textSecondary }]}>Telephone</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <View style={[styles.phonePrefix, { borderRightColor: c.border }]}>
                 <Text style={styles.phonePrefixText}>{selectedCountry?.prefix}</Text>
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="70 00 00 00"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.phone}
                 onChangeText={(text) => setFormData({ ...formData, phone: text })}
                 keyboardType="phone-pad"
@@ -193,13 +195,13 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Mot de passe</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Mot de passe</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="Min. 8 caracteres"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.password}
                 onChangeText={(text) => setFormData({ ...formData, password: text })}
                 secureTextEntry={!showPassword}
@@ -211,7 +213,7 @@ export default function RegisterScreen() {
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={20}
-                  color="#6B7280"
+                  color={c.textTertiary}
                 />
               </TouchableOpacity>
             </View>
@@ -234,13 +236,13 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirmer le mot de passe</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Confirmer le mot de passe</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="Repetez le mot de passe"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.confirmPassword}
                 onChangeText={(text) => setFormData({ ...formData, confirmPassword: text })}
                 secureTextEntry={!showPassword}
@@ -282,7 +284,7 @@ export default function RegisterScreen() {
 
           <Link href="/(auth)/login" asChild>
             <TouchableOpacity style={styles.linkButton}>
-              <Text style={styles.linkText}>
+              <Text style={[styles.linkText, { color: c.textSecondary }]}>
                 Deja un compte ? <Text style={styles.linkBold}>Se connecter</Text>
               </Text>
             </TouchableOpacity>

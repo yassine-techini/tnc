@@ -12,6 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { useThemeColors } from '../stores/theme';
 
 // Initialize offline detection (wires into React Query's onlineManager)
 networkMonitor.init();
@@ -41,6 +42,7 @@ const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const LOCK_THRESHOLD = 60 * 1000; // Lock after 1 minute in background
 
 function AppLockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const c = useThemeColors();
   const [error, setError] = useState('');
 
   const authenticate = useCallback(async () => {
@@ -66,7 +68,7 @@ function AppLockScreen({ onUnlock }: { onUnlock: () => void }) {
   }, [authenticate]);
 
   return (
-    <View style={lockStyles.container}>
+    <View style={[lockStyles.container, { backgroundColor: c.background }]}>
       <View style={lockStyles.iconContainer}>
         <Ionicons name="lock-closed" size={48} color="#D4AF37" />
       </View>
@@ -82,7 +84,7 @@ function AppLockScreen({ onUnlock }: { onUnlock: () => void }) {
 }
 
 const lockStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0F1A', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   iconContainer: { marginBottom: 20 },
   title: { fontSize: 24, fontWeight: '800', color: '#D4AF37', marginBottom: 8 },
   subtitle: { fontSize: 15, color: '#9CA3AF', marginBottom: 32 },
@@ -92,6 +94,7 @@ const lockStyles = StyleSheet.create({
 });
 
 function RootLayoutContent() {
+  const c = useThemeColors();
   const { isLoading, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
   const backgroundTimestamp = useRef<number | null>(null);
@@ -172,14 +175,14 @@ function RootLayoutContent() {
       <Stack
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#1A1A2E',
+            backgroundColor: c.surface,
           },
-          headerTintColor: '#fff',
+          headerTintColor: c.text,
           headerTitleStyle: {
             fontWeight: 'bold',
           },
           contentStyle: {
-            backgroundColor: '#0F0F1A',
+            backgroundColor: c.background,
           },
         }}
       >

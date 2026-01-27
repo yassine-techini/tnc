@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import api from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 
@@ -60,6 +61,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
 const PRESET_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
 
 export default function DepositScreen() {
+  const c = useThemeColors();
   const queryClient = useQueryClient();
   const { tokens, user } = useAuthStore();
   const [amount, setAmount] = useState('');
@@ -140,20 +142,21 @@ export default function DepositScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Deposer des fonds</Text>
-        <Text style={styles.subtitle}>
+      <ScrollView style={[styles.container, { backgroundColor: c.background }]} keyboardShouldPersistTaps="handled">
+        <Text style={[styles.title, { color: c.text }]}>Deposer des fonds</Text>
+        <Text style={[styles.subtitle, { color: c.textSecondary }]}>
           Alimentez votre compte pour acheter de l'or tokenise
         </Text>
 
         {/* Payment Methods */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mode de paiement</Text>
+          <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Mode de paiement</Text>
           {PAYMENT_METHODS.map((method) => (
             <TouchableOpacity
               key={method.id}
               style={[
                 styles.paymentCard,
+                { backgroundColor: c.surface },
                 selectedMethod === method.id && styles.paymentCardSelected,
               ]}
               onPress={() => {
@@ -166,12 +169,13 @@ export default function DepositScreen() {
                 <Ionicons name={method.icon} size={22} color={method.iconColor} />
               </View>
               <View style={styles.paymentInfo}>
-                <Text style={styles.paymentName}>{method.name}</Text>
-                <Text style={styles.paymentDesc}>{method.description}</Text>
+                <Text style={[styles.paymentName, { color: c.text }]}>{method.name}</Text>
+                <Text style={[styles.paymentDesc, { color: c.textSecondary }]}>{method.description}</Text>
                 <Text style={styles.paymentFees}>Frais: {method.fees}</Text>
               </View>
               <View style={[
                 styles.radio,
+                { borderColor: c.textTertiary },
                 selectedMethod === method.id && styles.radioSelected,
               ]}>
                 {selectedMethod === method.id && <View style={styles.radioInner} />}
@@ -182,17 +186,17 @@ export default function DepositScreen() {
 
         {/* Amount */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Montant (XOF)</Text>
-          <View style={styles.amountInputContainer}>
+          <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Montant (XOF)</Text>
+          <View style={[styles.amountInputContainer, { backgroundColor: c.surface }]}>
             <TextInput
-              style={styles.amountInput}
+              style={[styles.amountInput, { color: c.text }]}
               placeholder="0"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={c.textTertiary}
               value={amount ? parseInt(amount).toLocaleString() : ''}
               onChangeText={handleAmountChange}
               keyboardType="number-pad"
             />
-            <Text style={styles.currency}>XOF</Text>
+            <Text style={[styles.currency, { color: c.textSecondary }]}>XOF</Text>
           </View>
 
           <View style={styles.presetAmounts}>
@@ -201,12 +205,14 @@ export default function DepositScreen() {
                 key={preset}
                 style={[
                   styles.presetButton,
+                  { backgroundColor: c.surface },
                   amount === preset.toString() && styles.presetButtonActive,
                 ]}
                 onPress={() => handlePresetAmount(preset)}
               >
                 <Text style={[
                   styles.presetText,
+                  { color: c.textSecondary },
                   amount === preset.toString() && styles.presetTextActive,
                 ]}>
                   {preset >= 1000 ? `${preset / 1000}K` : preset}
@@ -219,13 +225,13 @@ export default function DepositScreen() {
         {/* Phone Number for Mobile Money */}
         {(selectedMethod === 'orange_money' || selectedMethod === 'moov_money') && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Numero de telephone</Text>
-            <View style={styles.phoneInputContainer}>
-              <Ionicons name="call-outline" size={18} color="#6B7280" style={{ marginLeft: 14 }} />
+            <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Numero de telephone</Text>
+            <View style={[styles.phoneInputContainer, { backgroundColor: c.surface }]}>
+              <Ionicons name="call-outline" size={18} color={c.textTertiary} style={{ marginLeft: 14 }} />
               <TextInput
-                style={styles.phoneInput}
+                style={[styles.phoneInput, { color: c.text }]}
                 placeholder="+226 XX XX XX XX"
-                placeholderTextColor="#6B7280"
+                placeholderTextColor={c.textTertiary}
                 value={phoneNumber}
                 onChangeText={(text) => {
                   setPhoneNumber(text);
@@ -234,7 +240,7 @@ export default function DepositScreen() {
                 keyboardType="phone-pad"
               />
             </View>
-            <Text style={styles.hint}>
+            <Text style={[styles.hint, { color: c.textTertiary }]}>
               Le numero utilise pour {selectedMethod === 'orange_money' ? 'Orange Money' : 'Moov Money'}
             </Text>
           </View>
@@ -249,17 +255,17 @@ export default function DepositScreen() {
 
         {/* Summary */}
         {selectedMethod && amount && parseInt(amount) > 0 && (
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, { backgroundColor: c.surface }]}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Montant</Text>
-              <Text style={styles.summaryValue}>{parseInt(amount).toLocaleString()} XOF</Text>
+              <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>Montant</Text>
+              <Text style={[styles.summaryValue, { color: c.text }]}>{parseInt(amount).toLocaleString()} XOF</Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Frais ({selectedPaymentMethod?.fees})</Text>
-              <Text style={styles.summaryValue}>{calculateFees().toLocaleString()} XOF</Text>
+              <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>Frais ({selectedPaymentMethod?.fees})</Text>
+              <Text style={[styles.summaryValue, { color: c.text }]}>{calculateFees().toLocaleString()} XOF</Text>
             </View>
             <View style={[styles.summaryRow, styles.summaryTotal]}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={[styles.totalLabel, { color: c.text }]}>Total</Text>
               <Text style={styles.totalValue}>{(parseInt(amount) + calculateFees()).toLocaleString()} XOF</Text>
             </View>
           </View>

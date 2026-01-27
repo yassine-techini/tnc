@@ -4,10 +4,12 @@ import { Link, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 import { useState } from 'react';
 
 export default function HomeScreen() {
+  const c = useThemeColors();
   const insets = useSafeAreaInsets();
   const { user, tokens } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -40,23 +42,23 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: c.background }]}
       contentContainerStyle={{ paddingTop: insets.top }}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D4AF37" />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.gold} />
       }
     >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.greeting}>Bonjour {user?.email?.split('@')[0] || ''}</Text>
-          <Text style={styles.subtitle}>Bienvenue sur TNC Trading</Text>
+          <Text style={[styles.greeting, { color: c.text }]}>Bonjour {user?.email?.split('@')[0] || ''}</Text>
+          <Text style={[styles.subtitle, { color: c.textTertiary }]}>Bienvenue sur TNC Trading</Text>
         </View>
         <TouchableOpacity
-          style={styles.avatarButton}
+          style={[styles.avatarButton, { borderColor: c.gold }]}
           onPress={() => router.push('/(tabs)/profile')}
         >
-          <Text style={styles.avatarText}>{user?.email?.charAt(0).toUpperCase() || '?'}</Text>
+          <Text style={[styles.avatarText, { color: c.gold }]}>{user?.email?.charAt(0).toUpperCase() || '?'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -67,7 +69,7 @@ export default function HomeScreen() {
             <Ionicons name="shield-checkmark-outline" size={20} color="#F59E0B" />
             <View style={styles.kycAlertContent}>
               <Text style={styles.kycAlertTitle}>Verification requise</Text>
-              <Text style={styles.kycAlertText}>
+              <Text style={[styles.kycAlertText, { color: c.textSecondary }]}>
                 Completez votre KYC pour acheter et vendre de l'or
               </Text>
             </View>
@@ -77,13 +79,13 @@ export default function HomeScreen() {
       )}
 
       {/* Portfolio Card */}
-      <View style={styles.portfolioCard}>
-        <Text style={styles.portfolioLabel}>Valeur du portefeuille</Text>
+      <View style={[styles.portfolioCard, { backgroundColor: c.surface, borderColor: c.gold }]}>
+        <Text style={[styles.portfolioLabel, { color: c.textSecondary }]}>Valeur du portefeuille</Text>
         {walletLoading ? (
           <View style={styles.skeleton} />
         ) : (
           <>
-            <Text style={styles.portfolioValue}>{portfolioValue.toLocaleString()} XOF</Text>
+            <Text style={[styles.portfolioValue, { color: c.text }]}>{portfolioValue.toLocaleString()} XOF</Text>
             {wallet && (wallet.profitLossPercent || 0) !== 0 && (
               <View style={[
                 styles.performanceBadge,
@@ -108,44 +110,44 @@ export default function HomeScreen() {
 
       {/* Balance Cards */}
       <View style={styles.balanceContainer}>
-        <View style={[styles.balanceCard, styles.goldCard]}>
+        <View style={[styles.balanceCard, styles.goldCard, { backgroundColor: c.surface }]}>
           <View style={styles.balanceHeader}>
-            <Ionicons name="diamond-outline" size={16} color="#D4AF37" />
-            <Text style={styles.balanceLabelGold}>Solde Or</Text>
+            <Ionicons name="diamond-outline" size={16} color={c.gold} />
+            <Text style={[styles.balanceLabelGold, { color: c.gold }]}>Solde Or</Text>
           </View>
           {walletLoading ? (
             <View style={styles.skeletonSmall} />
           ) : (
             <>
-              <Text style={styles.goldValue}>{wallet?.tokenBalance?.toFixed(3) || '0.000'} g</Text>
-              <Text style={styles.balanceSubtext}>
+              <Text style={[styles.goldValue, { color: c.gold }]}>{wallet?.tokenBalance?.toFixed(3) || '0.000'} g</Text>
+              <Text style={[styles.balanceSubtext, { color: c.textTertiary }]}>
                 {((wallet?.tokenBalance || 0) * (price?.sellPrice || 0)).toLocaleString()} XOF
               </Text>
             </>
           )}
         </View>
-        <View style={styles.balanceCard}>
+        <View style={[styles.balanceCard, { backgroundColor: c.surface }]}>
           <View style={styles.balanceHeader}>
-            <Ionicons name="cash-outline" size={16} color="#9CA3AF" />
-            <Text style={styles.balanceLabel}>Solde XOF</Text>
+            <Ionicons name="cash-outline" size={16} color={c.textSecondary} />
+            <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Solde XOF</Text>
           </View>
           {walletLoading ? (
             <View style={styles.skeletonSmall} />
           ) : (
-            <Text style={styles.balanceValue}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
+            <Text style={[styles.balanceValue, { color: c.text }]}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
           )}
         </View>
       </View>
 
       {/* Price Card */}
-      <View style={styles.priceCard}>
+      <View style={[styles.priceCard, { backgroundColor: c.surface }]}>
         <View style={styles.priceRow}>
           <View>
-            <Text style={styles.priceLabel}>Prix de l'or</Text>
+            <Text style={[styles.priceLabel, { color: c.textSecondary }]}>Prix de l'or</Text>
             {priceLoading ? (
               <View style={styles.skeletonSmall} />
             ) : (
-              <Text style={styles.priceValue}>
+              <Text style={[styles.priceValue, { color: c.gold }]}>
                 {price?.priceXof?.toLocaleString() || '—'} XOF/g
               </Text>
             )}
@@ -167,21 +169,21 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
-        <View style={styles.priceDetails}>
+        <View style={[styles.priceDetails, { borderTopColor: c.border }]}>
           <View style={styles.priceDetailItem}>
-            <Text style={styles.priceDetailLabel}>Achat</Text>
-            <Text style={styles.priceDetailValue}>{price?.buyPrice?.toLocaleString() || '—'} XOF</Text>
+            <Text style={[styles.priceDetailLabel, { color: c.textTertiary }]}>Achat</Text>
+            <Text style={[styles.priceDetailValue, { color: c.text }]}>{price?.buyPrice?.toLocaleString() || '—'} XOF</Text>
           </View>
-          <View style={styles.priceDetailDivider} />
+          <View style={[styles.priceDetailDivider, { backgroundColor: c.border }]} />
           <View style={styles.priceDetailItem}>
-            <Text style={styles.priceDetailLabel}>Vente</Text>
-            <Text style={styles.priceDetailValue}>{price?.sellPrice?.toLocaleString() || '—'} XOF</Text>
+            <Text style={[styles.priceDetailLabel, { color: c.textTertiary }]}>Vente</Text>
+            <Text style={[styles.priceDetailValue, { color: c.text }]}>{price?.sellPrice?.toLocaleString() || '—'} XOF</Text>
           </View>
         </View>
       </View>
 
       {/* Quick Actions - Trading */}
-      <Text style={styles.sectionTitle}>Actions rapides</Text>
+      <Text style={[styles.sectionTitle, { color: c.text }]}>Actions rapides</Text>
       <View style={styles.tradingActions}>
         <Link href="/market" asChild>
           <TouchableOpacity style={styles.buyButton} activeOpacity={0.8}>
@@ -199,38 +201,38 @@ export default function HomeScreen() {
 
       {/* Quick Actions - Wallet */}
       <View style={styles.walletActions}>
-        <TouchableOpacity style={styles.walletButton} onPress={() => router.push('/(wallet)/deposit')}>
+        <TouchableOpacity style={[styles.walletButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/deposit')}>
           <View style={[styles.walletIconBg, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
             <Ionicons name="arrow-down-outline" size={18} color="#10B981" />
           </View>
-          <Text style={styles.walletText}>Deposer</Text>
+          <Text style={[styles.walletText, { color: c.textSecondary }]}>Deposer</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.walletButton} onPress={() => router.push('/(wallet)/withdraw')}>
+        <TouchableOpacity style={[styles.walletButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/withdraw')}>
           <View style={[styles.walletIconBg, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
             <Ionicons name="arrow-up-outline" size={18} color="#EF4444" />
           </View>
-          <Text style={styles.walletText}>Retirer</Text>
+          <Text style={[styles.walletText, { color: c.textSecondary }]}>Retirer</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.walletButton} onPress={() => router.push('/(tabs)/wallet')}>
+        <TouchableOpacity style={[styles.walletButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(tabs)/wallet')}>
           <View style={[styles.walletIconBg, { backgroundColor: 'rgba(212, 175, 55, 0.15)' }]}>
-            <Ionicons name="time-outline" size={18} color="#D4AF37" />
+            <Ionicons name="time-outline" size={18} color={c.gold} />
           </View>
-          <Text style={styles.walletText}>Historique</Text>
+          <Text style={[styles.walletText, { color: c.textSecondary }]}>Historique</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.walletButton} onPress={() => router.push('/(wallet)/certificate')}>
+        <TouchableOpacity style={[styles.walletButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/certificate')}>
           <View style={[styles.walletIconBg, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
             <Ionicons name="document-text-outline" size={18} color="#6366F1" />
           </View>
-          <Text style={styles.walletText}>Certificat</Text>
+          <Text style={[styles.walletText, { color: c.textSecondary }]}>Certificat</Text>
         </TouchableOpacity>
       </View>
 
       {/* KYC Level */}
-      <View style={styles.kycCard}>
+      <View style={[styles.kycCard, { backgroundColor: c.surface }]}>
         <View style={styles.kycHeader}>
           <View style={styles.kycLeft}>
-            <Ionicons name="shield-checkmark" size={20} color="#D4AF37" />
-            <Text style={styles.kycTitle}>Niveau KYC</Text>
+            <Ionicons name="shield-checkmark" size={20} color={c.gold} />
+            <Text style={[styles.kycTitle, { color: c.text }]}>Niveau KYC</Text>
           </View>
           <View style={[
             styles.kycBadge,
@@ -244,19 +246,19 @@ export default function HomeScreen() {
             ]}>{user?.kycLevel || 'BASIC'}</Text>
           </View>
         </View>
-        <Text style={styles.kycDescription}>
+        <Text style={[styles.kycDescription, { color: c.textSecondary }]}>
           {user?.kycLevel === 'VERIFIED'
             ? 'Acces complet a la plateforme'
             : 'Augmentez vos limites en completant votre KYC'}
         </Text>
         {user?.kycLevel !== 'VERIFIED' && (
           <TouchableOpacity
-            style={styles.kycButton}
+            style={[styles.kycButton, { backgroundColor: c.gold }]}
             onPress={() => router.push('/(kyc)')}
             activeOpacity={0.8}
           >
             <Text style={styles.kycButtonText}>Ameliorer mon niveau</Text>
-            <Ionicons name="arrow-forward" size={16} color="#0F0F1A" />
+            <Ionicons name="arrow-forward" size={16} color={c.background} />
           </TouchableOpacity>
         )}
       </View>

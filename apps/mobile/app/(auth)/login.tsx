@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 import { validateForm, loginSchema } from '../../lib/validation';
 import InlineMessage from '../../components/InlineMessage';
@@ -27,6 +28,7 @@ const LAST_USER_EMAIL_KEY = 'tnc_last_user_email';
 type ScreenMode = 'biometric' | 'credentials';
 
 export default function LoginScreen() {
+  const c = useThemeColors();
   const insets = useSafeAreaInsets();
   const { login } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
@@ -211,7 +213,7 @@ export default function LoginScreen() {
   // Loading check
   if (checkingBiometric) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { backgroundColor: c.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#D4AF37" />
       </View>
     );
@@ -220,7 +222,7 @@ export default function LoginScreen() {
   // ── BIOMETRIC SCREEN (banking-app style) ──
   if (screenMode === 'biometric') {
     return (
-      <View style={[styles.container, styles.biometricScreen, { paddingTop: insets.top + 60 }]}>
+      <View style={[styles.container, styles.biometricScreen, { backgroundColor: c.background, paddingTop: insets.top + 60 }]}>
         {/* Logo */}
         <View style={styles.biometricHeader}>
           <View style={styles.logoCoin}>
@@ -228,7 +230,7 @@ export default function LoginScreen() {
           </View>
           <Text style={styles.biometricTitle}>TNC Trading</Text>
           {lastUserEmail ? (
-            <Text style={styles.biometricEmail}>{lastUserEmail}</Text>
+            <Text style={[styles.biometricEmail, { color: c.textSecondary }]}>{lastUserEmail}</Text>
           ) : null}
         </View>
 
@@ -259,7 +261,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
-          <Text style={styles.biometricHint}>
+          <Text style={[styles.biometricHint, { color: c.textSecondary }]}>
             {isLoading
               ? 'Connexion en cours...'
               : biometricType === 'face'
@@ -289,7 +291,7 @@ export default function LoginScreen() {
   // ── CREDENTIALS SCREEN (classic login form) ──
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: c.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
@@ -305,21 +307,21 @@ export default function LoginScreen() {
             </View>
           </View>
           <Text style={styles.title}>TNC Trading</Text>
-          <Text style={styles.tagline}>Or souverain du Burkina Faso</Text>
+          <Text style={[styles.tagline, { color: c.textTertiary }]}>Or souverain du Burkina Faso</Text>
         </View>
 
         {/* Form */}
         <View style={styles.form}>
-          <Text style={styles.formTitle}>Connexion</Text>
+          <Text style={[styles.formTitle, { color: c.text }]}>Connexion</Text>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email ou telephone</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Email ou telephone</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="email@example.com"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.identifier}
                 onChangeText={(text) => setFormData({ ...formData, identifier: text })}
                 autoCapitalize="none"
@@ -329,13 +331,13 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Mot de passe</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+            <Text style={[styles.label, { color: c.textSecondary }]}>Mot de passe</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: c.text }]}
                 placeholder="Votre mot de passe"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor={c.textTertiary}
                 value={formData.password}
                 onChangeText={(text) => setFormData({ ...formData, password: text })}
                 secureTextEntry={!showPassword}
@@ -347,7 +349,7 @@ export default function LoginScreen() {
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={20}
-                  color="#6B7280"
+                  color={c.textTertiary}
                 />
               </TouchableOpacity>
             </View>
@@ -355,13 +357,13 @@ export default function LoginScreen() {
 
           {showTOTP && (
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Code 2FA</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="shield-checkmark-outline" size={18} color="#6B7280" style={styles.inputIcon} />
+              <Text style={[styles.label, { color: c.textSecondary }]}>Code 2FA</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { color: c.text }]}
                   placeholder="123456"
-                  placeholderTextColor="#4B5563"
+                  placeholderTextColor={c.textTertiary}
                   value={formData.totpCode}
                   onChangeText={(text) => setFormData({ ...formData, totpCode: text })}
                   keyboardType="number-pad"
@@ -403,9 +405,9 @@ export default function LoginScreen() {
         {/* Footer */}
         <View style={styles.footer}>
           <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>ou</Text>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
+            <Text style={[styles.dividerText, { color: c.textTertiary }]}>ou</Text>
+            <View style={[styles.dividerLine, { backgroundColor: c.border }]} />
           </View>
 
           <Link href="/(auth)/register" asChild>
@@ -414,7 +416,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Link>
 
-          <Text style={styles.legalText}>
+          <Text style={[styles.legalText, { color: c.textTertiary }]}>
             En vous connectant, vous acceptez nos conditions d'utilisation et notre politique de confidentialite.
           </Text>
         </View>

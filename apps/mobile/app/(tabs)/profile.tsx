@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -26,6 +27,7 @@ const MENU_ITEMS: MenuItem[] = [
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuthStore();
+  const c = useThemeColors();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleLogout = () => {
@@ -38,7 +40,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top + 16 }}>
+    <ScrollView style={[styles.container, { backgroundColor: c.background }]} contentContainerStyle={{ paddingTop: insets.top + 16 }}>
       {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
@@ -47,22 +49,23 @@ export default function ProfileScreen() {
           </View>
           <View style={[
             styles.kycDot,
+            { borderColor: c.background },
             user?.kycLevel === 'VERIFIED' ? styles.dotSuccess :
             user?.kycLevel === 'STANDARD' ? styles.dotInfo : styles.dotWarning
           ]} />
         </View>
-        <Text style={styles.email}>{user?.email}</Text>
-        <Text style={styles.phone}>{user?.phone}</Text>
+        <Text style={[styles.email, { color: c.text }]}>{user?.email}</Text>
+        <Text style={[styles.phone, { color: c.textTertiary }]}>{user?.phone}</Text>
       </View>
 
       {/* Account Status */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Statut du compte</Text>
+      <View style={[styles.card, { backgroundColor: c.surface }]}>
+        <Text style={[styles.cardTitle, { color: c.text }]}>Statut du compte</Text>
 
-        <View style={styles.statusRow}>
+        <View style={[styles.statusRow, { borderBottomColor: c.border }]}>
           <View style={styles.statusLeft}>
             <Ionicons name="shield-checkmark" size={18} color="#D4AF37" />
-            <Text style={styles.statusLabel}>Niveau KYC</Text>
+            <Text style={[styles.statusLabel, { color: c.text }]}>Niveau KYC</Text>
           </View>
           <View style={[styles.badge,
             user?.kycLevel === 'VERIFIED' ? styles.badgeSuccess :
@@ -75,10 +78,10 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.statusRow}>
+        <View style={[styles.statusRow, { borderBottomColor: c.border }]}>
           <View style={styles.statusLeft}>
             <Ionicons name="mail" size={18} color="#3B82F6" />
-            <Text style={styles.statusLabel}>Email verifie</Text>
+            <Text style={[styles.statusLabel, { color: c.text }]}>Email verifie</Text>
           </View>
           <View style={[styles.badge, user?.emailVerified ? styles.badgeSuccess : styles.badgeWarning]}>
             <Text style={[styles.badgeText, { color: user?.emailVerified ? '#10B981' : '#F59E0B' }]}>
@@ -90,7 +93,7 @@ export default function ProfileScreen() {
         <View style={[styles.statusRow, { borderBottomWidth: 0 }]}>
           <View style={styles.statusLeft}>
             <Ionicons name="lock-closed" size={18} color="#6366F1" />
-            <Text style={styles.statusLabel}>2FA</Text>
+            <Text style={[styles.statusLabel, { color: c.text }]}>2FA</Text>
           </View>
           <View style={[styles.badge, user?.twoFactorEnabled ? styles.badgeSuccess : styles.badgeWarning]}>
             <Text style={[styles.badgeText, { color: user?.twoFactorEnabled ? '#10B981' : '#F59E0B' }]}>
@@ -101,14 +104,14 @@ export default function ProfileScreen() {
       </View>
 
       {/* KYC Limits */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Limites KYC</Text>
+      <View style={[styles.card, { backgroundColor: c.surface }]}>
+        <Text style={[styles.cardTitle, { color: c.text }]}>Limites KYC</Text>
         {[
           { level: 'BASIC', desc: 'Consultation uniquement' },
           { level: 'STANDARD', desc: '100g/jour - 500,000 XOF retrait' },
           { level: 'VERIFIED', desc: '1000g/jour - 5,000,000 XOF retrait' },
         ].map((item, index) => (
-          <View key={item.level} style={[styles.limitItem, index === 2 && { borderBottomWidth: 0 }]}>
+          <View key={item.level} style={[styles.limitItem, { borderBottomColor: c.border }, index === 2 && { borderBottomWidth: 0 }]}>
             <View style={[
               styles.limitBadge,
               user?.kycLevel === item.level && styles.limitBadgeActive,
@@ -121,7 +124,7 @@ export default function ProfileScreen() {
                 user?.kycLevel === item.level && styles.limitBadgeTextActive,
               ]}>{item.level}</Text>
             </View>
-            <Text style={styles.limitText}>{item.desc}</Text>
+            <Text style={[styles.limitText, { color: c.textSecondary }]}>{item.desc}</Text>
           </View>
         ))}
         {user?.kycLevel !== 'VERIFIED' && (
@@ -133,18 +136,18 @@ export default function ProfileScreen() {
       </View>
 
       {/* Menu */}
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: c.surface }]}>
         {MENU_ITEMS.map((item, index) => (
           <TouchableOpacity
             key={item.route}
-            style={[styles.menuItem, index === MENU_ITEMS.length - 1 && { borderBottomWidth: 0 }]}
+            style={[styles.menuItem, { borderBottomColor: c.border }, index === MENU_ITEMS.length - 1 && { borderBottomWidth: 0 }]}
             onPress={() => router.push(item.route as any)}
             activeOpacity={0.7}
           >
             <View style={[styles.menuIconBg, { backgroundColor: item.iconBg }]}>
               <Ionicons name={item.icon} size={18} color={item.iconColor} />
             </View>
-            <Text style={styles.menuText}>{item.label}</Text>
+            <Text style={[styles.menuText, { color: c.text }]}>{item.label}</Text>
             <Ionicons name="chevron-forward" size={18} color="#4B5563" />
           </TouchableOpacity>
         ))}
@@ -168,7 +171,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       )}
 
-      <Text style={styles.version}>TNC Trading v1.0.0</Text>
+      <Text style={[styles.version, { color: c.textTertiary }]}>TNC Trading v1.0.0</Text>
     </ScrollView>
   );
 }

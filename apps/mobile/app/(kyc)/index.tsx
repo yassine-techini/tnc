@@ -2,9 +2,11 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import api from '../../lib/api';
 
 export default function KycIntroScreen() {
+  const c = useThemeColors();
   const { tokens, user } = useAuthStore();
 
   const { data: kycStatus, isLoading } = useQuery({
@@ -25,19 +27,19 @@ export default function KycIntroScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: c.background }]}>
         <ActivityIndicator size="large" color="#D4AF37" />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: c.background }]}>
       {/* Status Card */}
       {status && (
-        <View style={styles.statusCard}>
+        <View style={[styles.statusCard, { backgroundColor: c.surface }]}>
           <View style={styles.statusHeader}>
-            <Text style={styles.statusLabel}>Statut actuel</Text>
+            <Text style={[styles.statusLabel, { color: c.textSecondary }]}>Statut actuel</Text>
             <View style={[
               styles.statusBadge,
               status.status === 'APPROVED' && styles.badgeSuccess,
@@ -55,7 +57,7 @@ export default function KycIntroScreen() {
             </View>
           </View>
           <View style={styles.levelRow}>
-            <Text style={styles.levelLabel}>Niveau KYC</Text>
+            <Text style={[styles.levelLabel, { color: c.textSecondary }]}>Niveau KYC</Text>
             <Text style={styles.levelValue}>{status.level}</Text>
           </View>
           {status.rejectionReason && (
@@ -68,74 +70,74 @@ export default function KycIntroScreen() {
       )}
 
       {/* Info Card */}
-      <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>Pourquoi vérifier votre identité ?</Text>
+      <View style={[styles.infoCard, { backgroundColor: c.surface }]}>
+        <Text style={[styles.infoTitle, { color: c.text }]}>Pourquoi vérifier votre identité ?</Text>
         <View style={styles.infoItem}>
           <Text style={styles.infoIcon}>🛡️</Text>
           <View style={styles.infoContent}>
-            <Text style={styles.infoItemTitle}>Sécurité</Text>
-            <Text style={styles.infoItemText}>Protégez votre compte et vos investissements</Text>
+            <Text style={[styles.infoItemTitle, { color: c.text }]}>Sécurité</Text>
+            <Text style={[styles.infoItemText, { color: c.textSecondary }]}>Protégez votre compte et vos investissements</Text>
           </View>
         </View>
         <View style={styles.infoItem}>
           <Text style={styles.infoIcon}>💰</Text>
           <View style={styles.infoContent}>
-            <Text style={styles.infoItemTitle}>Limites augmentées</Text>
-            <Text style={styles.infoItemText}>Achetez jusqu'à 1000g d'or par jour</Text>
+            <Text style={[styles.infoItemTitle, { color: c.text }]}>Limites augmentées</Text>
+            <Text style={[styles.infoItemText, { color: c.textSecondary }]}>Achetez jusqu'à 1000g d'or par jour</Text>
           </View>
         </View>
         <View style={styles.infoItem}>
           <Text style={styles.infoIcon}>📤</Text>
           <View style={styles.infoContent}>
-            <Text style={styles.infoItemTitle}>Retraits</Text>
-            <Text style={styles.infoItemText}>Retirez jusqu'à 5,000,000 XOF par jour</Text>
+            <Text style={[styles.infoItemTitle, { color: c.text }]}>Retraits</Text>
+            <Text style={[styles.infoItemText, { color: c.textSecondary }]}>Retirez jusqu'à 5,000,000 XOF par jour</Text>
           </View>
         </View>
       </View>
 
       {/* Requirements */}
-      <View style={styles.requirementsCard}>
-        <Text style={styles.requirementsTitle}>Documents requis</Text>
+      <View style={[styles.requirementsCard, { backgroundColor: c.surface }]}>
+        <Text style={[styles.requirementsTitle, { color: c.text }]}>Documents requis</Text>
         <View style={styles.requirementItem}>
           <Text style={styles.checkIcon}>✓</Text>
-          <Text style={styles.requirementText}>Pièce d'identité valide (CNIB, Passeport, Carte CEDEAO)</Text>
+          <Text style={[styles.requirementText, { color: c.textSecondary }]}>Pièce d'identité valide (CNIB, Passeport, Carte CEDEAO)</Text>
         </View>
         <View style={styles.requirementItem}>
           <Text style={styles.checkIcon}>✓</Text>
-          <Text style={styles.requirementText}>Photo du recto et verso du document</Text>
+          <Text style={[styles.requirementText, { color: c.textSecondary }]}>Photo du recto et verso du document</Text>
         </View>
         <View style={styles.requirementItem}>
           <Text style={styles.checkIcon}>✓</Text>
-          <Text style={styles.requirementText}>Selfie avec votre pièce d'identité</Text>
+          <Text style={[styles.requirementText, { color: c.textSecondary }]}>Selfie avec votre pièce d'identité</Text>
         </View>
       </View>
 
       {/* Levels */}
-      <View style={styles.levelsCard}>
-        <Text style={styles.levelsTitle}>Niveaux de vérification</Text>
+      <View style={[styles.levelsCard, { backgroundColor: c.surface }]}>
+        <Text style={[styles.levelsTitle, { color: c.text }]}>Niveaux de vérification</Text>
 
-        <View style={[styles.levelCard, user?.kycLevel === 'BASIC' && styles.levelCardActive]}>
+        <View style={[styles.levelCard, { backgroundColor: c.background }, user?.kycLevel === 'BASIC' && styles.levelCardActive]}>
           <View style={styles.levelHeader}>
-            <Text style={styles.levelName}>BASIC</Text>
+            <Text style={[styles.levelName, { color: c.text }]}>BASIC</Text>
             {user?.kycLevel === 'BASIC' && <Text style={styles.currentBadge}>Actuel</Text>}
           </View>
-          <Text style={styles.levelDesc}>Consultation des prix uniquement</Text>
+          <Text style={[styles.levelDesc, { color: c.textSecondary }]}>Consultation des prix uniquement</Text>
         </View>
 
-        <View style={[styles.levelCard, user?.kycLevel === 'STANDARD' && styles.levelCardActive]}>
+        <View style={[styles.levelCard, { backgroundColor: c.background }, user?.kycLevel === 'STANDARD' && styles.levelCardActive]}>
           <View style={styles.levelHeader}>
-            <Text style={styles.levelName}>STANDARD</Text>
+            <Text style={[styles.levelName, { color: c.text }]}>STANDARD</Text>
             {user?.kycLevel === 'STANDARD' && <Text style={styles.currentBadge}>Actuel</Text>}
           </View>
-          <Text style={styles.levelDesc}>100g/jour • 500g/mois • Retrait 500K XOF</Text>
+          <Text style={[styles.levelDesc, { color: c.textSecondary }]}>100g/jour • 500g/mois • Retrait 500K XOF</Text>
         </View>
 
-        <View style={[styles.levelCard, user?.kycLevel === 'VERIFIED' && styles.levelCardActive]}>
+        <View style={[styles.levelCard, { backgroundColor: c.background }, user?.kycLevel === 'VERIFIED' && styles.levelCardActive]}>
           <View style={styles.levelHeader}>
-            <Text style={styles.levelName}>VERIFIED</Text>
+            <Text style={[styles.levelName, { color: c.text }]}>VERIFIED</Text>
             {user?.kycLevel === 'VERIFIED' && <Text style={styles.currentBadge}>Actuel</Text>}
           </View>
-          <Text style={styles.levelDesc}>1000g/jour • 5000g/mois • Retrait 5M XOF</Text>
+          <Text style={[styles.levelDesc, { color: c.textSecondary }]}>1000g/jour • 5000g/mois • Retrait 5M XOF</Text>
         </View>
       </View>
 

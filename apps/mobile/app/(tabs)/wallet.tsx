@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 
 const typeLabels: Record<string, string> = { BUY: 'Achat', SELL: 'Vente', DEPOSIT: 'Depot', WITHDRAWAL: 'Retrait', FEE: 'Frais' };
@@ -19,6 +20,7 @@ const typeIcons: Record<string, { name: React.ComponentProps<typeof Ionicons>['n
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { tokens } = useAuthStore();
+  const c = useThemeColors();
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: walletData, isLoading, refetch: refetchWallet } = useQuery({
@@ -56,58 +58,58 @@ export default function WalletScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: c.background }]}
       contentContainerStyle={{ paddingTop: insets.top + 8 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D4AF37" />}
     >
       {/* Title */}
-      <Text style={styles.pageTitle}>Portefeuille</Text>
+      <Text style={[styles.pageTitle, { color: c.text }]}>Portefeuille</Text>
 
       {/* Gold Balance */}
-      <View style={styles.goldCard}>
+      <View style={[styles.goldCard, { backgroundColor: c.surface }]}>
         <View style={styles.goldHeader}>
           <Ionicons name="diamond" size={20} color="#D4AF37" />
           <Text style={styles.goldLabel}>Solde Or</Text>
         </View>
-        {isLoading ? <View style={styles.skeleton} /> : (
+        {isLoading ? <View style={[styles.skeleton, { backgroundColor: c.border }]} /> : (
           <>
             <Text style={styles.goldValue}>{wallet?.tokenBalance?.toFixed(3) || '0.000'} g</Text>
-            <Text style={styles.goldSubtext}>Valeur: {((wallet?.tokenBalance || 0) * (price?.sellPrice || 0)).toLocaleString()} XOF</Text>
+            <Text style={[styles.goldSubtext, { color: c.textTertiary }]}>Valeur: {((wallet?.tokenBalance || 0) * (price?.sellPrice || 0)).toLocaleString()} XOF</Text>
           </>
         )}
       </View>
 
       {/* Cash Balance */}
-      <View style={styles.cashCard}>
+      <View style={[styles.cashCard, { backgroundColor: c.surface }]}>
         <View style={styles.goldHeader}>
           <Ionicons name="cash" size={20} color="#10B981" />
           <Text style={styles.cashLabel}>Solde Disponible</Text>
         </View>
-        {isLoading ? <View style={styles.skeleton} /> : (
-          <Text style={styles.cashValue}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
+        {isLoading ? <View style={[styles.skeleton, { backgroundColor: c.border }]} /> : (
+          <Text style={[styles.cashValue, { color: c.text }]}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
         )}
       </View>
 
       {/* Performance */}
-      <View style={styles.performanceCard}>
-        <Text style={styles.sectionTitle}>Performance</Text>
+      <View style={[styles.performanceCard, { backgroundColor: c.surface }]}>
+        <Text style={[styles.sectionTitle, { color: c.text }]}>Performance</Text>
         <View style={styles.performanceGrid}>
           <View style={styles.performanceItem}>
-            <Text style={styles.performanceLabel}>Prix moyen</Text>
-            <Text style={styles.performanceValue}>{wallet?.averageBuyPrice?.toLocaleString() || '—'} XOF/g</Text>
+            <Text style={[styles.performanceLabel, { color: c.textTertiary }]}>Prix moyen</Text>
+            <Text style={[styles.performanceValue, { color: c.text }]}>{wallet?.averageBuyPrice?.toLocaleString() || '—'} XOF/g</Text>
           </View>
           <View style={styles.performanceItem}>
-            <Text style={styles.performanceLabel}>Prix actuel</Text>
-            <Text style={styles.performanceValue}>{price?.sellPrice?.toLocaleString() || '—'} XOF/g</Text>
+            <Text style={[styles.performanceLabel, { color: c.textTertiary }]}>Prix actuel</Text>
+            <Text style={[styles.performanceValue, { color: c.text }]}>{price?.sellPrice?.toLocaleString() || '—'} XOF/g</Text>
           </View>
           <View style={styles.performanceItem}>
-            <Text style={styles.performanceLabel}>Gain/Perte</Text>
+            <Text style={[styles.performanceLabel, { color: c.textTertiary }]}>Gain/Perte</Text>
             <Text style={[styles.performanceValue, { color: (wallet?.profitLoss || 0) >= 0 ? '#10B981' : '#EF4444' }]}>
               {(wallet?.profitLoss || 0) >= 0 ? '+' : ''}{(wallet?.profitLoss || 0).toLocaleString()} XOF
             </Text>
           </View>
           <View style={styles.performanceItem}>
-            <Text style={styles.performanceLabel}>Rendement</Text>
+            <Text style={[styles.performanceLabel, { color: c.textTertiary }]}>Rendement</Text>
             <Text style={[styles.performanceValue, { color: (wallet?.profitLossPercent || 0) >= 0 ? '#10B981' : '#EF4444' }]}>
               {(wallet?.profitLossPercent || 0) >= 0 ? '+' : ''}{(wallet?.profitLossPercent || 0).toFixed(2)}%
             </Text>
@@ -117,49 +119,49 @@ export default function WalletScreen() {
 
       {/* Actions */}
       <View style={styles.actionsCard}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/(wallet)/deposit')} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.actionButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/deposit')} activeOpacity={0.7}>
           <View style={[styles.actionIconBg, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
             <Ionicons name="arrow-down" size={20} color="#10B981" />
           </View>
-          <Text style={styles.actionText}>Deposer</Text>
+          <Text style={[styles.actionText, { color: c.text }]}>Deposer</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/(wallet)/withdraw')} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.actionButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/withdraw')} activeOpacity={0.7}>
           <View style={[styles.actionIconBg, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
             <Ionicons name="arrow-up" size={20} color="#EF4444" />
           </View>
-          <Text style={styles.actionText}>Retirer</Text>
+          <Text style={[styles.actionText, { color: c.text }]}>Retirer</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/(wallet)/certificate')} activeOpacity={0.7}>
+        <TouchableOpacity style={[styles.actionButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(wallet)/certificate')} activeOpacity={0.7}>
           <View style={[styles.actionIconBg, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
             <Ionicons name="document-text" size={20} color="#6366F1" />
           </View>
-          <Text style={styles.actionText}>Certificat</Text>
+          <Text style={[styles.actionText, { color: c.text }]}>Certificat</Text>
         </TouchableOpacity>
       </View>
 
       {/* Transactions */}
-      <View style={styles.transactionsCard}>
-        <Text style={styles.sectionTitle}>Transactions recentes</Text>
+      <View style={[styles.transactionsCard, { backgroundColor: c.surface }]}>
+        <Text style={[styles.sectionTitle, { color: c.text }]}>Transactions recentes</Text>
         {transactions.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={40} color="#374151" />
-            <Text style={styles.emptyText}>Aucune transaction</Text>
+            <Ionicons name="receipt-outline" size={40} color={c.border} />
+            <Text style={[styles.emptyText, { color: c.textTertiary }]}>Aucune transaction</Text>
           </View>
         ) : (
           transactions.map((tx: any) => {
             const icon = typeIcons[tx.type] || typeIcons.FEE;
             return (
-              <View key={tx.id} style={styles.txItem}>
+              <View key={tx.id} style={[styles.txItem, { borderBottomColor: c.border }]}>
                 <View style={styles.txLeft}>
                   <View style={[styles.txIcon, { backgroundColor: icon.bg }]}>
                     <Ionicons name={icon.name} size={16} color={icon.color} />
                   </View>
                   <View>
-                    <Text style={styles.txType}>{typeLabels[tx.type]}</Text>
-                    <Text style={styles.txDate}>{new Date(tx.createdAt).toLocaleDateString('fr-FR')}</Text>
+                    <Text style={[styles.txType, { color: c.text }]}>{typeLabels[tx.type]}</Text>
+                    <Text style={[styles.txDate, { color: c.textTertiary }]}>{new Date(tx.createdAt).toLocaleDateString('fr-FR')}</Text>
                   </View>
                 </View>
-                <Text style={[styles.txAmount, { color: tx.type === 'BUY' || tx.type === 'DEPOSIT' ? '#10B981' : '#D1D5DB' }]}>
+                <Text style={[styles.txAmount, { color: tx.type === 'BUY' || tx.type === 'DEPOSIT' ? '#10B981' : c.text }]}>
                   {tx.type === 'BUY' || tx.type === 'DEPOSIT' ? '+' : '-'}
                   {tx.tokenAmount ? `${tx.tokenAmount.toFixed(3)} g` : `${tx.cashAmount.toLocaleString()} XOF`}
                 </Text>

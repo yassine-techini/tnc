@@ -3,8 +3,11 @@ import { TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect } from 'react';
 import { preventScreenCapture, allowScreenCapture } from '../../hooks/useSecurityCheck';
+import { useThemeColors } from '../../stores/theme';
 
 export default function WalletLayout() {
+  const c = useThemeColors();
+
   useEffect(() => {
     preventScreenCapture();
     return () => { allowScreenCapture(); };
@@ -13,28 +16,34 @@ export default function WalletLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: '#0F0F1A' },
-        headerTintColor: '#D4AF37',
+        headerStyle: { backgroundColor: c.background },
+        headerTintColor: c.gold,
         headerTitleStyle: { fontWeight: '600', fontSize: 17 },
-        contentStyle: { backgroundColor: '#0F0F1A' },
-        headerLeft: () => (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={{ marginRight: 8, padding: 4 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={22} color="#D4AF37" />
-          </TouchableOpacity>
-        ),
-        headerRight: () => (
-          <TouchableOpacity
-            onPress={() => router.replace('/(tabs)')}
-            style={{ padding: 4 }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="home-outline" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        ),
+        contentStyle: { backgroundColor: c.background },
+        headerLeft: () => {
+          const colors = useThemeColors();
+          return (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ marginRight: 8, padding: 4 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.gold} />
+            </TouchableOpacity>
+          );
+        },
+        headerRight: () => {
+          const colors = useThemeColors();
+          return (
+            <TouchableOpacity
+              onPress={() => router.replace('/(tabs)')}
+              style={{ padding: 4 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="home-outline" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          );
+        },
       }}
     >
       <Stack.Screen

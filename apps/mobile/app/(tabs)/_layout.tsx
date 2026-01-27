@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { View, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useThemeColors } from '../../stores/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -12,27 +13,30 @@ const TAB_ICONS: Record<string, { active: IconName; inactive: IconName }> = {
 };
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
+  const c = useThemeColors();
   const icons = TAB_ICONS[name] || { active: 'ellipse', inactive: 'ellipse-outline' };
   const iconName = focused ? icons.active : icons.inactive;
-  const color = focused ? '#D4AF37' : '#6B7280';
+  const color = focused ? c.gold : c.textTertiary;
 
   return (
     <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
       <Ionicons name={iconName} size={22} color={color} />
-      {focused && <View style={styles.activeDot} />}
+      {focused && <View style={[styles.activeDot, { backgroundColor: c.gold }]} />}
     </View>
   );
 }
 
 export default function TabLayout() {
+  const c = useThemeColors();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#D4AF37',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarActiveTintColor: c.gold,
+        tabBarInactiveTintColor: c.textTertiary,
         tabBarStyle: {
-          backgroundColor: '#1A1A2E',
-          borderTopColor: 'rgba(55, 65, 81, 0.5)',
+          backgroundColor: c.surface,
+          borderTopColor: c.border,
           borderTopWidth: 1,
           height: Platform.OS === 'ios' ? 88 : 64,
           paddingTop: 8,
@@ -44,9 +48,9 @@ export default function TabLayout() {
           marginTop: 2,
         },
         headerStyle: {
-          backgroundColor: '#1A1A2E',
+          backgroundColor: c.surface,
         },
-        headerTintColor: '#fff',
+        headerTintColor: c.text,
         headerTitleStyle: {
           fontWeight: '600',
           fontSize: 18,
@@ -103,7 +107,6 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D4AF37',
     marginTop: 2,
   },
 });

@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -25,6 +26,7 @@ const CHART_HEIGHT = 60;
 
 // Simple sparkline chart component
 function MiniChart({ data, color }: { data: number[]; color: string }) {
+  const c = useThemeColors();
   const points = useMemo(() => {
     if (!data || data.length < 2) return [];
 
@@ -41,7 +43,7 @@ function MiniChart({ data, color }: { data: number[]; color: string }) {
   if (points.length < 2) {
     return (
       <View style={[chartStyles.container, { height: CHART_HEIGHT }]}>
-        <Text style={chartStyles.noData}>Chargement...</Text>
+        <Text style={[chartStyles.noData, { color: c.textTertiary }]}>Chargement...</Text>
       </View>
     );
   }
@@ -98,7 +100,6 @@ const chartStyles = StyleSheet.create({
     marginTop: 12,
   },
   noData: {
-    color: '#6B7280',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 20,
@@ -135,6 +136,7 @@ const QUICK_AMOUNTS_XOF = [5000, 10000, 25000, 50000, 100000];
 export default function MarketScreen() {
   const insets = useSafeAreaInsets();
   const { tokens, user } = useAuthStore();
+  const c = useThemeColors();
   const [tab, setTab] = useState<TabType>('buy');
   const [amount, setAmount] = useState('');
   const [amountType, setAmountType] = useState<'grams' | 'xof'>('grams');
@@ -288,22 +290,22 @@ export default function MarketScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top + 8 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={[styles.container, { backgroundColor: c.background }]} contentContainerStyle={{ paddingTop: insets.top + 8 }} keyboardShouldPersistTaps="handled">
         {/* Price Card */}
-      <View style={styles.priceCard}>
+      <View style={[styles.priceCard, { backgroundColor: c.surface }]}>
         <View style={styles.priceHeader}>
           <View>
-            <Text style={styles.priceLabel}>Prix actuel de l'or</Text>
+            <Text style={[styles.priceLabel, { color: c.textSecondary }]}>Prix actuel de l'or</Text>
             {priceLoading ? (
               <View style={styles.skeleton} />
             ) : (
-              <Text style={styles.priceValue}>
+              <Text style={[styles.priceValue, { color: c.gold }]}>
                 {price?.priceXof?.toLocaleString() || '—'} XOF/g
               </Text>
             )}
           </View>
           <View style={styles.priceChange}>
-            <Text style={styles.priceChangeLabel}>24h</Text>
+            <Text style={[styles.priceChangeLabel, { color: c.textSecondary }]}>24h</Text>
             <Text style={[
               styles.priceChangeValue,
               { color: (price?.change24h || 0) >= 0 ? '#10B981' : '#EF4444' }
@@ -319,84 +321,84 @@ export default function MarketScreen() {
               data={chartData}
               color={(price?.change24h || 0) >= 0 ? '#10B981' : '#EF4444'}
             />
-            <Text style={styles.chartLabel}>Dernières 24h</Text>
+            <Text style={[styles.chartLabel, { color: c.textTertiary }]}>Dernières 24h</Text>
           </View>
         )}
         <View style={styles.priceRow}>
           <View style={styles.priceItem}>
-            <Text style={styles.priceItemLabel}>Achat</Text>
-            <Text style={styles.priceItemValue}>{price?.buyPrice?.toLocaleString()} XOF</Text>
+            <Text style={[styles.priceItemLabel, { color: c.textSecondary }]}>Achat</Text>
+            <Text style={[styles.priceItemValue, { color: c.text }]}>{price?.buyPrice?.toLocaleString()} XOF</Text>
           </View>
           <View style={styles.priceItem}>
-            <Text style={styles.priceItemLabel}>Vente</Text>
-            <Text style={styles.priceItemValue}>{price?.sellPrice?.toLocaleString()} XOF</Text>
+            <Text style={[styles.priceItemLabel, { color: c.textSecondary }]}>Vente</Text>
+            <Text style={[styles.priceItemValue, { color: c.text }]}>{price?.sellPrice?.toLocaleString()} XOF</Text>
           </View>
         </View>
         <View style={styles.stockInfo}>
-          <Text style={styles.stockText}>Stock disponible: {stock?.availableStock?.toFixed(0) || '—'}g</Text>
+          <Text style={[styles.stockText, { color: c.textSecondary }]}>Stock disponible: {stock?.availableStock?.toFixed(0) || '—'}g</Text>
         </View>
       </View>
 
       {/* Wallet Balance Summary */}
       {wallet && (
-        <View style={styles.balanceCard}>
+        <View style={[styles.balanceCard, { backgroundColor: c.surface }]}>
           <View style={styles.balanceItem}>
-            <Text style={styles.balanceLabel}>Mon or</Text>
-            <Text style={styles.balanceValue}>{wallet.tokenBalance.toFixed(3)}g</Text>
+            <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Mon or</Text>
+            <Text style={[styles.balanceValue, { color: c.gold }]}>{wallet.tokenBalance.toFixed(3)}g</Text>
           </View>
           <View style={styles.balanceDivider} />
           <View style={styles.balanceItem}>
-            <Text style={styles.balanceLabel}>Mon solde</Text>
-            <Text style={styles.balanceValue}>{wallet.cashBalance.toLocaleString()} XOF</Text>
+            <Text style={[styles.balanceLabel, { color: c.textSecondary }]}>Mon solde</Text>
+            <Text style={[styles.balanceValue, { color: c.gold }]}>{wallet.cashBalance.toLocaleString()} XOF</Text>
           </View>
         </View>
       )}
 
       {/* Buy/Sell Tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { backgroundColor: c.surface }]}>
         <TouchableOpacity
           style={[styles.tab, tab === 'buy' && styles.tabActiveBuy]}
           onPress={() => setTab('buy')}
         >
-          <Text style={[styles.tabText, tab === 'buy' && styles.tabTextActive]}>Acheter</Text>
+          <Text style={[styles.tabText, { color: tab === 'buy' ? '#fff' : c.textSecondary }, tab === 'buy' && styles.tabTextActive]}>Acheter</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, tab === 'sell' && styles.tabActiveSell]}
           onPress={() => setTab('sell')}
         >
-          <Text style={[styles.tabText, tab === 'sell' && styles.tabTextActive]}>Vendre</Text>
+          <Text style={[styles.tabText, { color: tab === 'sell' ? '#fff' : c.textSecondary }, tab === 'sell' && styles.tabTextActive]}>Vendre</Text>
         </TouchableOpacity>
       </View>
 
       {/* Amount Input */}
       <View style={styles.inputSection}>
         <View style={styles.inputHeader}>
-          <Text style={styles.inputLabel}>Montant</Text>
+          <Text style={[styles.inputLabel, { color: c.text }]}>Montant</Text>
           <View style={styles.amountTypeButtons}>
             <TouchableOpacity
-              style={[styles.amountTypeBtn, amountType === 'grams' && styles.amountTypeBtnActive]}
+              style={[styles.amountTypeBtn, { backgroundColor: amountType === 'grams' ? c.gold : c.border }, amountType === 'grams' && styles.amountTypeBtnActive]}
               onPress={() => { setAmountType('grams'); setAmount(''); }}
             >
-              <Text style={[styles.amountTypeBtnText, amountType === 'grams' && styles.amountTypeBtnTextActive]}>Grammes</Text>
+              <Text style={[styles.amountTypeBtnText, { color: amountType === 'grams' ? '#0F0F1A' : c.textSecondary }, amountType === 'grams' && styles.amountTypeBtnTextActive]}>Grammes</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.amountTypeBtn, amountType === 'xof' && styles.amountTypeBtnActive]}
+              style={[styles.amountTypeBtn, { backgroundColor: amountType === 'xof' ? c.gold : c.border }, amountType === 'xof' && styles.amountTypeBtnActive]}
               onPress={() => { setAmountType('xof'); setAmount(''); }}
             >
-              <Text style={[styles.amountTypeBtnText, amountType === 'xof' && styles.amountTypeBtnTextActive]}>XOF</Text>
+              <Text style={[styles.amountTypeBtnText, { color: amountType === 'xof' ? '#0F0F1A' : c.textSecondary }, amountType === 'xof' && styles.amountTypeBtnTextActive]}>XOF</Text>
             </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { backgroundColor: c.surface, borderColor: c.border }]}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: c.text }]}
             placeholder="0.000"
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={c.textTertiary}
             value={amount}
             onChangeText={setAmount}
             keyboardType="decimal-pad"
           />
-          <Text style={styles.inputSuffix}>{amountType === 'grams' ? 'g' : 'XOF'}</Text>
+          <Text style={[styles.inputSuffix, { color: c.textSecondary }]}>{amountType === 'grams' ? 'g' : 'XOF'}</Text>
         </View>
 
         {/* Quick Amount Buttons */}
@@ -406,12 +408,14 @@ export default function MarketScreen() {
               key={value}
               style={[
                 styles.quickAmountBtn,
+                { backgroundColor: amount === value.toString() ? c.gold : c.border },
                 amount === value.toString() && styles.quickAmountBtnActive
               ]}
               onPress={() => handleQuickAmount(value)}
             >
               <Text style={[
                 styles.quickAmountText,
+                { color: amount === value.toString() ? '#0F0F1A' : c.textSecondary },
                 amount === value.toString() && styles.quickAmountTextActive
               ]}>
                 {formatQuickAmount(value)}
@@ -423,20 +427,22 @@ export default function MarketScreen() {
 
       {/* Payment Method Selector */}
       <View style={styles.paymentSection}>
-        <Text style={styles.sectionLabel}>Mode de paiement</Text>
+        <Text style={[styles.sectionLabel, { color: c.text }]}>Mode de paiement</Text>
         <View style={styles.paymentMethods}>
           {PAYMENT_METHODS.map((method) => (
             <TouchableOpacity
               key={method.id}
               style={[
                 styles.paymentMethod,
+                { backgroundColor: c.surface, borderColor: paymentMethod === method.id ? c.gold : c.border },
                 paymentMethod === method.id && styles.paymentMethodActive
               ]}
               onPress={() => setPaymentMethod(method.id)}
             >
-              <Ionicons name={method.icon} size={16} color={paymentMethod === method.id ? method.color : '#9CA3AF'} />
+              <Ionicons name={method.icon} size={16} color={paymentMethod === method.id ? method.color : c.textSecondary} />
               <Text style={[
                 styles.paymentName,
+                { color: paymentMethod === method.id ? c.gold : c.textSecondary },
                 paymentMethod === method.id && styles.paymentNameActive
               ]}>
                 {method.name}
@@ -447,16 +453,16 @@ export default function MarketScreen() {
       </View>
 
       {/* Transaction Summary */}
-      <View style={styles.summary}>
+      <View style={[styles.summary, { backgroundColor: c.surface }]}>
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Prix unitaire</Text>
-          <Text style={styles.summaryValue}>
+          <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>Prix unitaire</Text>
+          <Text style={[styles.summaryValue, { color: c.text }]}>
             {tab === 'buy' ? price?.buyPrice?.toLocaleString() : price?.sellPrice?.toLocaleString()} XOF/g
           </Text>
         </View>
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>{amountType === 'grams' ? 'Total estimé' : 'Or équivalent'}</Text>
-          <Text style={styles.summaryValueBold}>
+          <Text style={[styles.summaryLabel, { color: c.textSecondary }]}>{amountType === 'grams' ? 'Total estimé' : 'Or équivalent'}</Text>
+          <Text style={[styles.summaryValueBold, { color: c.gold }]}>
             {amountType === 'grams' ? `${calculateTotal().toLocaleString()} XOF` : `${calculateTotal().toFixed(3)} g`}
           </Text>
         </View>
@@ -500,7 +506,7 @@ export default function MarketScreen() {
         )}
       </TouchableOpacity>
 
-      <Text style={styles.disclaimer}>
+      <Text style={[styles.disclaimer, { color: c.textTertiary }]}>
         Le prix est valide pendant 60 secondes. Les transactions sont soumises aux limites KYC.
       </Text>
       </ScrollView>
