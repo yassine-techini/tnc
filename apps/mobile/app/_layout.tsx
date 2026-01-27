@@ -1,10 +1,11 @@
 import { Stack, useRouter } from 'expo-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from '../stores/auth';
 import Loader from '../components/Loader';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { networkMonitor } from '../lib/network';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
@@ -14,6 +15,12 @@ import { OfflineBanner } from '../components/OfflineBanner';
 
 // Initialize offline detection (wires into React Query's onlineManager)
 networkMonitor.init();
+
+// Pause React Query polling/refetches when app is in background to save battery
+function onAppStateChange(status: AppStateStatus) {
+  focusManager.setFocused(status === 'active');
+}
+AppState.addEventListener('change', onAppStateChange);
 
 const queryClient = new QueryClient({
   defaultOptions: {

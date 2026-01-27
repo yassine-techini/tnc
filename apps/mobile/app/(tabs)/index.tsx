@@ -15,7 +15,7 @@ export default function HomeScreen() {
   const { data: priceData, isLoading: priceLoading, refetch: refetchPrice } = useQuery({
     queryKey: ['price'],
     queryFn: () => api.getPrice(),
-    refetchInterval: 60000,
+    refetchInterval: 5 * 60 * 1000, // 5 min — saves battery vs 60s polling
   });
 
   const { data: walletData, isLoading: walletLoading, refetch: refetchWallet } = useQuery({

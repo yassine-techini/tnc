@@ -146,7 +146,7 @@ export default function MarketScreen() {
   const { data: priceData, isLoading: priceLoading } = useQuery({
     queryKey: ['price'],
     queryFn: () => api.getPrice(),
-    refetchInterval: 60000,
+    refetchInterval: 5 * 60 * 1000, // 5 min — saves battery vs 60s polling
   });
 
   const { data: stockData } = useQuery({
@@ -169,7 +169,7 @@ export default function MarketScreen() {
         return { success: true as const, data: { prices, period: '24h' }, requestId: 'local' };
       }
     },
-    refetchInterval: 300000, // Refresh every 5 minutes
+    // No polling — relies on staleTime (10 min) + pull-to-refresh to save battery
   });
 
   const chartData = useMemo(() => {
