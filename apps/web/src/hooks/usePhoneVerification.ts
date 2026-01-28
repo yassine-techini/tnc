@@ -89,10 +89,7 @@ export function usePhoneVerification(
           canResend: false,
         }));
 
-        addToast({
-          type: 'success',
-          message: 'Code de vérification envoye',
-        });
+        addToast('success', 'Code de vérification envoyé');
 
         // Enable resend after cooldown
         setTimeout(() => {
@@ -114,10 +111,7 @@ export function usePhoneVerification(
 
         onError?.(errorMessage);
 
-        addToast({
-          type: 'error',
-          message: errorMessage,
-        });
+        addToast('error', errorMessage);
 
         return false;
       }
@@ -160,10 +154,7 @@ export function usePhoneVerification(
           isVerified: true,
         }));
 
-        addToast({
-          type: 'success',
-          message: 'Numéro de téléphone verifie',
-        });
+        addToast('success', 'Numéro de téléphone vérifié');
 
         onVerified?.();
 
@@ -179,10 +170,7 @@ export function usePhoneVerification(
 
         onError?.(errorMessage);
 
-        addToast({
-          type: 'error',
-          message: errorMessage,
-        });
+        addToast('error', errorMessage);
 
         return false;
       }

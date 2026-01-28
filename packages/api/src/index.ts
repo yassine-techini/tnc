@@ -41,14 +41,46 @@ const app = new Hono<AppEnv>();
 // Environment validation — fail fast if critical secrets are missing
 app.use('*', async (c, next) => {
   const env = c.env;
-  if (!env.JWT_SECRET) {
-    console.error('FATAL: JWT_SECRET is not set');
-    return c.json({ success: false, error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' } }, 500);
+
+  // Critical bindings that must always be present
+  const requiredBindings: Array<{ key: keyof Env; name: string }> = [
+    { key: 'DB', name: 'D1 database binding' },
+    { key: 'JWT_SECRET', name: 'JWT secret' },
+    { key: 'ENCRYPTION_KEY', name: 'Encryption key' },
+  ];
+
+  // Production-only requirements (payment providers, notifications)
+  const productionRequirements: Array<{ key: keyof Env; name: string }> = [
+    { key: 'GOLD_API_KEY', name: 'Gold API key' },
+    { key: 'TWILIO_ACCOUNT_SID', name: 'Twilio account SID' },
+    { key: 'TWILIO_AUTH_TOKEN', name: 'Twilio auth token' },
+    { key: 'RESEND_API_KEY', name: 'Resend API key' },
+  ];
+
+  // Validate required bindings
+  for (const { key, name } of requiredBindings) {
+    if (!env[key]) {
+      console.error(`FATAL: ${name} (${key}) is not set`);
+      return c.json({
+        success: false,
+        error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' }
+      }, 500);
+    }
   }
-  if (!env.DB) {
-    console.error('FATAL: D1 database binding (DB) is not set');
-    return c.json({ success: false, error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' } }, 500);
+
+  // Validate production requirements
+  if (env.ENVIRONMENT === 'production') {
+    for (const { key, name } of productionRequirements) {
+      if (!env[key]) {
+        console.error(`FATAL: ${name} (${key}) is required in production`);
+        return c.json({
+          success: false,
+          error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' }
+        }, 500);
+      }
+    }
   }
+
   await next();
 });
 

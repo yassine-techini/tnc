@@ -263,8 +263,8 @@ export function PhoneVerificationModal({
       onClose={handleClose}
       title={step === 'success' ? undefined : 'Vérification du téléphone'}
       size="sm"
-      closeOnOverlayClick={step !== 'verifying'}
-      closeOnEscape={step !== 'verifying'}
+      closeOnOverlayClick={step !== 'verify'}
+      closeOnEscape={step !== 'verify'}
       showCloseButton={step !== 'success'}
     >
       {step === 'phone' && renderPhoneStep()}

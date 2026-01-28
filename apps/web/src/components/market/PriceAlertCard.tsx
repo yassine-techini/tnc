@@ -301,10 +301,11 @@ function CreateAlertModal({
               setTargetPrice('');
               setError('');
             }}
-          >
-            <option value="ABOVE">Au-dessus de...</option>
-            <option value="BELOW">En-dessous de...</option>
-          </Select>
+            options={[
+              { value: 'ABOVE', label: 'Au-dessus de...' },
+              { value: 'BELOW', label: 'En-dessous de...' },
+            ]}
+          />
         </FormField>
 
         {/* Target Price */}

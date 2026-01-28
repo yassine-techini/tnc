@@ -9,7 +9,6 @@ import {
   PASSWORD_REQUIRE_LOWERCASE,
   PASSWORD_REQUIRE_NUMBER,
   PASSWORD_REQUIRE_SPECIAL,
-  PHONE_REGEX_BF,
 } from '../constants/index.js';
 
 /**

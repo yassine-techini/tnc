@@ -34,19 +34,8 @@ export default function CertificateScreen() {
   const issueCertificate = useMutation({
     mutationFn: async () => {
       if (!tokens?.accessToken) throw new Error('Non authentifié');
-      const res = await api.request('/wallet/certificate', {
-        method: 'GET',
-        token: tokens.accessToken,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Erreur');
-      return res.data as {
-        certificateId: string;
-        verificationCode: string;
-        downloadUrl: string;
-        userName: string;
-        tokenBalance: number;
-        issuedAt: string;
-      };
+      const res = await api.getCertificate(tokens.accessToken);
+      return res.data;
     },
     onSuccess: () => {
       setMessage({ type: 'success', text: 'Certificat généré avec succès.' });

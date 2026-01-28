@@ -528,6 +528,18 @@ class MobileApiClient {
       token,
     });
   }
+
+  // Certificate
+  async getCertificate(token: string) {
+    return this.request<{
+      certificateId: string;
+      verificationCode: string;
+      downloadUrl: string;
+      userName: string;
+      tokenBalance: number;
+      issuedAt: string;
+    }>('/api/v1/wallet/certificate', { token });
+  }
 }
 
 export const api = new MobileApiClient(API_URL);

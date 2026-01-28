@@ -3,7 +3,7 @@
  * Formatage des montants XOF et conversion
  */
 
-import { DEFAULT_CURRENCY, CASH_PRECISION, DEFAULT_USD_XOF_RATE } from '../constants/index.js';
+import { DEFAULT_USD_XOF_RATE } from '../constants/index.js';
 
 /**
  * Format a number as XOF currency

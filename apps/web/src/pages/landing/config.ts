@@ -9,8 +9,8 @@ export const LINKS = {
   verify: '/verify',
   admin: 'https://tnc-trading-admin.pages.dev',
   state: 'https://tnc-trading-state.pages.dev',
-  appStore: '#', // TODO: replace with actual App Store link after publication
-  playStore: '#', // TODO: replace with actual Play Store link after publication
+  appStore: 'https://apps.apple.com/app/tnc-trading/id000000000', // Placeholder - update with real App Store ID after publication
+  playStore: 'https://play.google.com/store/apps/details?id=com.tnctrading.app', // Placeholder - update with real package name after publication
 };
 
 /**

@@ -4,7 +4,7 @@
  */
 
 import type { KycLevel, KycStatus } from '../types/index.js';
-import { KYC_LIMITS, KYC_LEVELS, KYC_STATUSES, KYC_DOCUMENT_TYPES } from '../constants/index.js';
+import { KYC_LIMITS, KYC_DOCUMENT_TYPES } from '../constants/index.js';
 
 /**
  * Check if a KYC level can trade (buy/sell)

@@ -3,7 +3,7 @@
  * Validation et formatage des numeros de telephone burkinabe
  */
 
-import { PHONE_COUNTRY_CODES, PHONE_REGEX_BF } from '../constants/index.js';
+import { PHONE_REGEX_BF } from '../constants/index.js';
 
 /**
  * Validate a Burkina Faso phone number

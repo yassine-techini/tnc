@@ -99,10 +99,7 @@ export function useApiError(): UseApiErrorReturn {
       setState({ error: errorMessage, code: errorCode });
 
       // Show toast notification
-      addToast({
-        type: 'error',
-        message: errorMessage,
-      });
+      addToast('error', errorMessage);
     },
     [addToast]
   );

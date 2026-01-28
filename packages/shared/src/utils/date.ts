@@ -3,7 +3,7 @@
  * Formatage des dates avec timezone Burkina Faso
  */
 
-import { TIMEZONE, DATE_FORMAT, DATETIME_FORMAT, TIME_FORMAT } from '../constants/index.js';
+import { TIMEZONE } from '../constants/index.js';
 
 /**
  * Get current date/time in Burkina Faso timezone

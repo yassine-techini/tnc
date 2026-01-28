@@ -377,4 +377,4 @@ export const SUPPORT_HOURS = {
 };
 
 export const SUPPORT_EMAIL = 'support@tnc-trading.com';
-export const SUPPORT_PHONE = '+226XXXXXXXX';
+export const SUPPORT_PHONE = '+22670000000'; // Update with actual support phone number
