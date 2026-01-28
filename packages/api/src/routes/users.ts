@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { KycService } from '../services/kyc.service';
 import { AuthService } from '../services/auth.service';
@@ -10,7 +10,7 @@ import { NotificationService } from '../services/notification.service';
 import { EncryptionService } from '../services/encryption.service';
 import { ConfigService } from '../services/config.service';
 
-const users = new Hono<{ Bindings: Env }>();
+const users = new Hono<AppEnv>();
 
 // All routes require authentication
 users.use('/*', authMiddleware);
@@ -249,7 +249,7 @@ users.post('/me/kyc', async (c) => {
         callbackUrl: `${apiUrl}/api/v1/webhooks/kyc`,
       });
 
-      const verificationResult = await kycService.initiateVerification(pendingDocs.id);
+      const verificationResult = await kycService.initiateVerification(pendingDocs.id as string);
       if (verificationResult.success) {
         verificationJobId = verificationResult.jobId;
       }
@@ -468,7 +468,7 @@ users.post('/me/kyc/documents', async (c) => {
   try {
     const formData = await c.req.formData();
     const documentType = formData.get('type') as string; // 'front', 'back', 'selfie'
-    const file = formData.get('file') as File;
+    const file = formData.get('file') as unknown as File;
 
     if (!documentType || !file) {
       return c.json({
@@ -1501,7 +1501,7 @@ users.delete('/me', async (c) => {
       ipAddress,
       riskLevel: 'critical',
       success: true,
-      details: { email: user.email },
+      oldValue: JSON.stringify({ email: user.email }),
     });
 
     return c.json({

@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { ConfigService } from '../services/config.service';
 import { logger } from '../lib/logger';
 
@@ -41,7 +41,7 @@ async function getTier(path: string, configService: ConfigService): Promise<Rate
   return { maxRequests: max, windowSeconds: window };
 }
 
-export async function rateLimiter(c: Context<{ Bindings: Env }>, next: Next) {
+export async function rateLimiter(c: Context<AppEnv>, next: Next) {
   const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
   const path = c.req.path;
 

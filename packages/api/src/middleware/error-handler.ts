@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { logger } from '../lib/logger';
 
 /** Redact PII from error messages before logging */
@@ -63,7 +63,7 @@ function parseStack(stack: string): Array<{ filename: string; lineno?: number; f
 /**
  * Global error handler
  */
-export function errorHandler(err: Error, c: Context<{ Bindings: Env }>) {
+export function errorHandler(err: Error, c: Context<AppEnv>) {
   const requestId = c.req.header('X-Request-ID') || crypto.randomUUID();
   logger.error('API Error', { message: redactPii(err.message), stack: redactPii(err.stack || '') });
 

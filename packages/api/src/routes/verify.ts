@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { CertificateService } from '../services/certificate.service';
 
-const verify = new Hono<{ Bindings: Env }>();
+const verify = new Hono<AppEnv>();
 
 // GET /verify/:code — Public endpoint (no auth required)
 verify.get('/:code', async (c) => {

@@ -26,7 +26,7 @@ export class TransactionSession {
   }
   
   async lockTransaction(request: Request): Promise<Response> {
-    const { userId, quoteId } = await request.json();
+    const { userId, quoteId } = await request.json() as { userId: string; quoteId: string };
     const key = `lock:${userId}`;
     
     const existing = await this.state.storage.get(key);
@@ -48,7 +48,7 @@ export class TransactionSession {
   }
   
   async releaseTransaction(request: Request): Promise<Response> {
-    const { userId } = await request.json();
+    const { userId } = await request.json() as { userId: string };
     await this.state.storage.delete(`lock:${userId}`);
     return new Response('OK');
   }

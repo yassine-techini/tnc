@@ -511,7 +511,7 @@ export class NotificationService {
         return { success: false, provider: 'resend', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { id: string };
       return { success: true, provider: 'resend', messageId: data.id };
     } catch (error) {
       return { success: false, provider: 'resend', error: String(error) };
@@ -628,7 +628,7 @@ export class NotificationService {
         return { success: false, provider: 'twilio', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { sid: string };
       await this.logNotification('sms', options.to, 'SMS', true);
       return { success: true, provider: 'twilio', messageId: data.sid };
     } catch (error) {
@@ -674,7 +674,7 @@ export class NotificationService {
         return { success: false, provider: 'fcm', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { message_id: string };
       return { success: true, provider: 'fcm', messageId: data.message_id };
     } catch (error) {
       return { success: false, provider: 'fcm', error: String(error) };

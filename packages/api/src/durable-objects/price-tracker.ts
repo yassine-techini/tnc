@@ -295,7 +295,7 @@ export class PriceTracker implements DurableObject {
     }
 
     if (request.method === 'DELETE') {
-      const { userId } = await request.json();
+      const { userId } = await request.json() as { userId: string };
       await this.removeAlert(userId);
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json' },

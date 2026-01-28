@@ -70,14 +70,22 @@ export interface Env {
   CF_ACCESS_STATE_AUDIENCE?: string; // Application audience tag for state portal
 }
 
-// Context type for Hono
-export interface Context {
+// Hono context variables set by middleware
+export interface AppVariables {
+  userId: string;
+  userEmail: string;
+  kycLevel: string;
+  adminId: string;
+  adminEmail: string;
+  adminRole: string;
+  requestId: string;
+  user?: User;
+}
+
+// Full Hono app environment type — use as Hono<AppEnv>
+export interface AppEnv {
   Bindings: Env;
-  Variables: {
-    userId?: string;
-    user?: User;
-    requestId: string;
-  };
+  Variables: AppVariables;
 }
 
 // User type from JWT

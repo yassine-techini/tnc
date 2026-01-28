@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { MarketService } from '../services/market.service';
 import { WalletService } from '../services/wallet.service';
@@ -11,7 +11,7 @@ import { PriceAlertService } from '../services/price-alert.service';
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
 
-const market = new Hono<{ Bindings: Env }>();
+const market = new Hono<AppEnv>();
 
 /**
  * Load KYC trading limits from config DB

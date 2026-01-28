@@ -131,7 +131,7 @@ async function triggerAlert(env: Env, alert: any, currentPrice: number): Promise
     if (alert.notification_method === 'ALL' || alert.notification_method === 'EMAIL') {
       // Queue email notification
       try {
-        await env.NOTIFICATIONS_QUEUE?.send({
+        await env.NOTIFICATION_QUEUE?.send({
           type: 'PRICE_ALERT_EMAIL',
           userId: alert.user_id,
           email: alert.email,
@@ -151,7 +151,7 @@ async function triggerAlert(env: Env, alert: any, currentPrice: number): Promise
     if (alert.notification_method === 'ALL' || alert.notification_method === 'SMS') {
       // Queue SMS notification
       try {
-        await env.NOTIFICATIONS_QUEUE?.send({
+        await env.NOTIFICATION_QUEUE?.send({
           type: 'PRICE_ALERT_SMS',
           userId: alert.user_id,
           phone: alert.phone,
@@ -170,7 +170,7 @@ async function triggerAlert(env: Env, alert: any, currentPrice: number): Promise
     if (alert.notification_method === 'ALL' || alert.notification_method === 'PUSH') {
       // Queue push notification
       try {
-        await env.NOTIFICATIONS_QUEUE?.send({
+        await env.NOTIFICATION_QUEUE?.send({
           type: 'PRICE_ALERT_PUSH',
           userId: alert.user_id,
           data: {

@@ -12,7 +12,7 @@ import { prettyJSON } from 'hono/pretty-json';
 // Note: compression is handled by Cloudflare edge — do NOT use hono/compress on Workers (causes double-encoding)
 
 // Types
-import type { Env } from './types/env';
+import type { Env, AppEnv } from './types/env';
 
 // Middleware
 import { authMiddleware } from './middleware/auth';
@@ -32,7 +32,7 @@ import { setupRoutes } from './routes/setup';
 import { realtimeRoutes } from './routes/realtime';
 
 // Create Hono app
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppEnv>();
 
 // ============================================
 // Global Middleware
@@ -207,7 +207,7 @@ app.get('/health', (c) => {
 // API Routes
 // ============================================
 
-const api = new Hono<{ Bindings: Env }>();
+const api = new Hono<AppEnv>();
 
 // Public routes (no auth required)
 api.route('/auth', authRoutes);

@@ -130,7 +130,7 @@ export class PaymentService {
         return { success: false, provider: 'orange_money', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { pay_token: string; payment_url: string };
 
       // Store payment intent in KV for webhook validation
       await this.kv.put(
@@ -198,7 +198,7 @@ export class PaymentService {
         return { success: false, provider: 'moov_money', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { transaction_id: string; payment_url: string };
 
       // Store payment intent
       await this.kv.put(
@@ -273,7 +273,7 @@ export class PaymentService {
         return { success: false, provider: 'cinetpay', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { code: string; message: string; data: { payment_token: string; payment_url: string } };
 
       if (data.code !== '201') {
         return { success: false, provider: 'cinetpay', error: data.message };
@@ -673,8 +673,8 @@ export class PaymentService {
         return { status: 'ERROR', details: { error: await response.text() } };
       }
 
-      const data = await response.json();
-      return { status: data.status, details: data };
+      const data = await response.json() as Record<string, unknown>;
+      return { status: data.status as string, details: data };
     } catch (error) {
       return { status: 'ERROR', details: { error: String(error) } };
     }
@@ -698,8 +698,8 @@ export class PaymentService {
         return { status: 'ERROR', details: { error: await response.text() } };
       }
 
-      const data = await response.json();
-      return { status: data.status, details: data };
+      const data = await response.json() as Record<string, unknown>;
+      return { status: data.status as string, details: data };
     } catch (error) {
       return { status: 'ERROR', details: { error: String(error) } };
     }
@@ -727,7 +727,7 @@ export class PaymentService {
         return { status: 'ERROR', details: { error: await response.text() } };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { data?: { status?: string } };
       return { status: data.data?.status || 'UNKNOWN', details: data };
     } catch (error) {
       return { status: 'ERROR', details: { error: String(error) } };
@@ -788,7 +788,7 @@ export class PaymentService {
         return { success: false, provider: 'orange_money', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { transaction_id: string };
       return {
         success: true,
         provider: 'orange_money',
@@ -864,7 +864,7 @@ export class PaymentService {
         return { success: false, provider: 'moov_money', error };
       }
 
-      const data = await response.json();
+      const data = await response.json() as { transaction_id: string };
       return {
         success: true,
         provider: 'moov_money',

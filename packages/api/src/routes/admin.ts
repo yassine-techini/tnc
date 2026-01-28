@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { PaymentService } from '../services/payment.service';
 import { NotificationService } from '../services/notification.service';
@@ -8,7 +8,7 @@ import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
 
-const admin = new Hono<{ Bindings: Env }>();
+const admin = new Hono<AppEnv>();
 
 /** Safe pagination parser: ensures page >= 1, 1 <= limit <= maxLimit */
 function parsePagination(

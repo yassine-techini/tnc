@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { WalletService } from '../services/wallet.service';
 import { MarketService } from '../services/market.service';
@@ -9,7 +9,7 @@ import { CertificateService } from '../services/certificate.service';
 import { PaymentService } from '../services/payment.service';
 import { ConfigService } from '../services/config.service';
 
-const wallet = new Hono<{ Bindings: Env }>();
+const wallet = new Hono<AppEnv>();
 
 // Default withdrawal limits by KYC level (XOF/day) — overridden by config
 const DEFAULT_WITHDRAWAL_LIMITS = {

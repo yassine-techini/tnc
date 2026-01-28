@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { UserService } from '../services/user.service';
 import { WalletService } from '../services/wallet.service';
@@ -9,7 +9,7 @@ import { SecurityService, SECURITY_DEFAULTS } from '../services/security.service
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
 
-const auth = new Hono<{ Bindings: Env }>();
+const auth = new Hono<AppEnv>();
 
 // ==========================================
 // VALIDATION SCHEMAS (Banking-grade)

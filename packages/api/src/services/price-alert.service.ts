@@ -14,6 +14,7 @@ interface PriceAlert {
 interface UserInfo {
   email: string;
   phone: string;
+  pushToken?: string;
 }
 
 interface TriggerResult {
@@ -160,23 +161,26 @@ export class PriceAlertService {
         if (user.phone) {
           await this.notificationService.sendSms({
             to: user.phone,
-            body: `TNC Trading: ${message}`,
+            message: `TNC Trading: ${message}`,
           });
           notified = true;
         }
       }
 
       if (method === 'PUSH' || method === 'ALL') {
-        await this.notificationService.sendPushToUser(alert.user_id, {
-          title: subject,
-          body: message,
-          data: {
-            type: 'PRICE_ALERT',
-            alertId: alert.id,
-            currentPrice: currentPrice.toString(),
-          },
-        });
-        notified = true;
+        if (user.pushToken) {
+          await this.notificationService.sendPush({
+            token: user.pushToken,
+            title: subject,
+            body: message,
+            data: {
+              type: 'PRICE_ALERT',
+              alertId: alert.id,
+              currentPrice: currentPrice.toString(),
+            },
+          });
+          notified = true;
+        }
       }
     } catch (error) {
       console.error('Failed to send alert notification:', error);

@@ -4,7 +4,7 @@
  */
 
 import type { Context, Next } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { ROLE_DEFAULTS, type Module, type Action, MODULES, ACTIONS } from '../lib/rbac';
 
 /**
@@ -12,7 +12,7 @@ import { ROLE_DEFAULTS, type Module, type Action, MODULES, ACTIONS } from '../li
  * Override entries in admin_permissions take precedence over role defaults.
  */
 export function requirePermission(module: Module, action: Action) {
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<AppEnv>, next: Next) => {
     const adminId = c.get('adminId' as never) as string | undefined;
     const adminRole = c.get('adminRole' as never) as string | undefined;
 

@@ -4,13 +4,13 @@
  */
 
 import { Hono } from 'hono';
-import type { Env } from '../types/env';
+import type { Env, AppEnv } from '../types/env';
 import { PaymentService, WebhookPayload } from '../services/payment.service';
 import { NotificationService } from '../services/notification.service';
 import { KycService } from '../services/kyc.service';
 import { ConfigService } from '../services/config.service';
 
-const webhooks = new Hono<{ Bindings: Env }>();
+const webhooks = new Hono<AppEnv>();
 
 /**
  * Get payment and notification services

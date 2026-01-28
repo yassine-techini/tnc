@@ -54,7 +54,7 @@ describe('requirePermission middleware', () => {
     const res = await app.request('/test');
     expect(res.status).toBe(401);
 
-    const body = await res.json();
+    const body = await res.json() as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -71,7 +71,7 @@ describe('requirePermission middleware', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as Record<string, unknown>;
     expect(body.data).toBe('ok');
   });
 
@@ -88,7 +88,7 @@ describe('requirePermission middleware', () => {
     });
 
     expect(res.status).toBe(403);
-    const body = await res.json();
+    const body = await res.json() as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 
@@ -105,7 +105,7 @@ describe('requirePermission middleware', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as Record<string, unknown>;
     expect(body.data).toBe('admin');
   });
 
@@ -122,7 +122,7 @@ describe('requirePermission middleware', () => {
     });
 
     expect(res.status).toBe(403);
-    const body = await res.json();
+    const body = await res.json() as Record<string, unknown>;
     expect(body.success).toBe(false);
   });
 

@@ -4,10 +4,10 @@
  */
 
 import { Hono } from 'hono';
-import type { Env } from '../types/env';
+import type { Env, AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 
-const realtime = new Hono<{ Bindings: Env }>();
+const realtime = new Hono<AppEnv>();
 
 /**
  * Get Price Tracker Durable Object

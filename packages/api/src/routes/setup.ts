@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 
-const setup = new Hono<{ Bindings: Env }>();
+const setup = new Hono<AppEnv>();
 
 // POST /setup/init - Initialize admin users (only works once)
 setup.post('/init', async (c) => {

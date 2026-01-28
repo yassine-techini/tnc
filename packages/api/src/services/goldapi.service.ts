@@ -182,7 +182,7 @@ export class GoldAPIService {
         );
 
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as { conversion_rates?: Record<string, number> };
           if (data.conversion_rates?.XOF) {
             const rate = data.conversion_rates.XOF;
             await this.kv.put('exchange_rate:usd_xof', rate.toString(), {
@@ -201,7 +201,7 @@ export class GoldAPIService {
       const response = await fetch(exchangeRateFallbackUrl);
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as { rates?: Record<string, number> };
         if (data.rates?.XOF) {
           const rate = data.rates.XOF;
           await this.kv.put('exchange_rate:usd_xof', rate.toString(), {

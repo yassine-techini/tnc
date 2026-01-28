@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import type { Env } from '../types/env';
+import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 import { logger } from '../lib/logger';
@@ -160,7 +160,7 @@ async function verifyCloudflareAccessJWT(
 /**
  * Middleware for authenticating regular users via JWT
  */
-export async function authMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
+export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -222,7 +222,7 @@ export async function authMiddleware(c: Context<{ Bindings: Env }>, next: Next) 
 /**
  * Middleware for authenticating admin users via Cloudflare Access
  */
-export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
+export async function adminAuthMiddleware(c: Context<AppEnv>, next: Next) {
   // Cloudflare Access injects these headers
   const cfAccessJwt = c.req.header('Cf-Access-Jwt-Assertion');
   const cfAccessUser = c.req.header('Cf-Access-Authenticated-User-Email');
@@ -306,9 +306,9 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
       }, 403);
     }
 
-    c.set('adminId', admin.id);
+    c.set('adminId', admin.id as string);
     c.set('adminEmail', cfAccessUser);
-    c.set('adminRole', admin.role);
+    c.set('adminRole', admin.role as string);
 
     await next();
   } catch (error) {
@@ -327,7 +327,7 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
 /**
  * Middleware for State portal (read-only access)
  */
-export async function stateAuthMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
+export async function stateAuthMiddleware(c: Context<AppEnv>, next: Next) {
   const cfAccessJwt = c.req.header('Cf-Access-Jwt-Assertion');
   const cfAccessUser = c.req.header('Cf-Access-Authenticated-User-Email');
 
@@ -406,7 +406,7 @@ export async function stateAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
       }, 403);
     }
 
-    c.set('adminId', admin.id);
+    c.set('adminId', admin.id as string);
     c.set('adminEmail', cfAccessUser);
     c.set('adminRole', 'STATE_OPERATOR');
 

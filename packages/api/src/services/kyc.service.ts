@@ -264,7 +264,11 @@ export class KycService {
         };
       }
 
-      const result = await response.json();
+      const result = await response.json() as {
+        job_id: string;
+        result_code: string;
+        result_text: string;
+      };
 
       // Update KYC document with job ID
       await this.db
@@ -460,7 +464,19 @@ export class KycService {
         return { success: false, error: errorText };
       }
 
-      const result = await response.json();
+      const result = await response.json() as {
+        job_success: boolean;
+        job_id: string;
+        result_code: string;
+        result_text: string;
+        confidence: number;
+        actions?: {
+          Document_Check?: string;
+          Human_Review_Required?: string;
+          Selfie_Check?: string;
+          Liveness_Check?: string;
+        };
+      };
 
       return {
         success: result.job_success,
