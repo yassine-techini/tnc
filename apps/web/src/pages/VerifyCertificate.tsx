@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -66,19 +66,7 @@ export default function VerifyCertificate() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-800/60">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gold-500 rounded-lg flex items-center justify-center">
-              <span className="text-slate-900 font-bold text-xl">T</span>
-            </div>
-            <span className="text-xl font-bold text-white">TNC Trading</span>
-          </Link>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-12 max-w-2xl">
+      <div className="container mx-auto px-4 py-12 max-w-2xl">
         {/* Title */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-full text-sm font-medium mb-4">
@@ -258,7 +246,7 @@ export default function VerifyCertificate() {
             Programme National de Tokenisation de l'Or — Ministère des Mines et des Carrières — Burkina Faso
           </p>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
