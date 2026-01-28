@@ -78,11 +78,11 @@ ENVIRONMENT = "staging"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "tnc-trading-db-staging"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Replace with staging DB ID
+database_id = "a0d0262f-de43-465e-abf2-e4ec6a2c8423"
 
 [[env.staging.kv_namespaces]]
 binding = "CACHE"
-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Replace with staging KV ID
+id = "418b5d6606a2473ab540b91e9b1b05d9"
 
 [[env.staging.r2_buckets]]
 binding = "STORAGE"
@@ -132,12 +132,12 @@ ENVIRONMENT = "production"
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "tnc-trading-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Replace with production DB ID
+database_name = "tnc-trading-db-production"
+database_id = "b575d75c-4e3f-4bc7-ab49-2e63b04ead53"
 
 [[env.production.kv_namespaces]]
 binding = "CACHE"
-id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Replace with production KV ID
+id = "54194aac4f444552b47da843c1b28288"
 
 [[env.production.r2_buckets]]
 binding = "STORAGE"

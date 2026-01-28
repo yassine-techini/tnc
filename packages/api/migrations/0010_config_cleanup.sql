@@ -14,7 +14,9 @@ INSERT OR IGNORE INTO config (key, value, description) VALUES
     ('email_from_name', 'TNC Trading', 'Nom expéditeur email'),
     ('copyright_year', '2024', 'Année copyright dans les emails'),
     ('support_email', 'support@tnc-trading.com', 'Email du support'),
-    ('support_phone', '+226XXXXXXXX', 'Téléphone du support');
+    ('support_phone', '+22670000001', 'Téléphone du support'),
+    ('app_store_url', 'https://apps.apple.com/bf/app/tnc-trading/id0000000000', 'Lien App Store iOS'),
+    ('play_store_url', 'https://play.google.com/store/apps/details?id=com.tnc.trading', 'Lien Play Store Android');
 
 -- Transaction fees & spreads
 INSERT OR IGNORE INTO config (key, value, description) VALUES
