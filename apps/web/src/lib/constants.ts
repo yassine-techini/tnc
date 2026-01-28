@@ -136,7 +136,7 @@ export const SPREADS = {
 } as const;
 
 // API endpoints base
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://tnc-trading-api.yassine-techini.workers.dev';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
 
 // Session timeout (30 minutes as per CLAUDE.md)
 export const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in ms

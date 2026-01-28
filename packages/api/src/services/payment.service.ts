@@ -57,12 +57,19 @@ export interface WebhookPayload {
   raw?: any;
 }
 
+import { ConfigService } from './config.service';
+
 export class PaymentService {
+  private configService: ConfigService;
+
   constructor(
     private db: D1Database,
     private kv: KVNamespace,
-    private config: PaymentConfig
-  ) {}
+    private config: PaymentConfig,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || new ConfigService(db, kv);
+  }
 
   /**
    * Check if a provider is enabled in the integrations table
@@ -90,7 +97,15 @@ export class PaymentService {
 
     try {
       // Orange Money API - Burkina Faso
-      const response = await fetch('https://api.orange.com/orange-money-webpay/bf/v1/webpayment', {
+      const [appUrl, apiUrl, omApiUrl, defaultCurrency, paymentIntentTtl] = await Promise.all([
+        this.configService.get('app_url', 'https://app.tnc-trading.com'),
+        this.configService.get('api_url', 'https://api.tnc-trading.com'),
+        this.configService.get('orange_money_api_url', 'https://api.orange.com/orange-money-webpay/bf/v1/webpayment'),
+        this.configService.get('default_currency', 'XOF'),
+        this.configService.getNumber('payment_intent_ttl', 3600),
+      ]);
+
+      const response = await fetch(omApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.orangeMoneyApiKey}`,
@@ -98,12 +113,12 @@ export class PaymentService {
         },
         body: JSON.stringify({
           merchant_key: this.config.orangeMoneyMerchantId,
-          currency: 'XOF',
+          currency: defaultCurrency,
           order_id: request.reference,
           amount: request.amount,
-          return_url: request.returnUrl || 'https://app.tnc-trading.com/payment/callback',
-          cancel_url: request.returnUrl || 'https://app.tnc-trading.com/payment/cancel',
-          notif_url: request.notifyUrl || 'https://api.tnc-trading.com/api/v1/webhooks/orange-money',
+          return_url: request.returnUrl || `${appUrl}/payment/callback`,
+          cancel_url: request.returnUrl || `${appUrl}/payment/cancel`,
+          notif_url: request.notifyUrl || `${apiUrl}/api/v1/webhooks/orange-money`,
           lang: 'fr',
           reference: request.description,
         }),
@@ -125,7 +140,7 @@ export class PaymentService {
           transactionId: data.pay_token,
           createdAt: new Date().toISOString(),
         }),
-        { expirationTtl: 3600 } // 1 hour
+        { expirationTtl: paymentIntentTtl }
       );
 
       return {
@@ -151,7 +166,15 @@ export class PaymentService {
 
     try {
       // Moov Money API
-      const response = await fetch('https://api.moov-africa.com/bfa/payment/initiate', {
+      const [appUrl, apiUrl, moovApiUrl, defaultCurrency, paymentIntentTtl] = await Promise.all([
+        this.configService.get('app_url', 'https://app.tnc-trading.com'),
+        this.configService.get('api_url', 'https://api.tnc-trading.com'),
+        this.configService.get('moov_money_api_url', 'https://api.moov-africa.com/bfa/payment/initiate'),
+        this.configService.get('default_currency', 'XOF'),
+        this.configService.getNumber('payment_intent_ttl', 3600),
+      ]);
+
+      const response = await fetch(moovApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.moovApiKey}`,
@@ -160,12 +183,12 @@ export class PaymentService {
         body: JSON.stringify({
           merchant_id: this.config.moovMerchantId,
           amount: request.amount,
-          currency: 'XOF',
+          currency: defaultCurrency,
           reference: request.reference,
           description: request.description,
           phone: request.customerPhone,
-          callback_url: request.notifyUrl || 'https://api.tnc-trading.com/api/v1/webhooks/moov-money',
-          return_url: request.returnUrl || 'https://app.tnc-trading.com/payment/callback',
+          callback_url: request.notifyUrl || `${apiUrl}/api/v1/webhooks/moov-money`,
+          return_url: request.returnUrl || `${appUrl}/payment/callback`,
         }),
       });
 
@@ -185,7 +208,7 @@ export class PaymentService {
           transactionId: data.transaction_id,
           createdAt: new Date().toISOString(),
         }),
-        { expirationTtl: 3600 }
+        { expirationTtl: paymentIntentTtl }
       );
 
       return {
@@ -210,7 +233,17 @@ export class PaymentService {
     }
 
     try {
-      const response = await fetch('https://api-checkout.cinetpay.com/v2/payment', {
+      const [appUrl, apiUrl, cinetpayApiUrl, defaultCurrency, defaultCountry, defaultCity, paymentIntentTtl] = await Promise.all([
+        this.configService.get('app_url', 'https://app.tnc-trading.com'),
+        this.configService.get('api_url', 'https://api.tnc-trading.com'),
+        this.configService.get('cinetpay_api_url', 'https://api-checkout.cinetpay.com/v2/payment'),
+        this.configService.get('default_currency', 'XOF'),
+        this.configService.get('default_country', 'BF'),
+        this.configService.get('default_city', 'Ouagadougou'),
+        this.configService.getNumber('payment_intent_ttl', 3600),
+      ]);
+
+      const response = await fetch(cinetpayApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -220,17 +253,17 @@ export class PaymentService {
           site_id: this.config.cinetpaySiteId,
           transaction_id: request.reference,
           amount: request.amount,
-          currency: 'XOF',
+          currency: defaultCurrency,
           description: request.description,
-          return_url: request.returnUrl || 'https://app.tnc-trading.com/payment/callback',
-          notify_url: request.notifyUrl || 'https://api.tnc-trading.com/api/v1/webhooks/cinetpay',
+          return_url: request.returnUrl || `${appUrl}/payment/callback`,
+          notify_url: request.notifyUrl || `${apiUrl}/api/v1/webhooks/cinetpay`,
           channels: 'ALL',
           customer_email: request.customerEmail,
           customer_phone_number: request.customerPhone,
           customer_name: 'TNC User',
           customer_surname: '',
-          customer_country: 'BF',
-          customer_city: 'Ouagadougou',
+          customer_country: defaultCountry,
+          customer_city: defaultCity,
         }),
       });
 
@@ -254,7 +287,7 @@ export class PaymentService {
           transactionId: data.data.payment_token,
           createdAt: new Date().toISOString(),
         }),
-        { expirationTtl: 3600 }
+        { expirationTtl: paymentIntentTtl }
       );
 
       return {
@@ -281,14 +314,22 @@ export class PaymentService {
 
     try {
       // XOF is a zero-decimal currency — amount is in whole units, no *100
+      const [appUrl, appName, stripeApiUrl, defaultCurrency, paymentIntentTtl] = await Promise.all([
+        this.configService.get('app_url', 'https://app.tnc-trading.com'),
+        this.configService.get('app_name', 'TNC Trading'),
+        this.configService.get('stripe_api_url', 'https://api.stripe.com/v1/checkout/sessions'),
+        this.configService.get('default_currency', 'XOF'),
+        this.configService.getNumber('payment_intent_ttl', 3600),
+      ]);
+
       const params = new URLSearchParams();
       params.append('mode', 'payment');
-      params.append('line_items[0][price_data][currency]', 'xof');
-      params.append('line_items[0][price_data][product_data][name]', request.description || 'Dépôt TNC Trading');
+      params.append('line_items[0][price_data][currency]', defaultCurrency.toLowerCase());
+      params.append('line_items[0][price_data][product_data][name]', request.description || `Dépôt ${appName}`);
       params.append('line_items[0][price_data][unit_amount]', String(request.amount));
       params.append('line_items[0][quantity]', '1');
-      params.append('success_url', request.returnUrl || 'https://app.tnc-trading.com/payment/callback?session_id={CHECKOUT_SESSION_ID}');
-      params.append('cancel_url', request.cancelUrl || 'https://app.tnc-trading.com/payment/cancel');
+      params.append('success_url', request.returnUrl || `${appUrl}/payment/callback?session_id={CHECKOUT_SESSION_ID}`);
+      params.append('cancel_url', request.cancelUrl || `${appUrl}/payment/cancel`);
       params.append('client_reference_id', request.reference);
       if (request.customerEmail) {
         params.append('customer_email', request.customerEmail);
@@ -296,7 +337,7 @@ export class PaymentService {
       params.append('metadata[reference]', request.reference);
       params.append('metadata[platform]', 'tnc-trading');
 
-      const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      const response = await fetch(stripeApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.stripeSecretKey}`,
@@ -321,7 +362,7 @@ export class PaymentService {
           sessionId: session.id,
           createdAt: new Date().toISOString(),
         }),
-        { expirationTtl: 3600 }
+        { expirationTtl: paymentIntentTtl }
       );
 
       return {
@@ -620,14 +661,13 @@ export class PaymentService {
     }
 
     try {
-      const response = await fetch(
-        `https://api.orange.com/orange-money-webpay/bf/v1/transactionstatus/${transactionId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.config.orangeMoneyApiKey}`,
-          },
-        }
-      );
+      const omBaseUrl = await this.configService.get('orange_money_api_url', 'https://api.orange.com/orange-money-webpay/bf/v1/webpayment');
+      const omStatusUrl = omBaseUrl.replace('/webpayment', `/transactionstatus/${transactionId}`);
+      const response = await fetch(omStatusUrl, {
+        headers: {
+          'Authorization': `Bearer ${this.config.orangeMoneyApiKey}`,
+        },
+      });
 
       if (!response.ok) {
         return { status: 'ERROR', details: { error: await response.text() } };
@@ -646,14 +686,13 @@ export class PaymentService {
     }
 
     try {
-      const response = await fetch(
-        `https://api.moov-africa.com/bfa/payment/status/${transactionId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.config.moovApiKey}`,
-          },
-        }
-      );
+      const moovBaseUrl = await this.configService.get('moov_money_api_url', 'https://api.moov-africa.com/bfa/payment/initiate');
+      const moovStatusUrl = moovBaseUrl.replace('/initiate', `/status/${transactionId}`);
+      const response = await fetch(moovStatusUrl, {
+        headers: {
+          'Authorization': `Bearer ${this.config.moovApiKey}`,
+        },
+      });
 
       if (!response.ok) {
         return { status: 'ERROR', details: { error: await response.text() } };
@@ -727,7 +766,9 @@ export class PaymentService {
     }
 
     try {
-      const response = await fetch('https://api.orange.com/orange-money-webpay/bf/v1/cashin', {
+      const omBaseUrl = await this.configService.get('orange_money_api_url', 'https://api.orange.com/orange-money-webpay/bf/v1/webpayment');
+      const omCashinUrl = omBaseUrl.replace('/webpayment', '/cashin');
+      const response = await fetch(omCashinUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.orangeMoneyApiKey}`,
@@ -765,8 +806,9 @@ export class PaymentService {
     }
 
     try {
+      const stripeBaseUrl = await this.configService.get('stripe_api_url', 'https://api.stripe.com/v1/checkout/sessions');
       const response = await fetch(
-        `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+        `${stripeBaseUrl}/${sessionId}`,
         {
           headers: {
             'Authorization': `Bearer ${this.config.stripeSecretKey}`,
@@ -800,7 +842,9 @@ export class PaymentService {
     }
 
     try {
-      const response = await fetch('https://api.moov-africa.com/bfa/payout/initiate', {
+      const moovBaseUrl = await this.configService.get('moov_money_api_url', 'https://api.moov-africa.com/bfa/payment/initiate');
+      const moovPayoutUrl = moovBaseUrl.replace('/payment/initiate', '/payout/initiate');
+      const response = await fetch(moovPayoutUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.moovApiKey}`,

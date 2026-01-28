@@ -54,7 +54,7 @@ export default function ChangePasswordScreen() {
   const changeMutation = useMutation({
     mutationFn: async () => {
       if (!tokens?.accessToken) throw new Error('Non authentifie');
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://tnc-trading-api-dev.yassine-techini.workers.dev';
+      const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
       const response = await fetch(`${API_URL}/api/v1/auth/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokens.accessToken}` },

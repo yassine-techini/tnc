@@ -75,5 +75,8 @@
         "babel-*"
       ]
     }
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8"
   }
 }

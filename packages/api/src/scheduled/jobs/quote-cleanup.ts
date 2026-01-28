@@ -4,11 +4,29 @@
  */
 
 import type { Env } from '../../types/env';
+import { ConfigService } from '../../services/config.service';
 
 export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Promise<void> {
   console.log('[QuoteCleanup] Starting quote cleanup');
 
   try {
+    const configService = new ConfigService(env.DB, env.CACHE);
+
+    // Load cleanup timeouts from config
+    const [
+      expiredQuoteRetentionDays,
+      depositTimeoutHours,
+      buyTimeoutMinutes,
+      stuckTransactionHours,
+      priceAlertRetentionDays,
+    ] = await Promise.all([
+      configService.getNumber('cleanup_expired_quote_days', 7),
+      configService.getNumber('cleanup_deposit_timeout_hours', 2),
+      configService.getNumber('cleanup_buy_timeout_minutes', 30),
+      configService.getNumber('cleanup_stuck_transaction_hours', 24),
+      configService.getNumber('cleanup_price_alert_days', 30),
+    ]);
+
     // 1. Mark expired quotes
     const expiredQuotes = await env.DB.prepare(`
       UPDATE quotes
@@ -19,17 +37,17 @@ export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Pro
     const quoteCount = expiredQuotes.meta?.changes || 0;
     console.log(`[QuoteCleanup] Expired ${quoteCount} quotes`);
 
-    // 2. Delete old expired quotes (older than 7 days)
+    // 2. Delete old expired quotes (older than configured days)
     const deletedQuotes = await env.DB.prepare(`
       DELETE FROM quotes
-      WHERE status = 'EXPIRED' AND expires_at < datetime('now', '-7 days')
+      WHERE status = 'EXPIRED' AND expires_at < datetime('now', '-' || ? || ' days')
       RETURNING id
-    `).all();
+    `).bind(expiredQuoteRetentionDays).all();
 
     const deletedCount = deletedQuotes.results?.length || 0;
     console.log(`[QuoteCleanup] Deleted ${deletedCount} old expired quotes`);
 
-    // 3. Handle pending transactions that have timed out (older than 2 hours for deposits)
+    // 3. Handle pending transactions that have timed out (configurable hours for deposits)
     const timedOutDeposits = await env.DB.prepare(`
       UPDATE transactions
       SET status = 'FAILED',
@@ -37,8 +55,8 @@ export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Pro
           updated_at = datetime('now')
       WHERE type = 'DEPOSIT'
         AND status = 'PENDING'
-        AND created_at < datetime('now', '-2 hours')
-    `).run();
+        AND created_at < datetime('now', '-' || ? || ' hours')
+    `).bind(depositTimeoutHours).run();
 
     const depositTimeoutCount = timedOutDeposits.meta?.changes || 0;
     if (depositTimeoutCount > 0) {
@@ -48,7 +66,7 @@ export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Pro
       ctx.waitUntil(notifyTimedOutDeposits(env));
     }
 
-    // 4. Handle pending BUY transactions without payment (older than 30 minutes)
+    // 4. Handle pending BUY transactions without payment (configurable minutes)
     const timedOutBuys = await env.DB.prepare(`
       UPDATE transactions
       SET status = 'CANCELLED',
@@ -57,21 +75,21 @@ export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Pro
       WHERE type = 'BUY'
         AND status = 'PENDING'
         AND payment_reference IS NULL
-        AND created_at < datetime('now', '-30 minutes')
-    `).run();
+        AND created_at < datetime('now', '-' || ? || ' minutes')
+    `).bind(buyTimeoutMinutes).run();
 
     const buyTimeoutCount = timedOutBuys.meta?.changes || 0;
     if (buyTimeoutCount > 0) {
       console.log(`[QuoteCleanup] Cancelled ${buyTimeoutCount} unpaid buy orders`);
     }
 
-    // 5. Handle stuck PROCESSING transactions (older than 24 hours)
+    // 5. Handle stuck PROCESSING transactions (configurable hours)
     const stuckTransactions = await env.DB.prepare(`
       SELECT id, user_id, type, cash_amount, created_at
       FROM transactions
       WHERE status = 'PROCESSING'
-        AND created_at < datetime('now', '-24 hours')
-    `).all();
+        AND created_at < datetime('now', '-' || ? || ' hours')
+    `).bind(stuckTransactionHours).all();
 
     if (stuckTransactions.results && stuckTransactions.results.length > 0) {
       console.warn(`[QuoteCleanup] Found ${stuckTransactions.results.length} stuck transactions - manual review required`);
@@ -95,12 +113,12 @@ export async function cleanupExpiredQuotes(env: Env, ctx: ExecutionContext): Pro
       ).run();
     }
 
-    // 6. Clean old triggered price alerts (older than 30 days)
+    // 6. Clean old triggered price alerts (configurable days)
     const oldAlerts = await env.DB.prepare(`
       DELETE FROM price_alerts
-      WHERE triggered = 1 AND triggered_at < datetime('now', '-30 days')
+      WHERE triggered = 1 AND triggered_at < datetime('now', '-' || ? || ' days')
       RETURNING id
-    `).all();
+    `).bind(priceAlertRetentionDays).all();
 
     const alertCount = oldAlerts.results?.length || 0;
     console.log(`[QuoteCleanup] Deleted ${alertCount} old triggered price alerts`);

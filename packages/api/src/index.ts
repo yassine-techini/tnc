@@ -9,7 +9,7 @@ import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { timing } from 'hono/timing';
 import { prettyJSON } from 'hono/pretty-json';
-import { compress } from 'hono/compress';
+// Note: compression is handled by Cloudflare edge — do NOT use hono/compress on Workers (causes double-encoding)
 
 // Types
 import type { Env } from './types/env';
@@ -38,8 +38,21 @@ const app = new Hono<{ Bindings: Env }>();
 // Global Middleware
 // ============================================
 
-// Response compression (gzip)
-app.use('*', compress());
+// Environment validation — fail fast if critical secrets are missing
+app.use('*', async (c, next) => {
+  const env = c.env;
+  if (!env.JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET is not set');
+    return c.json({ success: false, error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' } }, 500);
+  }
+  if (!env.DB) {
+    console.error('FATAL: D1 database binding (DB) is not set');
+    return c.json({ success: false, error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' } }, 500);
+  }
+  await next();
+});
+
+// Compression is handled by Cloudflare edge — no app-level compress() needed
 
 // Request logging
 app.use('*', logger());
@@ -64,21 +77,31 @@ app.use('*', async (c, next) => {
 
     // Validate origin matches allowed origins
     if (origin) {
-      const allowedOrigins = [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://localhost:5174',
-        'http://localhost:5175',
-        'https://app.tnc-trading.com',
-        'https://admin.tnc-trading.com',
-        'https://state.tnc-trading.com',
-      ];
-      const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)-dev\.pages\.dev$/;
+      // Origins are loaded from env (comma-separated) with sensible defaults
+      const envOrigins = c.env.ALLOWED_ORIGINS || '';
+      const allowedOrigins = envOrigins
+        ? envOrigins.split(',').map((o: string) => o.trim())
+        : [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'http://localhost:5174',
+            'http://localhost:5175',
+            'https://app.tnc-trading.com',
+            'https://admin.tnc-trading.com',
+            'https://state.tnc-trading.com',
+          ];
+      const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)(-dev)?\.pages\.dev$/;
       const isAllowed = allowedOrigins.includes(origin)
         || pagesDevPattern.test(origin)
+        || origin === 'https://tnc-trading-web.pages.dev'
+        || origin === 'https://tnc-trading-admin.pages.dev'
+        || origin === 'https://tnc-trading-state.pages.dev'
         || origin.endsWith('.tnc-trading-web-dev.pages.dev')
         || origin.endsWith('.tnc-trading-admin-dev.pages.dev')
-        || origin.endsWith('.tnc-trading-state-dev.pages.dev');
+        || origin.endsWith('.tnc-trading-state-dev.pages.dev')
+        || origin.endsWith('.tnc-trading-web.pages.dev')
+        || origin.endsWith('.tnc-trading-admin.pages.dev')
+        || origin.endsWith('.tnc-trading-state.pages.dev');
 
       if (!isAllowed) {
         return c.json({
@@ -101,37 +124,45 @@ app.use('*', secureHeaders({
     defaultSrc: ["'self'"],
     scriptSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'"],
+    fontSrc: ["'self'"],
     imgSrc: ["'self'", 'data:', 'https:'],
+    connectSrc: ["'self'", 'https://tnc-trading-api-dev.yassine-techini.workers.dev', 'https://api.tnc-trading.com'],
   },
   xFrameOptions: 'DENY',
   xContentTypeOptions: 'nosniff',
   referrerPolicy: 'strict-origin-when-cross-origin',
 }));
 
-// CORS
+// CORS — origins from env (comma-separated) with fallback defaults
 app.use('*', cors({
   origin: (origin, c) => {
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://localhost:5174',
-      'http://localhost:5175',
-      'https://app.tnc-trading.com',
-      'https://admin.tnc-trading.com',
-      'https://state.tnc-trading.com',
-      'https://staging.tnc-trading.pages.dev',
-      'https://tnc-trading-web-dev.pages.dev',
-      'https://tnc-trading-admin-dev.pages.dev',
-      'https://tnc-trading-state-dev.pages.dev',
-    ];
+    const envOrigins = c.env.ALLOWED_ORIGINS || '';
+    const allowedOrigins = envOrigins
+      ? envOrigins.split(',').map((o: string) => o.trim())
+      : [
+          'http://localhost:5173',
+          'http://localhost:3000',
+          'http://localhost:5174',
+          'http://localhost:5175',
+          'https://app.tnc-trading.com',
+          'https://admin.tnc-trading.com',
+          'https://state.tnc-trading.com',
+          'https://staging.tnc-trading.pages.dev',
+          'https://tnc-trading-web-dev.pages.dev',
+          'https://tnc-trading-admin-dev.pages.dev',
+          'https://tnc-trading-state-dev.pages.dev',
+          'https://tnc-trading-web.pages.dev',
+          'https://tnc-trading-admin.pages.dev',
+          'https://tnc-trading-state.pages.dev',
+        ];
 
     // Allow exact matches
     if (!origin || allowedOrigins.includes(origin)) {
       return origin || '*';
     }
 
-    // Allow Cloudflare Pages preview deployments (e.g., https://abc123.tnc-trading-web-dev.pages.dev)
-    const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)-dev\.pages\.dev$/;
+    // Allow Cloudflare Pages preview deployments (e.g., https://abc123.tnc-trading-admin.pages.dev)
+    const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)(-dev)?\.pages\.dev$/;
     if (pagesDevPattern.test(origin)) {
       return origin;
     }
@@ -142,7 +173,7 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
   exposeHeaders: ['X-Request-ID', 'X-RateLimit-Remaining'],
-  maxAge: 86400,
+  maxAge: 86400, // 24h — configurable via CORS_MAX_AGE env var if Env interface extended
 }));
 
 // Rate limiting

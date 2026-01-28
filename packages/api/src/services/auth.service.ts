@@ -3,9 +3,7 @@
  */
 
 import * as jose from 'jose';
-
-const ACCESS_TOKEN_EXPIRY = '15m';
-const REFRESH_TOKEN_EXPIRY = '7d';
+import { ConfigService } from './config.service';
 
 export interface JwtPayload {
   sub: string;
@@ -22,16 +20,29 @@ export interface TokenPair {
 
 export class AuthService {
   private jwtSecret: Uint8Array;
+  private configService: ConfigService | null;
 
-  constructor(jwtSecretString: string) {
-    this.jwtSecret = new TextEncoder().encode(jwtSecretString || 'dev-secret-key-change-in-production');
+  constructor(jwtSecretString: string, configService?: ConfigService) {
+    if (!jwtSecretString) {
+      throw new Error('JWT_SECRET is required — cannot start without a signing key');
+    }
+    this.jwtSecret = new TextEncoder().encode(jwtSecretString);
+    this.configService = configService || null;
   }
 
   /**
    * Hash password using Web Crypto API (PBKDF2)
    */
+  private async getPbkdf2Iterations(): Promise<number> {
+    if (this.configService) {
+      return this.configService.getNumber('password_pbkdf2_iterations', 100000);
+    }
+    return 100000;
+  }
+
   async hashPassword(password: string): Promise<string> {
     const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iterations = await this.getPbkdf2Iterations();
     const passwordKey = await crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(password),
@@ -44,7 +55,7 @@ export class AuthService {
       {
         name: 'PBKDF2',
         salt,
-        iterations: 600000,
+        iterations,
         hash: 'SHA-256',
       },
       passwordKey,
@@ -76,11 +87,12 @@ export class AuthService {
         ['deriveBits']
       );
 
+      const iterations = await this.getPbkdf2Iterations();
       const hash = await crypto.subtle.deriveBits(
         {
           name: 'PBKDF2',
           salt,
-          iterations: 100000,
+          iterations,
           hash: 'SHA-256',
         },
         passwordKey,
@@ -105,26 +117,34 @@ export class AuthService {
    * Generate JWT token pair
    */
   async generateTokens(payload: Omit<JwtPayload, 'type'>): Promise<TokenPair> {
-    const now = Math.floor(Date.now() / 1000);
+    const accessExpiry = this.configService
+      ? await this.configService.get('access_token_expiry', '15m')
+      : '15m';
+    const refreshExpiry = this.configService
+      ? await this.configService.get('refresh_token_expiry', '7d')
+      : '7d';
+    const expiresInSeconds = this.configService
+      ? await this.configService.getNumber('access_token_expiry_seconds', 900)
+      : 900;
 
     const accessToken = await new jose.SignJWT({ ...payload, type: 'access' })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(ACCESS_TOKEN_EXPIRY)
+      .setExpirationTime(accessExpiry!)
       .setSubject(payload.sub)
       .sign(this.jwtSecret);
 
     const refreshToken = await new jose.SignJWT({ ...payload, type: 'refresh' })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(REFRESH_TOKEN_EXPIRY)
+      .setExpirationTime(refreshExpiry!)
       .setSubject(payload.sub)
       .sign(this.jwtSecret);
 
     return {
       accessToken,
       refreshToken,
-      expiresIn: 15 * 60, // 15 minutes in seconds
+      expiresIn: expiresInSeconds,
     };
   }
 

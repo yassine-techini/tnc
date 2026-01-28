@@ -4,6 +4,7 @@
  */
 
 import type { Env } from '../../types/env';
+import { ConfigService } from '../../services/config.service';
 
 export async function dailyReconciliation(env: Env, ctx: ExecutionContext): Promise<void> {
   console.log('[DailyReconciliation] Starting daily reconciliation');
@@ -113,10 +114,12 @@ export async function dailyReconciliation(env: Env, ctx: ExecutionContext): Prom
     ).run();
 
     // Cache the report for quick access
+    const configService = new ConfigService(env.DB, env.CACHE);
+    const reconciliationCacheTtl = await configService.getNumber('reconciliation_cache_ttl', 86400 * 7);
     await env.CACHE.put(
       `reconciliation:${reportDate}`,
       JSON.stringify(report),
-      { expirationTtl: 86400 * 7 } // 7 days
+      { expirationTtl: reconciliationCacheTtl }
     );
 
     console.log(`[DailyReconciliation] Completed for ${reportDate}`, {

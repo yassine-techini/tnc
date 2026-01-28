@@ -4,6 +4,7 @@
  */
 
 import type { Env } from '../../types/env';
+import { ConfigService } from '../../services/config.service';
 
 interface MonthlyReport {
   id: string;
@@ -223,10 +224,12 @@ export async function generateMonthlyReport(env: Env, ctx: ExecutionContext): Pr
     ).run();
 
     // Cache for quick access
+    const configService = new ConfigService(env.DB, env.CACHE);
+    const reportCacheTtl = await configService.getNumber('monthly_report_cache_ttl', 86400 * 365);
     await env.CACHE.put(
       `monthly_report:${year}-${(previousMonth.getMonth() + 1).toString().padStart(2, '0')}`,
       JSON.stringify(report),
-      { expirationTtl: 86400 * 365 } // 1 year
+      { expirationTtl: reportCacheTtl }
     );
 
     console.log(`[MonthlyReport] Generated report for ${monthName} ${year}`, {

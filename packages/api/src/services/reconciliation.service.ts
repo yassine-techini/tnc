@@ -1,4 +1,5 @@
 import { NotificationService } from './notification.service';
+import { ConfigService } from './config.service';
 
 interface Transaction {
   id: string;
@@ -54,15 +55,24 @@ interface ReconciliationReport {
 }
 
 export class ReconciliationService {
+  private configService: ConfigService | null;
+
   constructor(
     private db: D1Database,
-    private notificationService?: NotificationService
-  ) {}
+    private notificationService?: NotificationService,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || null;
+  }
 
   /**
    * Get transactions that are stuck (pending for too long)
    */
-  async getStuckTransactions(thresholdMinutes: number = 60): Promise<Transaction[]> {
+  async getStuckTransactions(thresholdMinutes?: number): Promise<Transaction[]> {
+    if (!thresholdMinutes && this.configService) {
+      thresholdMinutes = await this.configService.getNumber('reconciliation_stuck_transaction_minutes', 60);
+    }
+    thresholdMinutes = thresholdMinutes || 60;
     const result = await this.db
       .prepare(`
         SELECT t.*, u.email as user_email
@@ -333,7 +343,7 @@ export class ReconciliationService {
       .all<any>();
 
     // Get stuck transactions
-    const stuckTransactions = await this.getStuckTransactions(60);
+    const stuckTransactions = await this.getStuckTransactions();
 
     // Check for wallet balance discrepancies
     const discrepancies = await this.checkWalletDiscrepancies();
@@ -392,8 +402,11 @@ export class ReconciliationService {
       const expectedBalance = expectedMap.get(walletId) || 0;
       const difference = Math.round((actualBalance - expectedBalance) * 1000) / 1000; // Round to 3 decimals
 
-      // Report significant discrepancies (more than 0.01)
-      if (Math.abs(difference) > 0.01) {
+      // Report significant discrepancies (more than configured tolerance)
+      const tolerance = this.configService
+        ? await this.configService.getNumber('reconciliation_balance_tolerance', 0.01)
+        : 0.01;
+      if (Math.abs(difference) > tolerance) {
         discrepancies.push({
           walletId,
           expectedBalance,

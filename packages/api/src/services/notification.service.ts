@@ -369,15 +369,65 @@ export interface NotificationQueueMessage {
   payload: EmailOptions | SmsOptions | PushOptions;
 }
 
+import { ConfigService } from './config.service';
+
+interface PlatformBranding {
+  appName: string;
+  appTagline: string;
+  appUrl: string;
+  fromEmail: string;
+  fromName: string;
+  copyrightYear: string;
+}
+
 export class NotificationService {
   private queue: Queue<NotificationQueueMessage> | null;
+  private configService: ConfigService | null;
 
   constructor(
     private db: D1Database,
     private config: NotificationConfig,
-    queue?: Queue<NotificationQueueMessage>
+    queue?: Queue<NotificationQueueMessage>,
+    configService?: ConfigService
   ) {
     this.queue = queue || null;
+    this.configService = configService || null;
+  }
+
+  /**
+   * Replace hardcoded branding in email content with dynamic config values
+   */
+  private applyBranding(content: string, branding: PlatformBranding): string {
+    return content
+      .replace(/TNC Trading/g, branding.appName)
+      .replace(/Plateforme de Tokenisation d'Or/g, branding.appTagline)
+      .replace(/https:\/\/app\.tnc-trading\.com/g, branding.appUrl)
+      .replace(/noreply@tnc-trading\.com/g, branding.fromEmail)
+      .replace(/© 2024/g, `\u00A9 ${branding.copyrightYear}`);
+  }
+
+  /**
+   * Load platform branding from config
+   */
+  private async getBranding(): Promise<PlatformBranding> {
+    if (!this.configService) {
+      return {
+        appName: 'TNC Trading',
+        appTagline: 'Plateforme de Tokenisation d\'Or',
+        appUrl: 'https://app.tnc-trading.com',
+        fromEmail: 'noreply@tnc-trading.com',
+        fromName: 'TNC Trading',
+        copyrightYear: '2024',
+      };
+    }
+    return {
+      appName: await this.configService.get('app_name', 'TNC Trading') || 'TNC Trading',
+      appTagline: await this.configService.get('app_tagline', 'Plateforme de Tokenisation d\'Or') || 'Plateforme de Tokenisation d\'Or',
+      appUrl: await this.configService.get('app_url', 'https://app.tnc-trading.com') || 'https://app.tnc-trading.com',
+      fromEmail: await this.configService.get('email_from_address', 'noreply@tnc-trading.com') || 'noreply@tnc-trading.com',
+      fromName: await this.configService.get('email_from_name', 'TNC Trading') || 'TNC Trading',
+      copyrightYear: await this.configService.get('copyright_year', '2024') || '2024',
+    };
   }
 
   /**
@@ -437,14 +487,18 @@ export class NotificationService {
     }
 
     try {
-      const response = await fetch('https://api.resend.com/emails', {
+      const branding = await this.getBranding();
+      const resendApiUrl = this.configService
+        ? await this.configService.get('resend_api_url', 'https://api.resend.com/emails')
+        : 'https://api.resend.com/emails';
+      const response = await fetch(resendApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.resendApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: options.from || 'TNC Trading <noreply@tnc-trading.com>',
+          from: options.from || `${branding.fromName} <${branding.fromEmail}>`,
           to: options.to,
           subject: options.subject,
           html: options.html,
@@ -473,7 +527,11 @@ export class NotificationService {
     }
 
     try {
-      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      const branding = await this.getBranding();
+      const sendgridApiUrl = this.configService
+        ? await this.configService.get('sendgrid_api_url', 'https://api.sendgrid.com/v3/mail/send')
+        : 'https://api.sendgrid.com/v3/mail/send';
+      const response = await fetch(sendgridApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.sendgridApiKey}`,
@@ -481,7 +539,7 @@ export class NotificationService {
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: options.to }] }],
-          from: { email: 'noreply@tnc-trading.com', name: 'TNC Trading' },
+          from: { email: branding.fromEmail, name: branding.fromName },
           subject: options.subject,
           content: [
             { type: 'text/html', value: options.html },
@@ -504,16 +562,25 @@ export class NotificationService {
    * Send email with fallback
    */
   async sendEmail(options: EmailOptions): Promise<NotificationResult> {
+    // Apply dynamic branding to email content
+    const branding = await this.getBranding();
+    const brandedOptions = {
+      ...options,
+      subject: this.applyBranding(options.subject, branding),
+      html: this.applyBranding(options.html, branding),
+      text: options.text ? this.applyBranding(options.text, branding) : undefined,
+    };
+
     // Try Resend first (if enabled)
     let result: NotificationResult = { success: false, provider: 'none', error: 'No email provider enabled' };
 
     if (await this.isProviderEnabled('resend')) {
-      result = await this.sendViaResend(options);
+      result = await this.sendViaResend(brandedOptions);
     }
 
     // Fallback to SendGrid if Resend fails or disabled (if SendGrid enabled)
     if (!result.success && this.config.sendgridApiKey && await this.isProviderEnabled('sendgrid')) {
-      result = await this.sendViaSendGrid(options);
+      result = await this.sendViaSendGrid(brandedOptions);
     }
 
     // Log notification
@@ -537,8 +604,11 @@ export class NotificationService {
     try {
       const auth = btoa(`${this.config.twilioAccountSid}:${this.config.twilioAuthToken}`);
 
+      const twilioApiUrl = this.configService
+        ? await this.configService.get('twilio_api_url', 'https://api.twilio.com/2010-04-01')
+        : 'https://api.twilio.com/2010-04-01';
       const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${this.config.twilioAccountSid}/Messages.json`,
+        `${twilioApiUrl}/Accounts/${this.config.twilioAccountSid}/Messages.json`,
         {
           method: 'POST',
           headers: {
@@ -548,7 +618,7 @@ export class NotificationService {
           body: new URLSearchParams({
             From: this.config.twilioPhoneNumber || '',
             To: options.to,
-            Body: options.message,
+            Body: this.applyBranding(options.message, await this.getBranding()),
           }),
         }
       );
@@ -580,7 +650,10 @@ export class NotificationService {
     }
 
     try {
-      const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+      const fcmApiUrl = this.configService
+        ? await this.configService.get('fcm_api_url', 'https://fcm.googleapis.com/fcm/send')
+        : 'https://fcm.googleapis.com/fcm/send';
+      const response = await fetch(fcmApiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `key=${this.config.fcmServerKey}`,

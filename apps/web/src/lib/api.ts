@@ -2,7 +2,7 @@
  * API Client for TNC Trading
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://tnc-trading-api.yassine-techini.workers.dev';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
 
 interface ApiResponse<T> {
   success: true;

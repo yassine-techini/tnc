@@ -8,6 +8,7 @@ import type { Env } from '../types/env';
 import { PaymentService, WebhookPayload } from '../services/payment.service';
 import { NotificationService } from '../services/notification.service';
 import { KycService } from '../services/kyc.service';
+import { ConfigService } from '../services/config.service';
 
 const webhooks = new Hono<{ Bindings: Env }>();
 
@@ -619,12 +620,14 @@ webhooks.post('/test', async (c) => {
 
   const body = await c.req.json();
   const { paymentService } = getServices(c.env);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const defaultTestAmount = await configService.getNumber('test_webhook_default_amount', 10000);
 
   const webhook: WebhookPayload = {
     provider: body.provider || 'test',
     transactionId: body.transactionId || crypto.randomUUID(),
     status: body.status || 'SUCCESS',
-    amount: body.amount || 10000,
+    amount: body.amount || defaultTestAmount,
     currency: 'XOF',
     reference: body.reference || crypto.randomUUID(),
     timestamp: new Date().toISOString(),

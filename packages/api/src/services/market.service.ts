@@ -2,6 +2,8 @@
  * Market Service - Gold prices, quotes, and stock management
  */
 
+import { ConfigService } from './config.service';
+
 export interface GoldPriceRow {
   id: string;
   price_usd: number;
@@ -38,21 +40,18 @@ export interface GoldStockRow {
   updated_at: string;
 }
 
-// Business constants
-const SPREAD_BUY = 0.02; // 2%
-const SPREAD_SELL = 0.02; // 2%
-const TRANSACTION_FEE_PERCENT = 0.005; // 0.5%
-const QUOTE_EXPIRY_MINUTES = 5;
-
 export class MarketService {
   private kvPrefix: string;
+  private configService: ConfigService;
 
   constructor(
     private db: D1Database,
     private kv: KVNamespace,
-    environment: string = 'development'
+    environment: string = 'development',
+    configService?: ConfigService
   ) {
     this.kvPrefix = `${environment}:`;
+    this.configService = configService || new ConfigService(db, kv);
   }
 
   /** Prefixed KV key to isolate environments sharing a namespace */
@@ -76,9 +75,10 @@ export class MarketService {
       .first<GoldPriceRow>();
 
     if (result) {
-      // Cache for 1 minute
+      // Cache for configurable duration
+      const priceCacheTtl = await this.configService.getNumber('market_price_cache_ttl', 60);
       await this.kv.put(this.key('gold_price:current'), JSON.stringify(result), {
-        expirationTtl: 60,
+        expirationTtl: priceCacheTtl,
       });
     }
 
@@ -97,7 +97,13 @@ export class MarketService {
   ): Promise<GoldPriceRow[]> {
     // Try KV cache first
     const cacheKey = this.key(`price_history:${period}`);
-    const cacheTtl: Record<string, number> = { '24h': 60, '7d': 300, '30d': 900, '1y': 3600 };
+    const [ttl24h, ttl7d, ttl30d, ttl1y] = await Promise.all([
+      this.configService.getNumber('price_history_cache_ttl_24h', 60),
+      this.configService.getNumber('price_history_cache_ttl_7d', 300),
+      this.configService.getNumber('price_history_cache_ttl_30d', 900),
+      this.configService.getNumber('price_history_cache_ttl_1y', 3600),
+    ]);
+    const cacheTtl: Record<string, number> = { '24h': ttl24h, '7d': ttl7d, '30d': ttl30d, '1y': ttl1y };
 
     const cached = await this.kv.get(cacheKey, 'json');
     if (cached) return cached as GoldPriceRow[];
@@ -191,9 +197,11 @@ export class MarketService {
     exchangeRate: number;
     source: string;
   }): Promise<GoldPriceRow> {
+    const spreadBuy = await this.configService.getNumber('spread_buy', 0.02);
+    const spreadSell = await this.configService.getNumber('spread_sell', 0.02);
     const priceXof = data.priceUsd * data.exchangeRate;
-    const buyPrice = priceXof * (1 + SPREAD_BUY);
-    const sellPrice = priceXof * (1 - SPREAD_SELL);
+    const buyPrice = priceXof * (1 + spreadBuy);
+    const sellPrice = priceXof * (1 - spreadSell);
     const id = crypto.randomUUID();
 
     await this.db
@@ -216,8 +224,9 @@ export class MarketService {
     };
 
     // Update cache
+    const updateCacheTtl = await this.configService.getNumber('market_price_cache_ttl', 60);
     await this.kv.put(this.key('gold_price:current'), JSON.stringify(price), {
-      expirationTtl: 60,
+      expirationTtl: updateCacheTtl,
     });
 
     return price;
@@ -236,13 +245,16 @@ export class MarketService {
       throw new Error('Price not available');
     }
 
+    const txFeePercent = await this.configService.getNumber('transaction_fee_percent', 0.005);
+    const quoteExpiryMinutes = await this.configService.getNumber('quote_expiry_minutes', 5);
+
     const pricePerGram = type === 'BUY' ? currentPrice.buy_price : currentPrice.sell_price;
     const cashAmount = tokenAmount * pricePerGram;
-    const fees = cashAmount * TRANSACTION_FEE_PERCENT;
+    const fees = cashAmount * txFeePercent;
     const total = type === 'BUY' ? cashAmount + fees : cashAmount - fees;
 
     const id = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + QUOTE_EXPIRY_MINUTES * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + quoteExpiryMinutes * 60 * 1000).toISOString();
 
     await this.db
       .prepare(
@@ -401,13 +413,16 @@ export class MarketService {
 
     const change24h = await this.get24hChange();
 
+    const spreadBuy = await this.configService.getNumber('spread_buy', 0.02);
+    const spreadSell = await this.configService.getNumber('spread_sell', 0.02);
+
     return {
       lbmaUsd: price.price_usd,
       priceXof: price.price_xof,
       buyPrice: price.buy_price,
       sellPrice: price.sell_price,
-      spreadBuy: SPREAD_BUY,
-      spreadSell: SPREAD_SELL,
+      spreadBuy,
+      spreadSell,
       exchangeRate: price.exchange_rate,
       change24h,
       updatedAt: price.timestamp,

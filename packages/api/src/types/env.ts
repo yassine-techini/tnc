@@ -5,7 +5,8 @@
 export interface Env {
   // Environment
   ENVIRONMENT: 'development' | 'staging' | 'production';
-  
+  ALLOWED_ORIGINS?: string;
+
   // Cloudflare D1 Database
   DB: D1Database;
   

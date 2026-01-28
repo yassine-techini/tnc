@@ -48,24 +48,25 @@ export interface ExchangeRateResponse {
   };
 }
 
-// BCEAO fixed rate (CFA Franc is pegged to Euro)
-// 1 EUR = 655.957 XOF (fixed rate)
-const BCEAO_EUR_XOF_RATE = 655.957;
+import { ConfigService } from './config.service';
 
 export class GoldAPIService {
   private goldApiKey: string;
   private exchangeApiKey: string;
   private db: D1Database | null;
+  private configService: ConfigService | null;
 
   constructor(
     private kv: KVNamespace,
     goldApiKey?: string,
     exchangeApiKey?: string,
-    db?: D1Database
+    db?: D1Database,
+    configService?: ConfigService
   ) {
     this.goldApiKey = goldApiKey || '';
     this.exchangeApiKey = exchangeApiKey || '';
     this.db = db || null;
+    this.configService = configService || (db ? new ConfigService(db, kv) : null);
   }
 
   /**
@@ -94,7 +95,10 @@ export class GoldAPIService {
     }
 
     try {
-      const response = await fetch('https://www.goldapi.io/api/XAU/USD', {
+      const goldApiBaseUrl = this.configService
+        ? await this.configService.get('gold_api_base_url', 'https://www.goldapi.io/api')
+        : 'https://www.goldapi.io/api';
+      const response = await fetch(`${goldApiBaseUrl}/XAU/USD`, {
         headers: {
           'x-access-token': this.goldApiKey,
           'Content-Type': 'application/json',
@@ -125,9 +129,10 @@ export class GoldAPIService {
   private async fetchFromMetalsAPI(): Promise<{ priceUsd: number } | null> {
     try {
       // Free tier API - limited requests
-      const response = await fetch(
-        'https://api.metals.live/v1/spot/gold'
-      );
+      const metalsApiUrl = this.configService
+        ? await this.configService.get('metals_api_url', 'https://api.metals.live/v1/spot/gold')
+        : 'https://api.metals.live/v1/spot/gold';
+      const response = await fetch(metalsApiUrl);
 
       if (!response.ok) {
         return null;
@@ -158,20 +163,30 @@ export class GoldAPIService {
       return parseFloat(cachedRate);
     }
 
+    // Load configurable values
+    const exchangeRateApiUrl = this.configService
+      ? await this.configService.get('exchange_rate_api_url', 'https://v6.exchangerate-api.com/v6')
+      : 'https://v6.exchangerate-api.com/v6';
+    const exchangeRateFallbackUrl = this.configService
+      ? await this.configService.get('exchange_rate_fallback_url', 'https://api.exchangerate.host/latest?base=USD&symbols=XOF')
+      : 'https://api.exchangerate.host/latest?base=USD&symbols=XOF';
+    const exchangeRateCacheTtl = this.configService
+      ? await this.configService.getNumber('exchange_rate_cache_ttl', 3600)
+      : 3600;
+
     // Try Exchange Rate API
     if (this.exchangeApiKey) {
       try {
         const response = await fetch(
-          `https://v6.exchangerate-api.com/v6/${this.exchangeApiKey}/latest/USD`
+          `${exchangeRateApiUrl}/${this.exchangeApiKey}/latest/USD`
         );
 
         if (response.ok) {
           const data = await response.json();
           if (data.conversion_rates?.XOF) {
             const rate = data.conversion_rates.XOF;
-            // Cache for 1 hour
             await this.kv.put('exchange_rate:usd_xof', rate.toString(), {
-              expirationTtl: 3600,
+              expirationTtl: exchangeRateCacheTtl,
             });
             return rate;
           }
@@ -182,19 +197,15 @@ export class GoldAPIService {
     }
 
     // Fallback: Calculate from EUR rate
-    // USD/EUR is approximately 0.92, so USD/XOF = 0.92 * 655.957 ≈ 603
-    // Using a more stable approximation
     try {
-      const response = await fetch(
-        'https://api.exchangerate.host/latest?base=USD&symbols=XOF'
-      );
+      const response = await fetch(exchangeRateFallbackUrl);
 
       if (response.ok) {
         const data = await response.json();
         if (data.rates?.XOF) {
           const rate = data.rates.XOF;
           await this.kv.put('exchange_rate:usd_xof', rate.toString(), {
-            expirationTtl: 3600,
+            expirationTtl: exchangeRateCacheTtl,
           });
           return rate;
         }
@@ -203,11 +214,12 @@ export class GoldAPIService {
       console.error('exchangerate.host error:', error);
     }
 
-    // Ultimate fallback: Use approximate rate (updated periodically)
-    // As of 2024, USD/XOF is approximately 600-620
-    const fallbackRate = 615;
+    // Ultimate fallback: Use configurable approximate rate
+    const fallbackRate = this.configService
+      ? await this.configService.getNumber('fallback_exchange_rate', 615)
+      : 615;
     await this.kv.put('exchange_rate:usd_xof', fallbackRate.toString(), {
-      expirationTtl: 3600,
+      expirationTtl: exchangeRateCacheTtl,
     });
     return fallbackRate;
   }
@@ -237,9 +249,11 @@ export class GoldAPIService {
         goldData = { priceUsd: parseFloat(cachedPrice) };
         source = 'cache';
       } else {
-        // Ultimate fallback - approximate gold price per gram
-        // As of 2024, gold is approximately $65-85 per gram
-        goldData = { priceUsd: 75 };
+        // Ultimate fallback - configurable approximate gold price per gram
+        const fallbackPrice = this.configService
+          ? await this.configService.getNumber('fallback_gold_price_usd', 75)
+          : 75;
+        goldData = { priceUsd: fallbackPrice };
         source = 'fallback';
       }
     }
@@ -251,8 +265,11 @@ export class GoldAPIService {
     const priceXof = goldData.priceUsd * exchangeRate;
 
     // Cache the USD price
+    const goldPriceCacheTtl = this.configService
+      ? await this.configService.getNumber('gold_price_cache_ttl', 300)
+      : 300;
     await this.kv.put('gold_price:usd_gram', goldData.priceUsd.toString(), {
-      expirationTtl: 300, // 5 minutes
+      expirationTtl: goldPriceCacheTtl,
     });
 
     return {
@@ -273,8 +290,11 @@ export class GoldAPIService {
     const cachedData = await this.kv.get('gold_price:current_full', 'json');
     if (cachedData) {
       const data = cachedData as GoldPriceData & { cachedAt: number };
-      // Use cache if less than 5 minutes old
-      if (Date.now() - data.cachedAt < 5 * 60 * 1000) {
+      // Use cache if less than configured TTL old
+      const cacheTtlMs = this.configService
+        ? (await this.configService.getNumber('gold_price_cache_ttl', 300)) * 1000
+        : 300 * 1000;
+      if (Date.now() - data.cachedAt < cacheTtlMs) {
         return {
           ...data,
           timestamp: new Date(data.timestamp),
@@ -294,7 +314,9 @@ export class GoldAPIService {
           timestamp: freshPrice.timestamp.toISOString(),
           cachedAt: Date.now(),
         }),
-        { expirationTtl: 600 } // 10 minutes max
+        { expirationTtl: this.configService
+          ? await this.configService.getNumber('gold_price_full_cache_ttl', 600)
+          : 600 }
       );
     }
 

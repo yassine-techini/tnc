@@ -9,15 +9,36 @@ import { UserService } from '../services/user.service';
 import { GoldAPIService } from '../services/goldapi.service';
 import { PriceAlertService } from '../services/price-alert.service';
 import { NotificationService } from '../services/notification.service';
+import { ConfigService } from '../services/config.service';
 
 const market = new Hono<{ Bindings: Env }>();
 
-// KYC limits for trading
-const KYC_LIMITS = {
-  BASIC: { dailyBuy: 0, monthlyBuy: 0, canSell: false },
-  STANDARD: { dailyBuy: 100, monthlyBuy: 500, canSell: true },
-  VERIFIED: { dailyBuy: 1000, monthlyBuy: 5000, canSell: true },
-};
+/**
+ * Load KYC trading limits from config DB
+ */
+async function getKycLimits(configService: ConfigService) {
+  const [
+    basicDailyBuy, basicMonthlyBuy, basicCanSell,
+    standardDailyBuy, standardMonthlyBuy, standardCanSell,
+    verifiedDailyBuy, verifiedMonthlyBuy, verifiedCanSell,
+  ] = await Promise.all([
+    configService.getNumber('kyc_basic_daily_buy', 0),
+    configService.getNumber('kyc_basic_monthly_buy', 0),
+    configService.getNumber('kyc_basic_can_sell', 0),
+    configService.getNumber('kyc_standard_daily_buy', 100),
+    configService.getNumber('kyc_standard_monthly_buy', 500),
+    configService.getNumber('kyc_standard_can_sell', 1),
+    configService.getNumber('kyc_verified_daily_buy', 1000),
+    configService.getNumber('kyc_verified_monthly_buy', 5000),
+    configService.getNumber('kyc_verified_can_sell', 1),
+  ]);
+
+  return {
+    BASIC: { dailyBuy: basicDailyBuy, monthlyBuy: basicMonthlyBuy, canSell: basicCanSell === 1 },
+    STANDARD: { dailyBuy: standardDailyBuy, monthlyBuy: standardMonthlyBuy, canSell: standardCanSell === 1 },
+    VERIFIED: { dailyBuy: verifiedDailyBuy, monthlyBuy: verifiedMonthlyBuy, canSell: verifiedCanSell === 1 },
+  };
+}
 
 // GET /market/price - Public
 market.get('/price', async (c) => {
@@ -118,10 +139,12 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const requestId = crypto.randomUUID();
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
 
   // Check KYC level permissions
-  const limits = KYC_LIMITS[kycLevel];
+  const kycLimits = await getKycLimits(configService);
+  const limits = kycLimits[kycLevel];
   if (body.type === 'BUY' && limits.dailyBuy === 0) {
     return c.json({
       success: false,
@@ -221,7 +244,8 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     if (cached) return c.json(cached as Record<string, unknown>);
   }
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
   const walletService = new WalletService(c.env.DB);
 
   // Validate quote
@@ -249,7 +273,8 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   }
 
   // Check KYC limits
-  const limits = KYC_LIMITS[kycLevel];
+  const kycLimits = await getKycLimits(configService);
+  const limits = kycLimits[kycLevel];
   const dailyVolume = await walletService.getDailyTransactionVolume(userId, 'BUY');
   const monthlyVolume = await walletService.getMonthlyTransactionVolume(userId, 'BUY');
 
@@ -342,13 +367,14 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     requestId,
   };
 
-  // Cache idempotency response (24h TTL)
+  // Cache idempotency response
   if (body.idempotencyKey) {
+    const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
     c.executionCtx.waitUntil(
       c.env.CACHE.put(
         `idempotency:buy:${userId}:${body.idempotencyKey}`,
         JSON.stringify(buyResponse),
-        { expirationTtl: 86400 }
+        { expirationTtl: idempotencyTtl }
       )
     );
   }
@@ -370,11 +396,13 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     if (cached) return c.json(cached as Record<string, unknown>);
   }
 
-  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
   const walletService = new WalletService(c.env.DB);
 
   // Check KYC can sell
-  const limits = KYC_LIMITS[kycLevel];
+  const kycLimits = await getKycLimits(configService);
+  const limits = kycLimits[kycLevel];
   if (!limits.canSell) {
     return c.json({
       success: false,
@@ -471,13 +499,14 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     requestId,
   };
 
-  // Cache idempotency response (24h TTL)
+  // Cache idempotency response
   if (body.idempotencyKey) {
+    const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
     c.executionCtx.waitUntil(
       c.env.CACHE.put(
         `idempotency:sell:${userId}:${body.idempotencyKey}`,
         JSON.stringify(sellResponse),
-        { expirationTtl: 86400 }
+        { expirationTtl: idempotencyTtl }
       )
     );
   }

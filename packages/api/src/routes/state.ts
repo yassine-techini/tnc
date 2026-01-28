@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types/env';
 import { AuthService } from '../services/auth.service';
+import { ConfigService } from '../services/config.service';
 
 const state = new Hono<{ Bindings: Env }>();
 
@@ -631,7 +632,9 @@ state.get('/reports/data/export', async (c) => {
       params.push(end);
     }
 
-    query += ' ORDER BY t.created_at DESC LIMIT 10000';
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const exportLimit = await configService.getNumber('export_max_rows', 10000);
+    query += ` ORDER BY t.created_at DESC LIMIT ${exportLimit}`;
 
     const result = await c.env.DB.prepare(query).bind(...params).all<any>();
     const transactions = result.results || [];

@@ -1,5 +1,6 @@
 import { Context } from 'hono';
 import type { Env } from '../types/env';
+import { logger } from '../lib/logger';
 
 /** Redact PII from error messages before logging */
 function redactPii(value: unknown): string {
@@ -64,7 +65,7 @@ function parseStack(stack: string): Array<{ filename: string; lineno?: number; f
  */
 export function errorHandler(err: Error, c: Context<{ Bindings: Env }>) {
   const requestId = c.req.header('X-Request-ID') || crypto.randomUUID();
-  console.error('API Error:', redactPii(err.message), redactPii(err.stack || ''));
+  logger.error('API Error', { message: redactPii(err.message), stack: redactPii(err.stack || '') });
 
   // Report to Sentry if configured
   if (c.env.SENTRY_DSN) {

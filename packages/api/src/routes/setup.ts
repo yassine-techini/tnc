@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types/env';
 import { AuthService } from '../services/auth.service';
+import { ConfigService } from '../services/config.service';
 
 const setup = new Hono<{ Bindings: Env }>();
 
@@ -65,11 +66,14 @@ setup.post('/init', async (c) => {
       .first();
 
     if (!existingStock) {
+      const configService = new ConfigService(c.env.DB, c.env.CACHE);
+      const initialGoldStock = await configService.getNumber('initial_gold_stock', 10000);
       await c.env.DB
         .prepare(`
           INSERT INTO gold_stock (id, total_allocated, tokens_issued, updated_at)
-          VALUES ('main', 10000.0, 0, datetime('now'))
+          VALUES ('main', ?, 0, datetime('now'))
         `)
+        .bind(initialGoldStock)
         .run();
     }
 
@@ -82,7 +86,7 @@ setup.post('/init', async (c) => {
           { email: 'etat@mines.gov.bf', password: 'StatePass2024', role: 'STATE_OPERATOR' },
         ],
         goldStock: {
-          totalAllocated: 10000,
+          totalAllocated: 'configured via initial_gold_stock',
           tokensIssued: 0,
         },
       },
@@ -143,9 +147,16 @@ setup.post('/seed-demo', async (c) => {
         .bind(userId, demoUser.email, demoUser.phone, demoPasswordHash, demoUser.kycLevel)
         .run();
 
-      // Create wallet with some balance
-      const tokenBalance = demoUser.kycLevel === 'VERIFIED' ? 100 : (demoUser.kycLevel === 'STANDARD' ? 50 : 10);
-      const cashBalance = demoUser.kycLevel === 'VERIFIED' ? 500000 : (demoUser.kycLevel === 'STANDARD' ? 250000 : 50000);
+      // Create wallet with some balance (configurable demo amounts)
+      const configSvc = new ConfigService(c.env.DB, c.env.CACHE);
+      const demoTokenVerified = await configSvc.getNumber('demo_token_balance_verified', 100);
+      const demoTokenStandard = await configSvc.getNumber('demo_token_balance_standard', 50);
+      const demoTokenBasic = await configSvc.getNumber('demo_token_balance_basic', 10);
+      const demoCashVerified = await configSvc.getNumber('demo_cash_balance_verified', 500000);
+      const demoCashStandard = await configSvc.getNumber('demo_cash_balance_standard', 250000);
+      const demoCashBasic = await configSvc.getNumber('demo_cash_balance_basic', 50000);
+      const tokenBalance = demoUser.kycLevel === 'VERIFIED' ? demoTokenVerified : (demoUser.kycLevel === 'STANDARD' ? demoTokenStandard : demoTokenBasic);
+      const cashBalance = demoUser.kycLevel === 'VERIFIED' ? demoCashVerified : (demoUser.kycLevel === 'STANDARD' ? demoCashStandard : demoCashBasic);
 
       await c.env.DB
         .prepare(`

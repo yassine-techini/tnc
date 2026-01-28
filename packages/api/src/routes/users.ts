@@ -8,6 +8,7 @@ import { AuthService } from '../services/auth.service';
 import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
 import { EncryptionService } from '../services/encryption.service';
+import { ConfigService } from '../services/config.service';
 
 const users = new Hono<{ Bindings: Env }>();
 
@@ -239,11 +240,13 @@ users.post('/me/kyc', async (c) => {
     // Automatically initiate KYC verification with Smile Identity
     let verificationJobId: string | undefined;
     try {
+      const configService = new ConfigService(c.env.DB, c.env.CACHE);
+      const apiUrl = await configService.get('api_url', 'https://api.tnc-trading.com');
       const kycService = new KycService(c.env.DB, c.env.STORAGE, {
         apiKey: c.env.SMILE_IDENTITY_API_KEY,
         partnerId: c.env.SMILE_IDENTITY_PARTNER_ID,
         environment: c.env.ENVIRONMENT === 'production' ? 'production' : 'sandbox',
-        callbackUrl: `https://api.tnc-trading.com/api/v1/webhooks/kyc`,
+        callbackUrl: `${apiUrl}/api/v1/webhooks/kyc`,
       });
 
       const verificationResult = await kycService.initiateVerification(pendingDocs.id);
@@ -502,13 +505,16 @@ users.post('/me/kyc/documents', async (c) => {
       }, 400);
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    // Validate file size (configurable, default 5MB)
+    const kycConfigService = new ConfigService(c.env.DB, c.env.CACHE);
+    const maxFileSize = await kycConfigService.getNumber('kyc_max_file_size_bytes', 5 * 1024 * 1024);
+    if (file.size > maxFileSize) {
+      const maxMb = Math.round(maxFileSize / (1024 * 1024));
       return c.json({
         success: false,
         error: {
           code: 'FILE_TOO_LARGE',
-          message: 'Fichier trop volumineux (max 5 Mo)',
+          message: `Fichier trop volumineux (max ${maxMb} Mo)`,
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -1146,31 +1152,35 @@ users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async
   const requestId = crypto.randomUUID();
 
   try {
-    // Check if user already has too many active alerts (max 10)
+    // Check if user already has too many active alerts
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const maxAlerts = await configService.getNumber('max_price_alerts_per_user', 10);
     const countResult = await c.env.DB
       .prepare('SELECT COUNT(*) as count FROM price_alerts WHERE user_id = ? AND is_active = 1 AND triggered = 0')
       .bind(userId)
       .first<{ count: number }>();
 
-    if ((countResult?.count || 0) >= 10) {
+    if ((countResult?.count || 0) >= maxAlerts) {
       return c.json({
         success: false,
         error: {
           code: 'ALERT_LIMIT_EXCEEDED',
-          message: 'Vous avez atteint la limite de 10 alertes actives',
+          message: `Vous avez atteint la limite de ${maxAlerts} alertes actives`,
         },
         requestId,
       }, 400);
     }
 
-    // Check for duplicate alert (same type and similar price within 1%)
+    // Check for duplicate alert (same type and similar price within configurable threshold)
+    const alertConfigService = new ConfigService(c.env.DB, c.env.CACHE);
+    const duplicateThreshold = await alertConfigService.getNumber('price_alert_duplicate_threshold', 0.01);
     const duplicateCheck = await c.env.DB
       .prepare(`
         SELECT id FROM price_alerts
         WHERE user_id = ? AND alert_type = ? AND is_active = 1 AND triggered = 0
-          AND ABS(target_price - ?) / target_price < 0.01
+          AND ABS(target_price - ?) / target_price < ?
       `)
-      .bind(userId, body.alertType, body.targetPrice)
+      .bind(userId, body.alertType, body.targetPrice, duplicateThreshold)
       .first();
 
     if (duplicateCheck) {

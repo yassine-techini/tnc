@@ -5,8 +5,9 @@ import type { Env } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { UserService } from '../services/user.service';
 import { WalletService } from '../services/wallet.service';
-import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
+import { SecurityService, SECURITY_DEFAULTS } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
+import { ConfigService } from '../services/config.service';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -21,8 +22,8 @@ const registerSchema = z.object({
     .max(20)
     .regex(/^\+?[0-9]{10,15}$/, 'Format de téléphone invalide'),
   password: z.string()
-    .min(SECURITY_CONFIG.PASSWORD_MIN_LENGTH, `Le mot de passe doit contenir au moins ${SECURITY_CONFIG.PASSWORD_MIN_LENGTH} caractères`)
-    .max(SECURITY_CONFIG.PASSWORD_MAX_LENGTH),
+    .min(SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH, `Le mot de passe doit contenir au moins ${SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH} caractères`)
+    .max(SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH),
   country: z.string().length(2).default('BF'),
   firstName: z.string().min(1, 'Prénom requis').max(100).optional(),
   lastName: z.string().min(1, 'Nom requis').max(100).optional(),
@@ -56,8 +57,8 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
   password: z.string()
-    .min(SECURITY_CONFIG.PASSWORD_MIN_LENGTH)
-    .max(SECURITY_CONFIG.PASSWORD_MAX_LENGTH),
+    .min(SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH)
+    .max(SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH),
 });
 
 const setup2faSchema = z.object({
@@ -99,18 +100,23 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
   const ipAddress = getClientIp(c);
   const userAgent = getUserAgent(c);
 
-  const authService = new AuthService(c.env.JWT_SECRET);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
   const userService = new UserService(c.env.DB);
   const walletService = new WalletService(c.env.DB);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
     // Rate limit registration attempts by IP
+    const [registerMax, registerWindow] = await Promise.all([
+      configService.getNumber('rate_limit_register_max', 5),
+      configService.getNumber('rate_limit_register_window', 3600),
+    ]);
     const rateLimit = await securityService.checkRateLimit(
       ipAddress,
       'register',
-      5,
-      3600 // 5 registrations per hour per IP
+      registerMax,
+      registerWindow
     );
 
     if (!rateLimit.allowed) {
@@ -203,8 +209,9 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
 
     // Generate verification code
     const verificationCode = authService.generateVerificationCode();
+    const verificationCodeTtl = await configService.getNumber('verification_code_ttl', 900);
 
-    // Store verification code in KV (expires in 15 minutes)
+    // Store verification code in KV
     await c.env.CACHE.put(
       `verify:email:${body.email.toLowerCase()}`,
       JSON.stringify({
@@ -213,7 +220,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         attempts: 0,
         createdAt: Date.now(),
       }),
-      { expirationTtl: 900 }
+      { expirationTtl: verificationCodeTtl }
     );
 
     // Initialize notification service and send emails/SMS
@@ -245,7 +252,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         attempts: 0,
         createdAt: Date.now(),
       }),
-      { expirationTtl: 900 }
+      { expirationTtl: verificationCodeTtl }
     );
 
     // Send SMS verification code (non-blocking)
@@ -302,9 +309,10 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
   const ipAddress = getClientIp(c);
   const userAgent = getUserAgent(c);
 
-  const authService = new AuthService(c.env.JWT_SECRET);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
   const userService = new UserService(c.env.DB);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
     // Check if IP is blocked
@@ -325,10 +333,11 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
     }
 
     // Rate limit login attempts by IP
+    const secCfg = await securityService.getSecurityConfig();
     const ipRateLimit = await securityService.checkRateLimit(
       ipAddress,
       'login_ip',
-      SECURITY_CONFIG.RATE_LIMIT_LOGIN_PER_MINUTE,
+      secCfg.rateLimitLoginPerMinute,
       60
     );
 
@@ -478,12 +487,13 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
     const sessionId = crypto.randomUUID();
     const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
 
+    const sessionTimeoutHours = secCfg.absoluteSessionTimeoutHours;
     await c.env.DB
       .prepare(`
         INSERT INTO active_sessions (id, user_id, session_token_hash, ip_address, user_agent, device_type, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'), datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+' || ? || ' hours'), datetime('now'))
       `)
-      .bind(sessionId, user.id, sessionTokenHash, ipAddress, userAgent, 'web')
+      .bind(sessionId, user.id, sessionTokenHash, ipAddress, userAgent, 'web', sessionTimeoutHours)
       .run();
 
     // Log successful login
@@ -627,9 +637,15 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
   const ipAddress = getClientIp(c);
 
   const userService = new UserService(c.env.DB);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
+    const [verificationMaxAttempts, verificationCodeTtl] = await Promise.all([
+      configService.getNumber('verification_max_attempts', 5),
+      configService.getNumber('verification_code_ttl', 900),
+    ]);
+
     // Get stored verification data
     const storedDataStr = await c.env.CACHE.get(`verify:email:${body.email.toLowerCase()}`);
     if (!storedDataStr) {
@@ -645,8 +661,8 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
 
     const storedData = JSON.parse(storedDataStr);
 
-    // Check attempts (max 5)
-    if (storedData.attempts >= 5) {
+    // Check attempts
+    if (storedData.attempts >= verificationMaxAttempts) {
       await c.env.CACHE.delete(`verify:email:${body.email.toLowerCase()}`);
       return c.json({
         success: false,
@@ -664,7 +680,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
       await c.env.CACHE.put(
         `verify:email:${body.email.toLowerCase()}`,
         JSON.stringify(storedData),
-        { expirationTtl: 900 }
+        { expirationTtl: verificationCodeTtl }
       );
 
       return c.json({
@@ -672,7 +688,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
         error: {
           code: 'AUTH_INVALID_CODE',
           message: 'Code de vérification incorrect',
-          attemptsRemaining: 5 - storedData.attempts,
+          attemptsRemaining: verificationMaxAttempts - storedData.attempts,
         },
         requestId,
       }, 400);
@@ -728,8 +744,14 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
   const requestId = crypto.randomUUID();
 
   const userService = new UserService(c.env.DB);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
 
   try {
+    const [verificationMaxAttempts, verificationCodeTtl] = await Promise.all([
+      configService.getNumber('verification_max_attempts', 5),
+      configService.getNumber('verification_code_ttl', 900),
+    ]);
+
     const storedDataStr = await c.env.CACHE.get(`verify:phone:${body.phone}`);
     if (!storedDataStr) {
       return c.json({
@@ -744,7 +766,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
 
     const storedData = JSON.parse(storedDataStr);
 
-    if (storedData.attempts >= 5) {
+    if (storedData.attempts >= verificationMaxAttempts) {
       await c.env.CACHE.delete(`verify:phone:${body.phone}`);
       return c.json({
         success: false,
@@ -761,7 +783,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
       await c.env.CACHE.put(
         `verify:phone:${body.phone}`,
         JSON.stringify(storedData),
-        { expirationTtl: 900 }
+        { expirationTtl: verificationCodeTtl }
       );
 
       return c.json({
@@ -813,17 +835,24 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
 
-  const authService = new AuthService(c.env.JWT_SECRET);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
   const userService = new UserService(c.env.DB);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
-    // Rate limit password reset requests
+    // Rate limit password reset requests (configurable)
+    const [resetRateMax, resetRateWindow, resetTokenTtl] = await Promise.all([
+      configService.getNumber('rate_limit_password_reset_max', 3),
+      configService.getNumber('rate_limit_password_reset_window', 3600),
+      configService.getNumber('reset_token_ttl', 3600),
+    ]);
+
     const rateLimit = await securityService.checkRateLimit(
       ipAddress,
       'password_reset',
-      3,
-      3600 // 3 requests per hour per IP
+      resetRateMax,
+      resetRateWindow
     );
 
     if (!rateLimit.allowed) {
@@ -845,7 +874,7 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
           email: user.email,
           createdAt: Date.now(),
         }),
-        { expirationTtl: 3600 } // 1 hour
+        { expirationTtl: resetTokenTtl }
       );
 
       await securityService.logAuditEvent({
@@ -864,10 +893,16 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
         sendgridApiKey: c.env.SENDGRID_API_KEY,
       });
 
-      const resetUrl = `https://app.tnc-trading.com/reset-password?token=${resetToken}`;
+      const [appUrl, appName] = await Promise.all([
+        configService.get('app_url', 'https://app.tnc-trading.com'),
+        configService.get('app_name', 'TNC Trading'),
+      ]);
+      const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+      const resetTokenTtlHours = Math.floor(resetTokenTtl / 3600);
+      const resetTokenTtlLabel = resetTokenTtlHours >= 1 ? `${resetTokenTtlHours} heure${resetTokenTtlHours > 1 ? 's' : ''}` : `${Math.floor(resetTokenTtl / 60)} minutes`;
       notificationService.sendEmail({
         to: user.email,
-        subject: 'Réinitialisation de votre mot de passe - TNC Trading',
+        subject: `Réinitialisation de votre mot de passe - ${appName}`,
         html: `
           <!DOCTYPE html>
           <html>
@@ -885,7 +920,7 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
           <body>
             <div class="container">
               <div class="header">
-                <h1>TNC Trading</h1>
+                <h1>${appName}</h1>
               </div>
               <div class="content">
                 <h2>Réinitialisation du mot de passe</h2>
@@ -895,11 +930,11 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
                   <a href="${resetUrl}" class="button">Réinitialiser mon mot de passe</a>
                 </p>
                 <p style="color: #666; font-size: 12px; margin-top: 20px;">
-                  Ce lien expire dans 1 heure. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
+                  Ce lien expire dans ${resetTokenTtlLabel}. Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
                 </p>
               </div>
               <div class="footer">
-                <p>© 2024 TNC Trading. Tous droits réservés.</p>
+                <p>© ${new Date().getFullYear()} ${appName}. Tous droits réservés.</p>
               </div>
             </div>
           </body>
@@ -1096,13 +1131,19 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
 
     // Generate TOTP secret
     const secret = securityService.generateTotpSecret();
-    const uri = securityService.generateTotpUri(secret, user.email);
+    const uri = await securityService.generateTotpUri(secret, user.email);
 
-    // Store pending 2FA setup (expires in 10 minutes)
+    // Store pending 2FA setup (configurable TTL)
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const [twoFactorSetupTtl, totpIssuer] = await Promise.all([
+      configService.getNumber('two_factor_setup_ttl', 600),
+      configService.get('totp_issuer', SECURITY_DEFAULTS.TOTP_ISSUER),
+    ]);
+
     await c.env.CACHE.put(
       `2fa_setup:${payload.sub}`,
       JSON.stringify({ secret, createdAt: Date.now() }),
-      { expirationTtl: 600 }
+      { expirationTtl: twoFactorSetupTtl }
     );
 
     return c.json({
@@ -1110,7 +1151,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
       data: {
         secret,
         uri,
-        issuer: SECURITY_CONFIG.TOTP_ISSUER,
+        issuer: totpIssuer,
         message: 'Scannez le QR code avec votre application d\'authentification',
       },
       requestId,
@@ -1131,8 +1172,9 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
 
-  const authService = new AuthService(c.env.JWT_SECRET);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
     const authHeader = c.req.header('Authorization');
@@ -1190,9 +1232,10 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
       .bind(body.secret, payload.sub)
       .run();
 
-    // Generate backup codes
+    // Generate backup codes (configurable count)
+    const backupCodeCount = await configService.getNumber('two_factor_backup_code_count', 10);
     const backupCodes: string[] = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < backupCodeCount; i++) {
       const code = Array.from(crypto.getRandomValues(new Uint8Array(4)))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('')
@@ -1534,17 +1577,24 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
 
-  const authService = new AuthService(c.env.JWT_SECRET);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
   const userService = new UserService(c.env.DB);
-  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
 
   try {
-    // Rate limit resend attempts
+    // Rate limit resend attempts (configurable)
+    const [resendRateMax, resendRateWindow, verificationCodeTtl] = await Promise.all([
+      configService.getNumber('rate_limit_resend_code_max', 3),
+      configService.getNumber('rate_limit_resend_code_window', 300),
+      configService.getNumber('verification_code_ttl', 900),
+    ]);
+
     const rateLimit = await securityService.checkRateLimit(
       ipAddress,
       `resend_${body.type}`,
-      3,
-      300 // 3 requests per 5 minutes
+      resendRateMax,
+      resendRateWindow
     );
 
     if (!rateLimit.allowed) {
@@ -1588,7 +1638,7 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
         attempts: 0,
         createdAt: Date.now(),
       }),
-      { expirationTtl: 900 }
+      { expirationTtl: verificationCodeTtl }
     );
 
     // Send notification

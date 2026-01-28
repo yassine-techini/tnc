@@ -3,37 +3,47 @@
  * Implements secure-by-design patterns for financial operations
  */
 
-// Security constants
-export const SECURITY_CONFIG = {
-  // Account lockout
+import { ConfigService } from './config.service';
+
+// Default security constants (used when ConfigService is not available)
+export const SECURITY_DEFAULTS = {
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_DURATION_MINUTES: 15,
-  PROGRESSIVE_LOCKOUT: true, // Each subsequent lockout doubles duration
-
-  // Password policy (NIST 800-63B compliant)
+  PROGRESSIVE_LOCKOUT: true,
   PASSWORD_MIN_LENGTH: 12,
   PASSWORD_REQUIRE_UPPERCASE: true,
   PASSWORD_REQUIRE_LOWERCASE: true,
   PASSWORD_REQUIRE_NUMBER: true,
   PASSWORD_REQUIRE_SPECIAL: true,
   PASSWORD_MAX_LENGTH: 128,
-
-  // Session security
-  SESSION_TIMEOUT_MINUTES: 15, // Shorter for banking
+  SESSION_TIMEOUT_MINUTES: 15,
   ABSOLUTE_SESSION_TIMEOUT_HOURS: 8,
-
-  // 2FA settings
-  TOTP_WINDOW: 1, // Allow 1 step before/after
+  TOTP_WINDOW: 1,
   TOTP_ISSUER: 'TNC Trading',
-
-  // Transaction security
-  TRANSACTION_SIGNATURE_VALIDITY_SECONDS: 300, // 5 minutes
-  HIGH_VALUE_THRESHOLD_XOF: 1_000_000, // Requires extra verification
-
-  // Rate limiting
+  TRANSACTION_SIGNATURE_VALIDITY_SECONDS: 300,
+  HIGH_VALUE_THRESHOLD_XOF: 1_000_000,
   RATE_LIMIT_LOGIN_PER_MINUTE: 5,
   RATE_LIMIT_SENSITIVE_OPS_PER_HOUR: 10,
 };
+
+// Re-export for backward compatibility (static defaults)
+export const SECURITY_CONFIG = SECURITY_DEFAULTS;
+
+export interface SecurityConfigValues {
+  maxLoginAttempts: number;
+  lockoutDurationMinutes: number;
+  progressiveLockout: boolean;
+  passwordMinLength: number;
+  passwordMaxLength: number;
+  sessionTimeoutMinutes: number;
+  absoluteSessionTimeoutHours: number;
+  totpWindow: number;
+  totpIssuer: string;
+  transactionSignatureValiditySeconds: number;
+  highValueThresholdXof: number;
+  rateLimitLoginPerMinute: number;
+  rateLimitSensitiveOpsPerHour: number;
+}
 
 export interface PasswordValidationResult {
   valid: boolean;
@@ -60,55 +70,115 @@ export interface AuditLogEntry {
 }
 
 export class SecurityService {
+  private configService: ConfigService;
+
   constructor(
     private db: D1Database,
-    private cache: KVNamespace
-  ) {}
+    private cache: KVNamespace,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || new ConfigService(db, cache);
+  }
+
+  /**
+   * Load security config values from DB (cached via ConfigService)
+   */
+  async getSecurityConfig(): Promise<SecurityConfigValues> {
+    const [
+      maxLoginAttempts,
+      lockoutDurationMinutes,
+      progressiveLockout,
+      passwordMinLength,
+      passwordMaxLength,
+      sessionTimeoutMinutes,
+      absoluteSessionTimeoutHours,
+      totpWindow,
+      totpIssuer,
+      transactionSignatureValiditySeconds,
+      highValueThresholdXof,
+      rateLimitLoginPerMinute,
+      rateLimitSensitiveOpsPerHour,
+    ] = await Promise.all([
+      this.configService.getNumber('login_max_attempts', SECURITY_DEFAULTS.MAX_LOGIN_ATTEMPTS),
+      this.configService.getNumber('lockout_duration_minutes', SECURITY_DEFAULTS.LOCKOUT_DURATION_MINUTES),
+      this.configService.getNumber('progressive_lockout', 1),
+      this.configService.getNumber('password_min_length', SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH),
+      this.configService.getNumber('password_max_length', SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH),
+      this.configService.getNumber('session_timeout_minutes', SECURITY_DEFAULTS.SESSION_TIMEOUT_MINUTES),
+      this.configService.getNumber('absolute_session_timeout_hours', SECURITY_DEFAULTS.ABSOLUTE_SESSION_TIMEOUT_HOURS),
+      this.configService.getNumber('totp_window', SECURITY_DEFAULTS.TOTP_WINDOW),
+      this.configService.get('totp_issuer', SECURITY_DEFAULTS.TOTP_ISSUER),
+      this.configService.getNumber('transaction_signature_validity_seconds', SECURITY_DEFAULTS.TRANSACTION_SIGNATURE_VALIDITY_SECONDS),
+      this.configService.getNumber('high_value_threshold_xof', SECURITY_DEFAULTS.HIGH_VALUE_THRESHOLD_XOF),
+      this.configService.getNumber('rate_limit_login_per_minute', SECURITY_DEFAULTS.RATE_LIMIT_LOGIN_PER_MINUTE),
+      this.configService.getNumber('rate_limit_sensitive_ops_per_hour', SECURITY_DEFAULTS.RATE_LIMIT_SENSITIVE_OPS_PER_HOUR),
+    ]);
+
+    return {
+      maxLoginAttempts,
+      lockoutDurationMinutes,
+      progressiveLockout: progressiveLockout === 1,
+      passwordMinLength,
+      passwordMaxLength,
+      sessionTimeoutMinutes,
+      absoluteSessionTimeoutHours,
+      totpWindow,
+      totpIssuer: totpIssuer || SECURITY_DEFAULTS.TOTP_ISSUER,
+      transactionSignatureValiditySeconds,
+      highValueThresholdXof,
+      rateLimitLoginPerMinute,
+      rateLimitSensitiveOpsPerHour,
+    };
+  }
 
   // ==========================================
   // PASSWORD SECURITY
   // ==========================================
 
   /**
-   * Validate password against security policy
+   * Validate password against security policy.
+   * Accepts optional pre-loaded config to avoid async in synchronous callers.
    */
-  validatePassword(password: string): PasswordValidationResult {
+  validatePassword(password: string, cfg?: SecurityConfigValues): PasswordValidationResult {
+    const minLen = cfg?.passwordMinLength ?? SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH;
+    const maxLen = cfg?.passwordMaxLength ?? SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH;
+
     const errors: string[] = [];
     let score = 0;
 
     // Length checks
-    if (password.length < SECURITY_CONFIG.PASSWORD_MIN_LENGTH) {
-      errors.push(`Le mot de passe doit contenir au moins ${SECURITY_CONFIG.PASSWORD_MIN_LENGTH} caractères`);
+    if (password.length < minLen) {
+      errors.push(`Le mot de passe doit contenir au moins ${minLen} caractères`);
     } else {
-      score += Math.min(password.length / 4, 5); // Max 5 points for length
+      score += Math.min(password.length / 4, 5);
     }
 
-    if (password.length > SECURITY_CONFIG.PASSWORD_MAX_LENGTH) {
-      errors.push(`Le mot de passe ne peut pas dépasser ${SECURITY_CONFIG.PASSWORD_MAX_LENGTH} caractères`);
+    if (password.length > maxLen) {
+      errors.push(`Le mot de passe ne peut pas dépasser ${maxLen} caractères`);
     }
 
     // Character type checks
-    if (SECURITY_CONFIG.PASSWORD_REQUIRE_UPPERCASE && !/[A-Z]/.test(password)) {
+    if (!/[A-Z]/.test(password)) {
       errors.push('Le mot de passe doit contenir au moins une majuscule');
-    } else if (/[A-Z]/.test(password)) {
+    } else {
       score += 2;
     }
 
-    if (SECURITY_CONFIG.PASSWORD_REQUIRE_LOWERCASE && !/[a-z]/.test(password)) {
+    if (!/[a-z]/.test(password)) {
       errors.push('Le mot de passe doit contenir au moins une minuscule');
-    } else if (/[a-z]/.test(password)) {
+    } else {
       score += 2;
     }
 
-    if (SECURITY_CONFIG.PASSWORD_REQUIRE_NUMBER && !/[0-9]/.test(password)) {
+    if (!/[0-9]/.test(password)) {
       errors.push('Le mot de passe doit contenir au moins un chiffre');
-    } else if (/[0-9]/.test(password)) {
+    } else {
       score += 2;
     }
 
-    if (SECURITY_CONFIG.PASSWORD_REQUIRE_SPECIAL && !/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]/.test(password)) {
+    if (!/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]/.test(password)) {
       errors.push('Le mot de passe doit contenir au moins un caractère spécial');
-    } else if (/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~]/.test(password)) {
+    } else {
       score += 3;
     }
 
@@ -170,12 +240,13 @@ export class SecurityService {
       .bind(crypto.randomUUID(), userId, passwordHash)
       .run();
 
-    // Keep only last 10 entries
+    // Keep only last N entries (configurable)
+    const historyCount = await this.configService.getNumber('password_history_count', 10);
     await this.db
       .prepare(`
         DELETE FROM password_history
         WHERE user_id = ? AND id NOT IN (
-          SELECT id FROM password_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 10
+          SELECT id FROM password_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ${historyCount}
         )
       `)
       .bind(userId, userId)
@@ -194,6 +265,7 @@ export class SecurityService {
     attemptsRemaining: number;
     lockoutUntil?: string;
   }> {
+    const cfg = await this.getSecurityConfig();
     const now = Date.now();
     const key = `login_attempts:${identifier}`;
 
@@ -201,8 +273,8 @@ export class SecurityService {
     const cached = await this.cache.get(key);
     let attempts = cached ? JSON.parse(cached) : { count: 0, firstAttempt: now, lockoutCount: 0 };
 
-    // Reset if first attempt was more than 15 minutes ago
-    if (now - attempts.firstAttempt > SECURITY_CONFIG.LOCKOUT_DURATION_MINUTES * 60 * 1000) {
+    // Reset if first attempt was more than lockout duration ago
+    if (now - attempts.firstAttempt > cfg.lockoutDurationMinutes * 60 * 1000) {
       attempts = { count: 0, firstAttempt: now, lockoutCount: attempts.lockoutCount };
     }
 
@@ -210,12 +282,12 @@ export class SecurityService {
     attempts.lastAttempt = now;
 
     // Check if should lock
-    if (attempts.count >= SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS) {
+    if (attempts.count >= cfg.maxLoginAttempts) {
       // Progressive lockout: double duration for each subsequent lockout
-      const lockoutMultiplier = SECURITY_CONFIG.PROGRESSIVE_LOCKOUT
+      const lockoutMultiplier = cfg.progressiveLockout
         ? Math.pow(2, attempts.lockoutCount)
         : 1;
-      const lockoutDuration = SECURITY_CONFIG.LOCKOUT_DURATION_MINUTES * lockoutMultiplier * 60 * 1000;
+      const lockoutDuration = cfg.lockoutDurationMinutes * lockoutMultiplier * 60 * 1000;
       const lockoutUntil = now + lockoutDuration;
 
       attempts.lockedUntil = lockoutUntil;
@@ -230,7 +302,7 @@ export class SecurityService {
         action: 'ACCOUNT_LOCKED',
         identifier,
         ipAddress,
-        details: { attempts: attempts.count, lockoutMinutes: SECURITY_CONFIG.LOCKOUT_DURATION_MINUTES * lockoutMultiplier },
+        details: { attempts: attempts.count, lockoutMinutes: cfg.lockoutDurationMinutes * lockoutMultiplier },
         riskLevel: 'high',
       });
 
@@ -242,12 +314,12 @@ export class SecurityService {
     }
 
     await this.cache.put(key, JSON.stringify(attempts), {
-      expirationTtl: SECURITY_CONFIG.LOCKOUT_DURATION_MINUTES * 60 + 60
+      expirationTtl: cfg.lockoutDurationMinutes * 60 + 60
     });
 
     return {
       locked: false,
-      attemptsRemaining: SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS - attempts.count,
+      attemptsRemaining: cfg.maxLoginAttempts - attempts.count,
     };
   }
 
@@ -321,8 +393,11 @@ export class SecurityService {
     // For critical events, also store in KV for quick access
     if (entry.riskLevel === 'critical' || entry.riskLevel === 'high') {
       const alertKey = `security_alert:${id}`;
+      const alertTtl = this.configService
+        ? await this.configService.getNumber('security_alert_cache_ttl', 86400 * 7)
+        : 86400 * 7;
       await this.cache.put(alertKey, JSON.stringify({ ...entry, id, timestamp }), {
-        expirationTtl: 86400 * 7, // 7 days
+        expirationTtl: alertTtl,
       });
     }
 
@@ -346,7 +421,9 @@ export class SecurityService {
     await this.cache.put(key, JSON.stringify({
       ...event,
       timestamp: new Date().toISOString(),
-    }), { expirationTtl: 86400 * 30 }); // 30 days
+    }), { expirationTtl: this.configService
+      ? await this.configService.getNumber('security_event_cache_ttl', 86400 * 30)
+      : 86400 * 30 });
 
     // For high/critical events, trigger alert (in production, would send to monitoring)
     if (event.riskLevel === 'high' || event.riskLevel === 'critical') {
@@ -480,9 +557,10 @@ export class SecurityService {
     signature: string,
     secretKey: string
   ): Promise<boolean> {
+    const cfg = await this.getSecurityConfig();
     // Check timestamp validity
     const now = Date.now();
-    if (Math.abs(now - transactionData.timestamp) > SECURITY_CONFIG.TRANSACTION_SIGNATURE_VALIDITY_SECONDS * 1000) {
+    if (Math.abs(now - transactionData.timestamp) > cfg.transactionSignatureValiditySeconds * 1000) {
       return false; // Signature expired
     }
 
@@ -493,8 +571,9 @@ export class SecurityService {
   /**
    * Check if transaction requires additional verification
    */
-  isHighValueTransaction(amount: number): boolean {
-    return amount >= SECURITY_CONFIG.HIGH_VALUE_THRESHOLD_XOF;
+  async isHighValueTransaction(amount: number): Promise<boolean> {
+    const cfg = await this.getSecurityConfig();
+    return amount >= cfg.highValueThresholdXof;
   }
 
   // ==========================================
@@ -587,10 +666,11 @@ export class SecurityService {
    * Verify TOTP code
    */
   async verifyTotpCode(secret: string, code: string): Promise<boolean> {
+    const cfg = await this.getSecurityConfig();
     const now = Date.now();
 
     // Check current window and adjacent windows
-    for (let i = -SECURITY_CONFIG.TOTP_WINDOW; i <= SECURITY_CONFIG.TOTP_WINDOW; i++) {
+    for (let i = -cfg.totpWindow; i <= cfg.totpWindow; i++) {
       const checkTime = now + i * 30000;
       const expectedCode = await this.generateTotpCode(secret, checkTime);
       if (code === expectedCode) {
@@ -604,8 +684,9 @@ export class SecurityService {
   /**
    * Generate TOTP provisioning URI for authenticator apps
    */
-  generateTotpUri(secret: string, email: string): string {
-    const issuer = encodeURIComponent(SECURITY_CONFIG.TOTP_ISSUER);
+  async generateTotpUri(secret: string, email: string): Promise<string> {
+    const cfg = await this.getSecurityConfig();
+    const issuer = encodeURIComponent(cfg.totpIssuer);
     const account = encodeURIComponent(email);
     return `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
   }

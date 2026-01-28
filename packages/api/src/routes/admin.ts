@@ -6,13 +6,18 @@ import { NotificationService } from '../services/notification.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
+import { ConfigService } from '../services/config.service';
 
 const admin = new Hono<{ Bindings: Env }>();
 
-/** Safe pagination parser: ensures page >= 1, 1 <= limit <= 100 */
-function parsePagination(query: { page?: string; limit?: string }): { page: number; limit: number; offset: number } {
+/** Safe pagination parser: ensures page >= 1, 1 <= limit <= maxLimit */
+function parsePagination(
+  query: { page?: string; limit?: string },
+  maxLimit: number = 100,
+  defaultLimit: number = 20
+): { page: number; limit: number; offset: number } {
   const page = Math.max(1, Math.floor(Number(query.page)) || 1);
-  const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit)) || 20));
+  const limit = Math.min(maxLimit, Math.max(1, Math.floor(Number(query.limit)) || defaultLimit));
   return { page, limit, offset: (page - 1) * limit };
 }
 
@@ -2570,6 +2575,79 @@ admin.post('/integrations/:provider/test', requirePermission('integrations', 'up
     });
   } catch (error) {
     console.error('Test integration error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// ============================================
+// CONFIG MANAGEMENT
+// ============================================
+
+// GET /admin/config - List all platform configuration
+admin.get('/config', requirePermission('integrations', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const items = await configService.getAll();
+
+    return c.json({
+      success: true,
+      data: { items },
+      requestId,
+    });
+  } catch (error) {
+    console.error('List config error:', error);
+    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
+  }
+});
+
+// PATCH /admin/config/:key - Update a config value
+admin.patch('/config/:key', requirePermission('integrations', 'update'), async (c) => {
+  const requestId = crypto.randomUUID();
+  try {
+    const key = c.req.param('key');
+    const body = await c.req.json<{ value: string }>();
+
+    if (!body.value && body.value !== '0' && body.value !== '') {
+      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Le champ value est requis' }, requestId }, 400);
+    }
+
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+
+    // Verify the key exists
+    const existing = await c.env.DB
+      .prepare('SELECT key FROM config WHERE key = ?')
+      .bind(key)
+      .first();
+
+    if (!existing) {
+      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Clé de configuration non trouvée' }, requestId }, 404);
+    }
+
+    const adminId = c.get('adminId' as never) as string;
+    await configService.set(key, String(body.value), undefined, adminId);
+
+    // Audit log
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, ip_address, created_at)
+         VALUES (?, ?, 'CONFIG_UPDATE', 'config', ?, ?, ?, datetime('now'))`
+      ).bind(
+        crypto.randomUUID(),
+        adminId,
+        key,
+        JSON.stringify({ key, value: body.value }),
+        c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+      ).run();
+    } catch { /* non-blocking */ }
+
+    return c.json({
+      success: true,
+      data: { key, value: body.value },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Update config error:', error);
     return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
   }
 });

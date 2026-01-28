@@ -7,15 +7,25 @@ import { WalletService } from '../services/wallet.service';
 import { MarketService } from '../services/market.service';
 import { CertificateService } from '../services/certificate.service';
 import { PaymentService } from '../services/payment.service';
+import { ConfigService } from '../services/config.service';
 
 const wallet = new Hono<{ Bindings: Env }>();
 
-// Withdrawal limits by KYC level (XOF/day)
-const WITHDRAWAL_LIMITS = {
+// Default withdrawal limits by KYC level (XOF/day) — overridden by config
+const DEFAULT_WITHDRAWAL_LIMITS = {
   BASIC: 0,
   STANDARD: 500_000,
   VERIFIED: 5_000_000,
 };
+
+async function getWithdrawalLimits(configService: ConfigService) {
+  const [basic, standard, verified] = await Promise.all([
+    configService.getNumber('kyc_basic_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.BASIC),
+    configService.getNumber('kyc_standard_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.STANDARD),
+    configService.getNumber('kyc_verified_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.VERIFIED),
+  ]);
+  return { BASIC: basic, STANDARD: standard, VERIFIED: verified };
+}
 
 // All routes require authentication
 wallet.use('/*', authMiddleware);
@@ -82,7 +92,9 @@ wallet.get('/transactions', async (c) => {
 
   const { type, status, page = '1', limit = '20' } = c.req.query();
   const pageNum = parseInt(page);
-  const limitNum = Math.min(parseInt(limit), 100);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const paginationMaxLimit = await configService.getNumber('pagination_max_limit', 100);
+  const limitNum = Math.min(parseInt(limit), paginationMaxLimit);
   const offset = (pageNum - 1) * limitNum;
 
   const walletService = new WalletService(c.env.DB);
@@ -171,7 +183,7 @@ wallet.get('/transactions/:id', async (c) => {
 });
 
 const depositSchema = z.object({
-  amount: z.number().positive().min(1000, 'Minimum 1000 XOF'),
+  amount: z.number().positive(),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'card', 'bank']),
   phoneNumber: z.string().optional(), // Required for mobile money
 });
@@ -183,6 +195,20 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
   const requestId = crypto.randomUUID();
 
   const walletService = new WalletService(c.env.DB);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+
+  // Validate minimum deposit amount (configurable)
+  const minDeposit = await configService.getNumber('min_deposit_xof', 1000);
+  if (body.amount < minDeposit) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'AMOUNT_TOO_LOW',
+        message: `Montant minimum de dépôt: ${minDeposit} XOF`,
+      },
+      requestId,
+    }, 400);
+  }
 
   // Validate phone number for mobile money
   if ((body.paymentMethod === 'orange_money' || body.paymentMethod === 'moov_money') && !body.phoneNumber) {
@@ -244,9 +270,9 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
       description: `Dépôt TNC Trading - ${body.amount.toLocaleString('fr-FR')} XOF`,
       customerEmail: user?.email,
       customerPhone: body.phoneNumber,
-      returnUrl: `https://app.tnc-trading.com/wallet/deposit/callback?ref=${transactionId}`,
-      cancelUrl: `https://app.tnc-trading.com/wallet/deposit/cancel?ref=${transactionId}`,
-      notifyUrl: `https://api.tnc-trading.com/api/v1/webhooks/payment/${body.paymentMethod === 'card' ? 'cinetpay' : body.paymentMethod.replace('_money', '')}`,
+      returnUrl: `${await configService.get('app_url', 'https://app.tnc-trading.com')}/wallet/deposit/callback?ref=${transactionId}`,
+      cancelUrl: `${await configService.get('app_url', 'https://app.tnc-trading.com')}/wallet/deposit/cancel?ref=${transactionId}`,
+      notifyUrl: `${await configService.get('api_url', 'https://api.tnc-trading.com')}/api/v1/webhooks/payment/${body.paymentMethod === 'card' ? 'cinetpay' : body.paymentMethod.replace('_money', '')}`,
     });
 
     if (!paymentResult.success) {
@@ -282,7 +308,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
         paymentToken: paymentResult.transactionId,
         ussdCode: paymentResult.ussdCode,
         status: 'PENDING',
-        expiresIn: 1800, // 30 minutes
+        expiresIn: await configService.getNumber('payment_expiry_seconds', 1800),
       },
       requestId,
     });
@@ -322,9 +348,11 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   const requestId = crypto.randomUUID();
 
   const walletService = new WalletService(c.env.DB);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
 
-  // Check KYC withdrawal limit
-  const dailyLimit = WITHDRAWAL_LIMITS[kycLevel];
+  // Check KYC withdrawal limit (from config)
+  const withdrawalLimits = await getWithdrawalLimits(configService);
+  const dailyLimit = withdrawalLimits[kycLevel];
   if (dailyLimit === 0) {
     return c.json({
       success: false,
@@ -405,13 +433,17 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
     }, 400);
   }
 
-  // Calculate withdrawal fees based on payment method
+  // Calculate withdrawal fees based on payment method (configurable)
+  const [feeRateMobile, feeRateBank] = await Promise.all([
+    configService.getNumber('withdrawal_fee_mobile', 0.01),
+    configService.getNumber('withdrawal_fee_bank', 0.005),
+  ]);
   const feeRates: Record<string, number> = {
-    orange_money: 0.01,  // 1%
-    moov_money: 0.01,    // 1%
-    bank: 0.005,         // 0.5%
+    orange_money: feeRateMobile,
+    moov_money: feeRateMobile,
+    bank: feeRateBank,
   };
-  const feeRate = feeRates[body.paymentMethod] || 0.01;
+  const feeRate = feeRates[body.paymentMethod] || feeRateMobile;
   const fees = Math.round(body.amount * feeRate);
   const netAmount = body.amount - fees;
 
@@ -461,7 +493,9 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
       netAmount,
       paymentMethod: body.paymentMethod,
       status: 'PENDING',
-      estimatedTime: body.paymentMethod === 'bank' ? '2-3 jours ouvrables' : '24-48h',
+      estimatedTime: body.paymentMethod === 'bank'
+        ? await configService.get('withdrawal_time_bank', '2-3 jours ouvrables')
+        : await configService.get('withdrawal_time_mobile', '24-48h'),
     },
     requestId,
   });
@@ -660,8 +694,13 @@ wallet.get('/deposit/status/:id', async (c) => {
         updatedAt: transaction.updated_at,
         minutesSinceCreation,
         providerStatus,
-        // Helpful status messages
-        statusMessage: getDepositStatusMessage(transaction.status, minutesSinceCreation),
+        // Helpful status messages (thresholds from config)
+        statusMessage: getDepositStatusMessage(
+          transaction.status,
+          minutesSinceCreation,
+          await new ConfigService(c.env.DB, c.env.CACHE).getNumber('deposit_processing_fast_minutes', 5),
+          await new ConfigService(c.env.DB, c.env.CACHE).getNumber('deposit_processing_slow_minutes', 30)
+        ),
       },
       requestId,
     });
@@ -675,15 +714,20 @@ wallet.get('/deposit/status/:id', async (c) => {
   }
 });
 
-// Helper function for deposit status messages
-function getDepositStatusMessage(status: string, minutesSinceCreation: number): string {
+// Helper function for deposit status messages (thresholds configurable)
+function getDepositStatusMessage(
+  status: string,
+  minutesSinceCreation: number,
+  processingFastMinutes: number = 5,
+  processingSlowMinutes: number = 30
+): string {
   switch (status) {
     case 'PENDING':
       return 'En attente de confirmation du paiement';
     case 'PROCESSING':
-      if (minutesSinceCreation < 5) {
+      if (minutesSinceCreation < processingFastMinutes) {
         return 'Paiement en cours de traitement';
-      } else if (minutesSinceCreation < 30) {
+      } else if (minutesSinceCreation < processingSlowMinutes) {
         return 'Traitement en cours, cela peut prendre quelques minutes';
       } else {
         return 'Le traitement prend plus de temps que prévu. Contactez le support si le problème persiste.';

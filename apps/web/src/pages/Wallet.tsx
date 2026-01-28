@@ -181,7 +181,7 @@ export default function Wallet() {
 
   const downloadCertificate = async () => {
     if (certificateData?.downloadUrl) {
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://tnc-trading-api.yassine-techini.workers.dev';
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const fullUrl = `${apiUrl}${certificateData.downloadUrl}`;
 
       try {

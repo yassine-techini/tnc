@@ -1,4 +1,5 @@
 import { NotificationService } from './notification.service';
+import { ConfigService } from './config.service';
 
 interface PriceAlert {
   id: string;
@@ -23,10 +24,15 @@ interface TriggerResult {
 }
 
 export class PriceAlertService {
+  private configService: ConfigService | null;
+
   constructor(
     private db: D1Database,
-    private notificationService: NotificationService
-  ) {}
+    private notificationService: NotificationService,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || null;
+  }
 
   /**
    * Check all active alerts against the current price and trigger notifications
@@ -210,8 +216,13 @@ export class PriceAlertService {
   async getAlertsNearTrigger(
     currentPriceXof: number,
     currentPriceUsd: number,
-    threshold: number = 0.05
+    threshold?: number
   ): Promise<any[]> {
+    if (!threshold) {
+      threshold = this.configService
+        ? await this.configService.getNumber('price_alert_near_trigger_threshold', 0.05)
+        : 0.05;
+    }
     const xofLower = currentPriceXof * (1 - threshold);
     const xofUpper = currentPriceXof * (1 + threshold);
     const usdLower = currentPriceUsd * (1 - threshold);

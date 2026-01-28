@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://tnc-trading-api-dev.yassine-techini.workers.dev';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
 
 interface ApiResponse<T> {
   success: true;
@@ -506,6 +506,27 @@ class AdminApiClient {
       testedAt: string;
     }>(`/api/v1/admin/integrations/${provider}/test`, {
       method: 'POST',
+      token,
+    });
+  }
+
+  // Configuration
+  async getConfig(token: string) {
+    return this.request<{
+      items: Array<{
+        key: string;
+        value: string;
+        description: string | null;
+        updated_at: string;
+        updated_by: string | null;
+      }>;
+    }>('/api/v1/admin/config', { token });
+  }
+
+  async updateConfig(token: string, key: string, value: string) {
+    return this.request<{ message: string }>(`/api/v1/admin/config/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ value }),
       token,
     });
   }

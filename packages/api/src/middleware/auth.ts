@@ -1,17 +1,19 @@
 import { Context, Next } from 'hono';
 import type { Env } from '../types/env';
 import { AuthService } from '../services/auth.service';
+import { ConfigService } from '../services/config.service';
+import { logger } from '../lib/logger';
 
 // Cache for Cloudflare Access public keys
 let cfAccessKeysCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
-const CF_KEYS_CACHE_TTL = 3600000; // 1 hour in ms
+let cfKeysCacheTtl: number | null = null;
 
 /**
  * Fetch Cloudflare Access public keys for JWT verification
  */
-async function getCloudflareAccessPublicKeys(teamDomain: string): Promise<JsonWebKey[]> {
+async function getCloudflareAccessPublicKeys(teamDomain: string, cacheTtlMs: number = 3600000): Promise<JsonWebKey[]> {
   // Check cache
-  if (cfAccessKeysCache && (Date.now() - cfAccessKeysCache.fetchedAt) < CF_KEYS_CACHE_TTL) {
+  if (cfAccessKeysCache && (Date.now() - cfAccessKeysCache.fetchedAt) < cacheTtlMs) {
     return cfAccessKeysCache.keys;
   }
 
@@ -31,7 +33,7 @@ async function getCloudflareAccessPublicKeys(teamDomain: string): Promise<JsonWe
 
     return data.keys;
   } catch (error) {
-    console.error('Failed to fetch Cloudflare Access public keys:', error);
+    logger.error('Failed to fetch Cloudflare Access public keys', { error: String(error) });
     // Return cached keys if available, even if expired
     if (cfAccessKeysCache) {
       return cfAccessKeysCache.keys;
@@ -46,7 +48,8 @@ async function getCloudflareAccessPublicKeys(teamDomain: string): Promise<JsonWe
 async function verifyCloudflareAccessJWT(
   token: string,
   teamDomain: string,
-  audience: string
+  audience: string,
+  cacheTtlMs: number = 3600000
 ): Promise<{ email: string; sub: string } | null> {
   try {
     // Split the JWT
@@ -56,21 +59,27 @@ async function verifyCloudflareAccessJWT(
     }
 
     // Decode header to get key ID (kid)
-    const headerJson = atob(parts[0].replace(/-/g, '+').replace(/_/g, '/'));
-    const header = JSON.parse(headerJson) as { alg: string; kid: string };
+    let header: { alg: string; kid: string };
+    try {
+      const headerJson = atob(parts[0].replace(/-/g, '+').replace(/_/g, '/'));
+      header = JSON.parse(headerJson) as { alg: string; kid: string };
+    } catch {
+      logger.warn('Invalid JWT header format');
+      return null;
+    }
 
     if (header.alg !== 'RS256') {
-      console.warn('Unexpected JWT algorithm:', header.alg);
+      logger.warn('Unexpected JWT algorithm', { alg: header.alg });
       return null;
     }
 
     // Get public keys
-    const publicKeys = await getCloudflareAccessPublicKeys(teamDomain);
+    const publicKeys = await getCloudflareAccessPublicKeys(teamDomain, cacheTtlMs);
 
     // Find the matching key
     const matchingKey = publicKeys.find((key: any) => key.kid === header.kid);
     if (!matchingKey) {
-      console.warn('No matching public key found for kid:', header.kid);
+      logger.warn('No matching public key found', { kid: header.kid });
       return null;
     }
 
@@ -97,13 +106,12 @@ async function verifyCloudflareAccessJWT(
     );
 
     if (!isValid) {
-      console.warn('JWT signature verification failed');
+      logger.warn('JWT signature verification failed');
       return null;
     }
 
     // Decode and validate payload
-    const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-    const payload = JSON.parse(payloadJson) as {
+    let payload: {
       aud: string[];
       email: string;
       sub: string;
@@ -111,24 +119,31 @@ async function verifyCloudflareAccessJWT(
       exp: number;
       iss: string;
     };
+    try {
+      const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+      payload = JSON.parse(payloadJson);
+    } catch {
+      logger.warn('Invalid JWT payload format');
+      return null;
+    }
 
     // Validate expiration
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
-      console.warn('JWT token expired');
+      logger.warn('JWT token expired');
       return null;
     }
 
     // Validate issuer
     const expectedIssuer = `https://${teamDomain}.cloudflareaccess.com`;
     if (payload.iss !== expectedIssuer) {
-      console.warn('Invalid JWT issuer:', payload.iss);
+      logger.warn('Invalid JWT issuer', { iss: payload.iss });
       return null;
     }
 
     // Validate audience
     if (!payload.aud.includes(audience)) {
-      console.warn('Invalid JWT audience:', payload.aud);
+      logger.warn('Invalid JWT audience', { aud: payload.aud });
       return null;
     }
 
@@ -137,7 +152,7 @@ async function verifyCloudflareAccessJWT(
       sub: payload.sub,
     };
   } catch (error) {
-    console.error('JWT verification error:', error);
+    logger.error('JWT verification error', { error: String(error) });
     return null;
   }
 }
@@ -229,7 +244,13 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
     const cfAudience = c.env.CF_ACCESS_AUDIENCE;
 
     if (cfTeamDomain && cfAudience) {
-      const jwtPayload = await verifyCloudflareAccessJWT(cfAccessJwt, cfTeamDomain, cfAudience);
+      // Load CF keys cache TTL from config (default 1 hour)
+      if (cfKeysCacheTtl === null) {
+        const configService = new ConfigService(c.env.DB, c.env.CACHE);
+        const ttlSeconds = await configService.getNumber('cf_keys_cache_ttl_seconds', 3600);
+        cfKeysCacheTtl = ttlSeconds * 1000;
+      }
+      const jwtPayload = await verifyCloudflareAccessJWT(cfAccessJwt, cfTeamDomain, cfAudience, cfKeysCacheTtl);
 
       if (!jwtPayload) {
         return c.json({
@@ -244,7 +265,7 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
 
       // Verify email matches
       if (jwtPayload.email !== cfAccessUser) {
-        console.warn('Email mismatch in CF Access:', jwtPayload.email, 'vs', cfAccessUser);
+        logger.warn('Email mismatch in CF Access', { jwtEmail: jwtPayload.email, headerEmail: cfAccessUser });
         return c.json({
           success: false,
           error: {
@@ -254,8 +275,19 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
           requestId: crypto.randomUUID(),
         }, 401);
       }
+    } else if (c.env.ENVIRONMENT === 'production') {
+      // In production, CF Access MUST be configured
+      logger.error('CF Access not configured in production — rejecting admin request');
+      return c.json({
+        success: false,
+        error: {
+          code: 'ADMIN_AUTH_MISCONFIGURED',
+          message: 'Cloudflare Access non configuré',
+        },
+        requestId: crypto.randomUUID(),
+      }, 500);
     }
-    // In development or if CF Access is not configured, trust the headers
+    // In development, trust the headers if CF Access is not configured
 
     // Check if user email is in admins table
     const admin = await c.env.DB
@@ -280,7 +312,7 @@ export async function adminAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
 
     await next();
   } catch (error) {
-    console.error('Admin auth error:', error);
+    logger.error('Admin auth error', { error: String(error) });
     return c.json({
       success: false,
       error: {
@@ -316,7 +348,13 @@ export async function stateAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
     const cfAudience = c.env.CF_ACCESS_STATE_AUDIENCE || c.env.CF_ACCESS_AUDIENCE;
 
     if (cfTeamDomain && cfAudience) {
-      const jwtPayload = await verifyCloudflareAccessJWT(cfAccessJwt, cfTeamDomain, cfAudience);
+      // Load CF keys cache TTL from config (default 1 hour)
+      if (cfKeysCacheTtl === null) {
+        const configService = new ConfigService(c.env.DB, c.env.CACHE);
+        const ttlSeconds = await configService.getNumber('cf_keys_cache_ttl_seconds', 3600);
+        cfKeysCacheTtl = ttlSeconds * 1000;
+      }
+      const jwtPayload = await verifyCloudflareAccessJWT(cfAccessJwt, cfTeamDomain, cfAudience, cfKeysCacheTtl);
 
       if (!jwtPayload) {
         return c.json({
@@ -339,6 +377,16 @@ export async function stateAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
           requestId: crypto.randomUUID(),
         }, 401);
       }
+    } else if (c.env.ENVIRONMENT === 'production') {
+      logger.error('CF Access not configured in production — rejecting state request');
+      return c.json({
+        success: false,
+        error: {
+          code: 'STATE_AUTH_MISCONFIGURED',
+          message: 'Cloudflare Access non configuré',
+        },
+        requestId: crypto.randomUUID(),
+      }, 500);
     }
 
     // Check if user has STATE_OPERATOR role
@@ -364,7 +412,7 @@ export async function stateAuthMiddleware(c: Context<{ Bindings: Env }>, next: N
 
     await next();
   } catch (error) {
-    console.error('State auth error:', error);
+    logger.error('State auth error', { error: String(error) });
     return c.json({
       success: false,
       error: {

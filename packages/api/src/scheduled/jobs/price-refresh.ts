@@ -4,10 +4,14 @@
  */
 
 import type { Env } from '../../types/env';
+import { ConfigService } from '../../services/config.service';
 
-const GOLD_API_BASE = 'https://www.goldapi.io/api';
-const CACHE_KEY = 'gold_price_latest';
-const CACHE_TTL = 300; // 5 minutes
+// Defaults used when ConfigService is unavailable
+const DEFAULT_GOLD_API_BASE = 'https://www.goldapi.io/api';
+const DEFAULT_CACHE_KEY = 'gold_price_latest';
+const DEFAULT_CACHE_TTL = 300; // 5 minutes
+const DEFAULT_EXCHANGE_RATE_API_URL = 'https://v6.exchangerate-api.com/v6';
+const DEFAULT_FALLBACK_EXCHANGE_RATE = 615;
 
 interface GoldApiResponse {
   price: number;
@@ -19,15 +23,25 @@ interface GoldApiResponse {
 export async function refreshGoldPrice(env: Env, ctx: ExecutionContext): Promise<void> {
   console.log('[PriceRefresh] Starting gold price refresh');
 
+  const configService = new ConfigService(env.DB, env.CACHE);
+
   try {
+    // Load config values
+    const [goldApiBase, cacheTtl, exchangeRateApiUrl, fallbackRate] = await Promise.all([
+      configService.get('gold_api_base_url', DEFAULT_GOLD_API_BASE),
+      configService.getNumber('gold_price_cache_ttl', DEFAULT_CACHE_TTL),
+      configService.get('exchange_rate_api_url', DEFAULT_EXCHANGE_RATE_API_URL),
+      configService.getNumber('fallback_exchange_rate', DEFAULT_FALLBACK_EXCHANGE_RATE),
+    ]);
+
     // Fetch USD price
-    const usdPrice = await fetchGoldPrice(env, 'USD');
+    const usdPrice = await fetchGoldPrice(env, 'USD', goldApiBase);
     if (!usdPrice) {
       throw new Error('Failed to fetch USD gold price');
     }
 
     // Fetch exchange rate USD/XOF
-    const exchangeRate = await fetchExchangeRate(env);
+    const exchangeRate = await fetchExchangeRate(env, exchangeRateApiUrl, fallbackRate);
     if (!exchangeRate) {
       throw new Error('Failed to fetch exchange rate');
     }
@@ -71,8 +85,8 @@ export async function refreshGoldPrice(env: Env, ctx: ExecutionContext): Promise
       updatedAt: new Date().toISOString(),
     };
 
-    await env.CACHE.put(CACHE_KEY, JSON.stringify(priceData), {
-      expirationTtl: CACHE_TTL,
+    await env.CACHE.put(DEFAULT_CACHE_KEY, JSON.stringify(priceData), {
+      expirationTtl: cacheTtl,
     });
 
     console.log(`[PriceRefresh] Updated price: ${usdPrice} USD, ${priceXof.toFixed(2)} XOF`);
@@ -86,9 +100,9 @@ export async function refreshGoldPrice(env: Env, ctx: ExecutionContext): Promise
   }
 }
 
-async function fetchGoldPrice(env: Env, currency: string): Promise<number | null> {
+async function fetchGoldPrice(env: Env, currency: string, goldApiBase: string): Promise<number | null> {
   try {
-    const response = await fetch(`${GOLD_API_BASE}/XAU/${currency}`, {
+    const response = await fetch(`${goldApiBase}/XAU/${currency}`, {
       headers: {
         'x-access-token': env.GOLD_API_KEY,
         'Content-Type': 'application/json',
@@ -108,11 +122,11 @@ async function fetchGoldPrice(env: Env, currency: string): Promise<number | null
   }
 }
 
-async function fetchExchangeRate(env: Env): Promise<number | null> {
+async function fetchExchangeRate(env: Env, exchangeRateApiUrl: string, fallbackRate: number): Promise<number | null> {
   try {
     // Try primary source
     const response = await fetch(
-      `https://v6.exchangerate-api.com/v6/${env.EXCHANGE_RATE_API_KEY}/latest/USD`
+      `${exchangeRateApiUrl}/${env.EXCHANGE_RATE_API_KEY}/latest/USD`
     );
 
     if (response.ok) {
@@ -120,12 +134,12 @@ async function fetchExchangeRate(env: Env): Promise<number | null> {
       return data.conversion_rates?.XOF || null;
     }
 
-    // Fallback: Use fixed rate (approximate)
+    // Fallback: Use configured fallback rate
     console.warn('[PriceRefresh] Using fallback exchange rate');
-    return 615; // Approximate USD/XOF rate
+    return fallbackRate;
   } catch (error) {
     console.error('[PriceRefresh] Failed to fetch exchange rate:', error);
-    return 615; // Fallback rate
+    return fallbackRate;
   }
 }
 

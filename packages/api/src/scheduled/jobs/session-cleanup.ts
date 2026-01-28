@@ -4,11 +4,27 @@
  */
 
 import type { Env } from '../../types/env';
+import { ConfigService } from '../../services/config.service';
 
 export async function cleanupExpiredSessions(env: Env, ctx: ExecutionContext): Promise<void> {
   console.log('[SessionCleanup] Starting session cleanup');
 
   try {
+    const configService = new ConfigService(env.DB, env.CACHE);
+
+    // Load retention periods from config (in days)
+    const [
+      verificationCodeRetentionHours,
+      recoveryCodeRetentionDays,
+      notificationRetentionDays,
+      auditLogRetentionDays,
+    ] = await Promise.all([
+      configService.getNumber('cleanup_verification_code_hours', 24),
+      configService.getNumber('cleanup_recovery_code_days', 30),
+      configService.getNumber('cleanup_notification_days', 90),
+      configService.getNumber('cleanup_audit_log_days', 365),
+    ]);
+
     // 1. Delete expired sessions
     const expiredSessions = await env.DB.prepare(`
       DELETE FROM sessions
@@ -19,38 +35,38 @@ export async function cleanupExpiredSessions(env: Env, ctx: ExecutionContext): P
     const sessionCount = expiredSessions.results?.length || 0;
     console.log(`[SessionCleanup] Deleted ${sessionCount} expired sessions`);
 
-    // 2. Delete old verification codes (expired + older than 24h)
+    // 2. Delete old verification codes (expired + older than configured hours)
     const expiredCodes = await env.DB.prepare(`
       DELETE FROM verification_codes
       WHERE expires_at < datetime('now')
-        OR (used = 1 AND created_at < datetime('now', '-24 hours'))
+        OR (used = 1 AND created_at < datetime('now', '-' || ? || ' hours'))
       RETURNING id
-    `).all();
+    `).bind(verificationCodeRetentionHours).all();
 
     const codeCount = expiredCodes.results?.length || 0;
     console.log(`[SessionCleanup] Deleted ${codeCount} expired verification codes`);
 
-    // 3. Clean up used recovery codes older than 30 days
+    // 3. Clean up used recovery codes older than configured days
     const usedRecoveryCodes = await env.DB.prepare(`
       DELETE FROM recovery_codes
-      WHERE used = 1 AND used_at < datetime('now', '-30 days')
+      WHERE used = 1 AND used_at < datetime('now', '-' || ? || ' days')
       RETURNING id
-    `).all();
+    `).bind(recoveryCodeRetentionDays).all();
 
     const recoveryCount = usedRecoveryCodes.results?.length || 0;
     console.log(`[SessionCleanup] Deleted ${recoveryCount} used recovery codes`);
 
-    // 4. Delete old read notifications (older than 90 days)
+    // 4. Delete old read notifications (older than configured days)
     const oldNotifications = await env.DB.prepare(`
       DELETE FROM notifications
-      WHERE read = 1 AND read_at < datetime('now', '-90 days')
+      WHERE read = 1 AND read_at < datetime('now', '-' || ? || ' days')
       RETURNING id
-    `).all();
+    `).bind(notificationRetentionDays).all();
 
     const notifCount = oldNotifications.results?.length || 0;
     console.log(`[SessionCleanup] Deleted ${notifCount} old notifications`);
 
-    // 5. Clean up old audit logs (older than 1 year, except critical actions)
+    // 5. Clean up old audit logs (older than configured days, except critical actions)
     const criticalActions = [
       'KYC_APPROVED',
       'KYC_REJECTED',
@@ -62,10 +78,10 @@ export async function cleanupExpiredSessions(env: Env, ctx: ExecutionContext): P
 
     const oldAuditLogs = await env.DB.prepare(`
       DELETE FROM audit_logs
-      WHERE created_at < datetime('now', '-365 days')
+      WHERE created_at < datetime('now', '-' || ? || ' days')
         AND action NOT IN (${criticalActions.map(() => '?').join(', ')})
       RETURNING id
-    `).bind(...criticalActions).all();
+    `).bind(auditLogRetentionDays, ...criticalActions).all();
 
     const auditCount = oldAuditLogs.results?.length || 0;
     console.log(`[SessionCleanup] Deleted ${auditCount} old audit logs`);

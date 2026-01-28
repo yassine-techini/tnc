@@ -89,17 +89,69 @@ const RESULT_CODES = {
   '1100': { success: false, text: 'Spoof detected' },
 };
 
+import { ConfigService } from './config.service';
+
 export class KycService {
   private baseUrl: string;
+  private configService: ConfigService | null;
 
   constructor(
     private db: D1Database,
     private storage: R2Bucket,
-    private config: KycConfig
+    private config: KycConfig,
+    configService?: ConfigService
   ) {
+    this.configService = configService || null;
     this.baseUrl = config.environment === 'production'
       ? 'https://api.smileidentity.com/v1'
       : 'https://testapi.smileidentity.com/v1';
+  }
+
+  private async getBaseUrl(): Promise<string> {
+    if (!this.configService) return this.baseUrl;
+    const configKey = this.config.environment === 'production'
+      ? 'smile_identity_api_url'
+      : 'smile_identity_test_api_url';
+    const defaultUrl = this.baseUrl;
+    return this.configService.get(configKey, defaultUrl);
+  }
+
+  /**
+   * Load KYC limits from config (or use defaults)
+   */
+  private async getKycLimits(): Promise<Record<string, { dailyBuy: number; monthlyBuy: number; canSell: boolean; dailyWithdraw: number }>> {
+    if (!this.configService) {
+      return {
+        BASIC: { dailyBuy: 0, monthlyBuy: 0, canSell: false, dailyWithdraw: 0 },
+        STANDARD: { dailyBuy: 100, monthlyBuy: 500, canSell: true, dailyWithdraw: 500_000 },
+        VERIFIED: { dailyBuy: 1000, monthlyBuy: 5000, canSell: true, dailyWithdraw: 5_000_000 },
+      };
+    }
+
+    const [
+      basicDailyBuy, basicMonthlyBuy, basicCanSell, basicDailyWithdraw,
+      standardDailyBuy, standardMonthlyBuy, standardCanSell, standardDailyWithdraw,
+      verifiedDailyBuy, verifiedMonthlyBuy, verifiedCanSell, verifiedDailyWithdraw,
+    ] = await Promise.all([
+      this.configService.getNumber('kyc_basic_daily_buy', 0),
+      this.configService.getNumber('kyc_basic_monthly_buy', 0),
+      this.configService.getNumber('kyc_basic_can_sell', 0),
+      this.configService.getNumber('kyc_basic_daily_withdraw', 0),
+      this.configService.getNumber('kyc_standard_daily_buy', 100),
+      this.configService.getNumber('kyc_standard_monthly_buy', 500),
+      this.configService.getNumber('kyc_standard_can_sell', 1),
+      this.configService.getNumber('kyc_standard_daily_withdraw_xof', 500_000),
+      this.configService.getNumber('kyc_verified_daily_buy', 1000),
+      this.configService.getNumber('kyc_verified_monthly_buy', 5000),
+      this.configService.getNumber('kyc_verified_can_sell', 1),
+      this.configService.getNumber('kyc_verified_daily_withdraw_xof', 5_000_000),
+    ]);
+
+    return {
+      BASIC: { dailyBuy: basicDailyBuy, monthlyBuy: basicMonthlyBuy, canSell: basicCanSell === 1, dailyWithdraw: basicDailyWithdraw },
+      STANDARD: { dailyBuy: standardDailyBuy, monthlyBuy: standardMonthlyBuy, canSell: standardCanSell === 1, dailyWithdraw: standardDailyWithdraw },
+      VERIFIED: { dailyBuy: verifiedDailyBuy, monthlyBuy: verifiedMonthlyBuy, canSell: verifiedCanSell === 1, dailyWithdraw: verifiedDailyWithdraw },
+    };
   }
 
   /**
@@ -194,7 +246,8 @@ export class KycService {
       }
 
       // Submit to Smile Identity
-      const response = await fetch(`${this.baseUrl}/upload`, {
+      const baseUrl = await this.getBaseUrl();
+      const response = await fetch(`${baseUrl}/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -388,7 +441,8 @@ export class KycService {
       const timestamp = new Date().toISOString();
       const signature = await this.generateSignature(timestamp);
 
-      const response = await fetch(`${this.baseUrl}/job_status`, {
+      const baseUrl = await this.getBaseUrl();
+      const response = await fetch(`${baseUrl}/job_status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -591,12 +645,8 @@ export class KycService {
       .bind(userId)
       .all<any>();
 
-    // KYC limits
-    const limits: Record<string, { dailyBuy: number; monthlyBuy: number; canSell: boolean; dailyWithdraw: number }> = {
-      BASIC: { dailyBuy: 0, monthlyBuy: 0, canSell: false, dailyWithdraw: 0 },
-      STANDARD: { dailyBuy: 100, monthlyBuy: 500, canSell: true, dailyWithdraw: 500_000 },
-      VERIFIED: { dailyBuy: 1000, monthlyBuy: 5000, canSell: true, dailyWithdraw: 5_000_000 },
-    };
+    // KYC limits from config
+    const limits = await this.getKycLimits();
 
     return {
       level: user.kyc_level as 'BASIC' | 'STANDARD' | 'VERIFIED',

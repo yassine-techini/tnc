@@ -46,12 +46,19 @@ export interface VerificationResult {
   reason?: string;
 }
 
+import { ConfigService } from './config.service';
+
 export class CertificateService {
+  private configService: ConfigService;
+
   constructor(
     private db: D1Database,
     private storage: R2Bucket,
-    private cache: KVNamespace
-  ) {}
+    private cache: KVNamespace,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || new ConfigService(db, cache);
+  }
 
   /**
    * Generate a unique 12-character verification code: BF-XXXX-XXXX
@@ -99,7 +106,7 @@ export class CertificateService {
       .run();
 
     // Generate and store HTML
-    const html = this.generateHtmlCertificate(certData);
+    const html = await this.generateHtmlCertificate(certData);
     await this.storage.put(`certificates/${certificateId}.html`, html, {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
       customMetadata: {
@@ -111,10 +118,11 @@ export class CertificateService {
     });
 
     // Cache for quick lookups
+    const certCacheTtl = await this.configService.getNumber('certificate_cache_ttl', 86400 * 30);
     await this.cache.put(
       `certificate:${certificateId}`,
       JSON.stringify(certData),
-      { expirationTtl: 86400 * 30 } // 30 days
+      { expirationTtl: certCacheTtl }
     );
 
     return certData;
@@ -175,7 +183,7 @@ export class CertificateService {
   /**
    * Generate official HTML certificate — no price, with QR code + verification code
    */
-  generateHtmlCertificate(data: CertificateData): string {
+  async generateHtmlCertificate(data: CertificateData): Promise<string> {
     const formattedDate = new Date(data.issuedAt).toLocaleDateString('fr-FR', {
       year: 'numeric',
       month: 'long',
@@ -183,15 +191,18 @@ export class CertificateService {
     });
 
     // QR code via public API (encodes the verification URL)
-    const verifyUrl = `https://app.tnc-trading.com/verify/${encodeURIComponent(data.verificationCode)}`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(verifyUrl)}&color=1B4332&bgcolor=FFFEF5`;
+    const appUrl = await this.configService.get('app_url', 'https://app.tnc-trading.com');
+    const qrApiUrl = await this.configService.get('qr_code_api_url', 'https://api.qrserver.com/v1/create-qr-code');
+    const verifyUrl = `${appUrl}/verify/${encodeURIComponent(data.verificationCode)}`;
+    const qrCodeSize = await this.configService.getNumber('certificate_qr_code_size', 180);
+    const qrCodeUrl = `${qrApiUrl}/?size=${qrCodeSize}x${qrCodeSize}&data=${encodeURIComponent(verifyUrl)}&color=1B4332&bgcolor=FFFEF5`;
 
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Certificat ${data.certificateId} - TNC Trading</title>
+  <title>Certificat ${data.certificateId} - ${await this.configService.get('app_name', 'TNC Trading')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Georgia','Times New Roman',serif;background:#e8e0d0;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:24px}
