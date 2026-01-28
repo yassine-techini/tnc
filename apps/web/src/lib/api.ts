@@ -485,8 +485,8 @@ class ApiClient {
     });
   }
 
-  // 2FA
-  async setup2FA(authToken: string) {
+  // 2FA (from profile settings - requires existing auth token)
+  async setup2FAProfile(authToken: string) {
     return this.request<{
       secret: string;
       qrCodeUrl: string;

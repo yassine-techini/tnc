@@ -25,6 +25,12 @@ const BIOMETRIC_ENABLED_KEY = 'tnc_biometric_enabled';
 const BIOMETRIC_REFRESH_TOKEN_KEY = 'tnc_biometric_refresh_token';
 const LAST_USER_EMAIL_KEY = 'tnc_last_user_email';
 
+// Demo accounts (staging/dev only)
+const DEMO_ACCOUNTS = __DEV__ ? [
+  { label: 'Compte Standard', email: 'demo@tnc.trading', password: 'Demo2024!', level: 'STANDARD' },
+  { label: 'Compte Vérifié', email: 'verified@tnc.trading', password: 'Demo2024!', level: 'VERIFIED' },
+] : [];
+
 type ScreenMode = 'biometric' | 'credentials';
 
 export default function LoginScreen() {
@@ -44,6 +50,11 @@ export default function LoginScreen() {
   const [lastUserEmail, setLastUserEmail] = useState('');
   const [biometricType, setBiometricType] = useState<'face' | 'fingerprint'>('fingerprint');
   const [checkingBiometric, setCheckingBiometric] = useState(true);
+
+  const fillDemoAccount = (account: typeof DEMO_ACCOUNTS[0]) => {
+    setFormData({ ...formData, identifier: account.email, password: account.password });
+    setErrorMsg('');
+  };
 
   // Check if returning user with biometric enabled
   useEffect(() => {
@@ -419,6 +430,31 @@ export default function LoginScreen() {
           <Text style={[styles.legalText, { color: c.textTertiary }]}>
             En vous connectant, vous acceptez nos conditions d'utilisation et notre politique de confidentialite.
           </Text>
+
+          {/* Demo Accounts Section (dev only) */}
+          {DEMO_ACCOUNTS.length > 0 && (
+            <View style={styles.demoSection}>
+              <View style={[styles.demoHeader, { borderTopColor: c.border }]}>
+                <Text style={[styles.demoTitle, { color: c.textSecondary }]}>Comptes de démonstration</Text>
+              </View>
+              {DEMO_ACCOUNTS.map((account) => (
+                <TouchableOpacity
+                  key={account.email}
+                  style={[styles.demoButton, { backgroundColor: 'rgba(212, 175, 55, 0.1)', borderColor: 'rgba(212, 175, 55, 0.3)' }]}
+                  onPress={() => fillDemoAccount(account)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.demoButtonLabel, { color: c.text }]}>{account.label}</Text>
+                  <View style={styles.demoLevelBadge}>
+                    <Text style={styles.demoLevelText}>{account.level}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              <Text style={[styles.demoHint, { color: c.textTertiary }]}>
+                Appuyez pour auto-remplir les identifiants
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -637,5 +673,49 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  // Demo section
+  demoSection: {
+    marginTop: 20,
+    gap: 10,
+  },
+  demoHeader: {
+    borderTopWidth: 1,
+    borderTopColor: '#2D2D44',
+    paddingTop: 16,
+  },
+  demoTitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  demoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  demoButtonLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  demoLevelBadge: {
+    backgroundColor: 'rgba(212, 175, 55, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  demoLevelText: {
+    fontSize: 11,
+    color: '#D4AF37',
+    fontWeight: '600',
+  },
+  demoHint: {
+    fontSize: 11,
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });

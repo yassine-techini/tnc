@@ -66,7 +66,7 @@ export default function Profile() {
   const setup2FAMutation = useMutation({
     mutationFn: async () => {
       if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.setup2FA(tokens.accessToken);
+      return api.setup2FAProfile(tokens.accessToken);
     },
     onSuccess: (data) => {
       setQrCodeUrl(data.data.qrCodeUrl);

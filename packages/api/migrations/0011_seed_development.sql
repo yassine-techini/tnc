@@ -75,13 +75,12 @@ VALUES
 -- ============================================
 
 INSERT OR IGNORE INTO gold_stock (
-  id, total_allocated, tokens_issued, available_stock,
+  id, total_allocated, tokens_issued,
   last_audit_date, last_audit_result, updated_at
 ) VALUES (
   'gold-stock-main',
   10000.0,  -- 10kg allocated by State
   110.5,    -- Total tokens issued (matches sum of wallet balances)
-  9889.5,   -- Available for purchase
   datetime('now'),
   'Initial allocation validated',
   datetime('now')

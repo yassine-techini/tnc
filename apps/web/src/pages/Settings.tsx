@@ -195,7 +195,7 @@ export default function Settings() {
     setError('');
 
     try {
-      const response = await api.setup2FA(tokens.accessToken);
+      const response = await api.setup2FAProfile(tokens.accessToken);
       setTwoFactorData(response.data);
       setActiveSection('2fa-setup');
     } catch (err) {

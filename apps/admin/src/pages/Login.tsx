@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
 
-// Demo account (dev only — hidden in production)
-const IS_DEV = import.meta.env.VITE_APP_ENV === 'development' || import.meta.env.DEV;
-const DEMO_ACCOUNT = IS_DEV ? {
+// Demo account (staging/dev only — hidden in production)
+const IS_STAGING = import.meta.env.VITE_APP_ENV === 'staging' || import.meta.env.VITE_APP_ENV === 'development' || import.meta.env.DEV;
+const DEMO_ACCOUNT = IS_STAGING ? {
   label: 'Admin Demo',
-  email: 'admin@tnc-trading.com',
-  password: 'AdminPass2024',
-  role: 'ADMIN',
+  email: 'admin@tnc.trading',
+  password: 'AdminDemo2024!',
+  role: 'SUPER_ADMIN',
 } : null;
 
 type LoginStep = 'credentials' | '2fa_setup' | '2fa_verify';

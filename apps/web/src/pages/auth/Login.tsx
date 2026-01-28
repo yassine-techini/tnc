@@ -6,6 +6,13 @@ import { Button } from '../../components/ui/Button';
 
 type LoginStep = 'credentials' | '2fa_setup' | '2fa_verify';
 
+// Demo accounts (staging/dev only — hidden in production)
+const IS_STAGING = import.meta.env.VITE_APP_ENV === 'staging' || import.meta.env.VITE_APP_ENV === 'development' || import.meta.env.DEV;
+const DEMO_ACCOUNTS = IS_STAGING ? [
+  { label: 'Compte Standard', email: 'demo@tnc.trading', password: 'Demo2024!', level: 'STANDARD' },
+  { label: 'Compte Vérifié', email: 'verified@tnc.trading', password: 'Demo2024!', level: 'VERIFIED' },
+] : [];
+
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
@@ -22,6 +29,11 @@ export default function Login() {
     uri: string;
   } | null>(null);
   const [error, setError] = useState('');
+
+  const fillDemoAccount = (account: typeof DEMO_ACCOUNTS[0]) => {
+    setFormData({ ...formData, identifier: account.email, password: account.password });
+    setError('');
+  };
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,6 +229,33 @@ export default function Login() {
                   Créer un compte
                 </Link>
               </p>
+
+              {/* Demo Accounts Section */}
+              {DEMO_ACCOUNTS.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-slate-700">
+                  <p className="text-sm text-slate-400 text-center mb-3">
+                    Comptes de démonstration
+                  </p>
+                  <div className="space-y-2">
+                    {DEMO_ACCOUNTS.map((account) => (
+                      <button
+                        key={account.email}
+                        type="button"
+                        onClick={() => fillDemoAccount(account)}
+                        className="w-full px-4 py-2 text-sm bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-colors flex items-center justify-between"
+                      >
+                        <span className="text-slate-300">{account.label}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-gold-500/20 text-gold-400">
+                          {account.level}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 text-center mt-2">
+                    Cliquez pour auto-remplir les identifiants
+                  </p>
+                </div>
+              )}
             </form>
           )}
 

@@ -5,14 +5,15 @@ import { useAuthStore } from '../stores/auth';
 
 // API URL must be set via environment variable in production builds
 const API_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
-  ? 'https://tnc-trading-api-dev.yassine-techini.workers.dev'
+  ? 'https://tnc-trading-api-staging.yassine-techini.workers.dev'
   : (() => { throw new Error('EXPO_PUBLIC_API_URL must be set in production'); })()
 );
 
 // Expected API host for certificate pinning validation
 const ALLOWED_API_HOSTS = [
+  'tnc-trading-api-staging.yassine-techini.workers.dev',
   'tnc-trading-api-dev.yassine-techini.workers.dev',
-  'api.tnc-trading.com',
+  'bf-api.tnc.trading',
 ];
 
 interface ApiResponse<T> {
