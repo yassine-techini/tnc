@@ -32,7 +32,7 @@ export default function CTA() {
                   {storeInfo.store === 'ios' ? t.cta.ctaAppStore : t.cta.ctaPlayStore}
                 </a>
                 <a
-                  href={LINKS.platform}
+                  href={LINKS.login}
                   className="text-sm text-slate-400 hover:text-gold-400 transition-colors"
                 >
                   {t.cta.ctaBrowser}
@@ -40,7 +40,7 @@ export default function CTA() {
               </>
             ) : (
               <a
-                href={LINKS.platform}
+                href={LINKS.register}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 rounded-2xl font-bold text-lg shadow-xl shadow-gold-500/25 hover:shadow-gold-500/40 transition-all hover:scale-[1.02]"
               >
                 {t.cta.ctaPlatform}

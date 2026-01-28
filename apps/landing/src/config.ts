@@ -4,6 +4,9 @@
  */
 export const LINKS = {
   platform: 'https://tnc-trading-web.pages.dev',
+  login: 'https://tnc-trading-web.pages.dev/login',
+  register: 'https://tnc-trading-web.pages.dev/register',
+  verify: 'https://tnc-trading-web.pages.dev/verify',
   admin: 'https://tnc-trading-admin.pages.dev',
   state: 'https://tnc-trading-state.pages.dev',
   appStore: '#', // TODO: replace with actual App Store link after publication

@@ -56,7 +56,7 @@ export default function Hero() {
                 </a>
               )}
               <a
-                href={LINKS.platform}
+                href={LINKS.login}
                 className="px-6 py-3 text-sm font-medium text-slate-300 border border-slate-700 rounded-xl hover:border-gold-500/50 hover:text-gold-400 transition-all"
               >
                 {t.hero.ctaBrowser}
@@ -65,7 +65,7 @@ export default function Hero() {
           ) : (
             <>
               <a
-                href={LINKS.platform}
+                href={LINKS.register}
                 className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 rounded-2xl font-bold text-lg shadow-xl shadow-gold-500/25 hover:shadow-gold-500/40 transition-all hover:scale-[1.02]"
               >
                 {t.hero.ctaPlatform}

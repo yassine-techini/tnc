@@ -40,13 +40,13 @@ export default function Navbar() {
               {otherLang}
             </button>
             <a
-              href={LINKS.platform}
+              href={LINKS.login}
               className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
             >
               {t.nav.login}
             </a>
             <a
-              href={LINKS.platform}
+              href={LINKS.register}
               className="px-5 py-2.5 text-sm font-semibold bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 rounded-xl hover:from-gold-400 hover:to-gold-500 transition-all shadow-lg shadow-gold-500/20"
             >
               {t.nav.createAccount}
@@ -85,8 +85,11 @@ export default function Navbar() {
             <a href="#securite" onClick={() => setMenuOpen(false)} className="block text-sm text-slate-300 hover:text-gold-500 py-2">{t.nav.security}</a>
             <a href="#faq" onClick={() => setMenuOpen(false)} className="block text-sm text-slate-300 hover:text-gold-500 py-2">{t.nav.faq}</a>
             <div className="pt-3 border-t border-slate-800/50 space-y-2">
-              <a href={LINKS.platform} className="block text-center px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 rounded-xl">
-                {t.nav.accessPlatform}
+              <a href={LINKS.login} className="block text-center px-4 py-2.5 text-sm text-slate-300 hover:text-gold-400 transition-colors">
+                {t.nav.login}
+              </a>
+              <a href={LINKS.register} className="block text-center px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 rounded-xl">
+                {t.nav.createAccount}
               </a>
             </div>
           </div>

@@ -7,7 +7,7 @@ export default function PublicLayout() {
       {/* Header */}
       <header className="border-b border-slate-200 dark:border-slate-800">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+          <Link to="/login" className="flex items-center gap-2">
             <div className="w-10 h-10 bg-gold-500 rounded-lg flex items-center justify-center">
               <span className="text-slate-900 font-bold text-xl">T</span>
             </div>

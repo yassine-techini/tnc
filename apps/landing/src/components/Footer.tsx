@@ -28,13 +28,23 @@ export default function Footer() {
             <h4 className="text-sm font-semibold text-white mb-4">{t.footer.platform}</h4>
             <ul className="space-y-2.5">
               <li>
-                <a href={LINKS.platform} className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
+                <a href={LINKS.login} className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
                   {t.footer.accessPlatform}
                 </a>
               </li>
               <li>
-                <a href="#" className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
-                  {t.footer.downloadMobile}
+                <a href={LINKS.appStore} className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
+                  {t.footer.downloadiOS}
+                </a>
+              </li>
+              <li>
+                <a href={LINKS.playStore} className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
+                  {t.footer.downloadAndroid}
+                </a>
+              </li>
+              <li>
+                <a href={LINKS.verify} className="text-sm text-slate-400 hover:text-gold-400 transition-colors">
+                  {t.footer.verifyCertificate}
                 </a>
               </li>
               <li>

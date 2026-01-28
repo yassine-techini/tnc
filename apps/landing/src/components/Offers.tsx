@@ -79,7 +79,7 @@ export default function Offers() {
               </ul>
 
               <a
-                href={LINKS.platform}
+                href={LINKS.register}
                 className={`block text-center px-6 py-3 rounded-xl text-sm font-semibold transition-all ${
                   plan.popular
                     ? 'bg-gradient-to-r from-gold-500 to-gold-600 text-slate-950 shadow-lg shadow-gold-500/20 hover:shadow-gold-500/40'
