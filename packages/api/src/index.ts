@@ -118,22 +118,23 @@ app.use('*', async (c, next) => {
             'http://localhost:3000',
             'http://localhost:5174',
             'http://localhost:5175',
-            'https://app.tnc-trading.com',
-            'https://admin.tnc-trading.com',
-            'https://state.tnc-trading.com',
+            'https://tnc.trading',
+            'https://tnc-trading-web.pages.dev',
+            'https://tnc-trading-admin.pages.dev',
+            'https://tnc-trading-state-portal.pages.dev',
           ];
-      const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)(-dev)?\.pages\.dev$/;
+      const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state-portal)(-dev)?\.pages\.dev$/;
       const isAllowed = allowedOrigins.includes(origin)
         || pagesDevPattern.test(origin)
         || origin === 'https://tnc-trading-web.pages.dev'
         || origin === 'https://tnc-trading-admin.pages.dev'
-        || origin === 'https://tnc-trading-state.pages.dev'
+        || origin === 'https://tnc-trading-state-portal.pages.dev'
         || origin.endsWith('.tnc-trading-web-dev.pages.dev')
         || origin.endsWith('.tnc-trading-admin-dev.pages.dev')
-        || origin.endsWith('.tnc-trading-state-dev.pages.dev')
+        || origin.endsWith('.tnc-trading-state-portal-dev.pages.dev')
         || origin.endsWith('.tnc-trading-web.pages.dev')
         || origin.endsWith('.tnc-trading-admin.pages.dev')
-        || origin.endsWith('.tnc-trading-state.pages.dev');
+        || origin.endsWith('.tnc-trading-state-portal.pages.dev');
 
       if (!isAllowed) {
         return c.json({
@@ -158,7 +159,7 @@ app.use('*', secureHeaders({
     styleSrc: ["'self'", "'unsafe-inline'"],
     fontSrc: ["'self'"],
     imgSrc: ["'self'", 'data:', 'https:'],
-    connectSrc: ["'self'", 'https://tnc-trading-api-dev.yassine-techini.workers.dev', 'https://api.tnc-trading.com'],
+    connectSrc: ["'self'", 'https://tnc-trading-api.yassine-techini.workers.dev'],
   },
   xFrameOptions: 'DENY',
   xContentTypeOptions: 'nosniff',
@@ -176,16 +177,10 @@ app.use('*', cors({
           'http://localhost:3000',
           'http://localhost:5174',
           'http://localhost:5175',
-          'https://app.tnc-trading.com',
-          'https://admin.tnc-trading.com',
-          'https://state.tnc-trading.com',
-          'https://staging.tnc-trading.pages.dev',
-          'https://tnc-trading-web-dev.pages.dev',
-          'https://tnc-trading-admin-dev.pages.dev',
-          'https://tnc-trading-state-dev.pages.dev',
+          'https://tnc.trading',
           'https://tnc-trading-web.pages.dev',
           'https://tnc-trading-admin.pages.dev',
-          'https://tnc-trading-state.pages.dev',
+          'https://tnc-trading-state-portal.pages.dev',
         ];
 
     // Allow exact matches
