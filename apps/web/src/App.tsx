@@ -16,12 +16,16 @@ function PageLoader() {
   );
 }
 
-// Smart root redirect: authenticated → dashboard, otherwise → login
-function RootRedirect() {
+// Smart root: authenticated → dashboard, otherwise → landing page
+function RootPage() {
   const { isAuthenticated, _hasHydrated } = useAuthStore();
   if (!_hasHydrated) return <PageLoader />;
-  return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />;
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  return <Landing />;
 }
+
+// Landing page (lazy loaded)
+const Landing = lazy(() => import('./pages/landing/Landing'));
 
 // Public pages (lazy loaded)
 const Login = lazy(() => import('./pages/auth/Login'));
@@ -67,9 +71,11 @@ function App() {
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
+        {/* Landing page (standalone, no layout wrapper) */}
+        <Route path="/" element={<RootPage />} />
+
         {/* Public routes */}
         <Route element={<PublicLayout />}>
-          <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />

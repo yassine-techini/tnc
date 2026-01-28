@@ -30,7 +30,9 @@ export default {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
       animation: {
-        'fade-in': 'fadeIn 0.3s ease-out',
+        'fade-in': 'fadeIn 0.6s ease-out',
+        'fade-in-delay': 'fadeIn 0.6s ease-out 0.2s both',
+        'fade-in-delay-2': 'fadeIn 0.6s ease-out 0.4s both',
         'slide-up': 'slideUp 0.3s ease-out',
         'slide-right': 'slideRight 0.3s ease-out',
         'scale-in': 'scaleIn 0.2s ease-out',
