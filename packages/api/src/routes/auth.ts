@@ -436,38 +436,60 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       }, 401);
     }
 
-    // Check 2FA if enabled
-    if (user.two_factor_enabled && user.two_factor_secret) {
-      if (!body.totpCode) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'AUTH_2FA_REQUIRED',
-            message: 'Code d\'authentification à deux facteurs requis',
-          },
-          requestId,
-        }, 401);
-      }
+    // 2FA is mandatory - check if set up
+    if (!user.two_factor_secret) {
+      // 2FA not set up - generate setup token and require setup
+      const setupToken = crypto.randomUUID();
+      await c.env.CACHE.put(
+        `user_2fa_setup:${setupToken}`,
+        JSON.stringify({ userId: user.id, email: user.email }),
+        { expirationTtl: 600 } // 10 minutes
+      );
 
-      const isValidTotp = await securityService.verifyTotpCode(user.two_factor_secret, body.totpCode);
-      if (!isValidTotp) {
-        await securityService.logSecurityEvent({
-          action: 'LOGIN_FAILED_INVALID_2FA',
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_2FA_SETUP_REQUIRED',
+          message: 'Configuration 2FA obligatoire. Scannez le QR code pour activer.',
+        },
+        data: {
+          setupToken,
           userId: user.id,
-          ipAddress,
-          userAgent,
-          riskLevel: 'high',
-        });
+        },
+        requestId,
+      }, 403);
+    }
 
-        return c.json({
-          success: false,
-          error: {
-            code: 'AUTH_2FA_INVALID',
-            message: 'Code 2FA invalide',
-          },
-          requestId,
-        }, 401);
-      }
+    // 2FA is set up - verify code
+    if (!body.totpCode) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_2FA_REQUIRED',
+          message: 'Code d\'authentification à deux facteurs requis',
+        },
+        requestId,
+      }, 401);
+    }
+
+    const isValidTotp = await securityService.verifyTotpCode(user.two_factor_secret, body.totpCode);
+    if (!isValidTotp) {
+      await securityService.logSecurityEvent({
+        action: 'LOGIN_FAILED_INVALID_2FA',
+        userId: user.id,
+        ipAddress,
+        userAgent,
+        riskLevel: 'high',
+      });
+
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_2FA_INVALID',
+          message: 'Code 2FA invalide',
+        },
+        requestId,
+      }, 401);
     }
 
     // Clear login attempts on successful login
@@ -1672,6 +1694,223 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Erreur lors de l\'envoi du code',
+      },
+      requestId,
+    }, 500);
+  }
+});
+
+// POST /auth/2fa/setup-init - Initialize 2FA setup with setup token (no auth required)
+auth.post('/2fa/setup-init', async (c) => {
+  const requestId = crypto.randomUUID();
+
+  try {
+    const body = await c.req.json();
+    const { setupToken } = body;
+
+    if (!setupToken) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Token de configuration requis',
+        },
+        requestId,
+      }, 400);
+    }
+
+    // Verify setup token
+    const setupDataStr = await c.env.CACHE.get(`user_2fa_setup:${setupToken}`);
+    if (!setupDataStr) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'SETUP_TOKEN_EXPIRED',
+          message: 'Session de configuration expirée. Reconnectez-vous.',
+        },
+        requestId,
+      }, 400);
+    }
+
+    const setupData = JSON.parse(setupDataStr);
+
+    // Generate TOTP secret
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
+    const secret = securityService.generateTotpSecret();
+    const uri = await securityService.generateTotpUri(secret, setupData.email);
+
+    // Store pending 2FA setup
+    await c.env.CACHE.put(
+      `user_2fa_pending:${setupToken}`,
+      JSON.stringify({ secret, userId: setupData.userId, email: setupData.email }),
+      { expirationTtl: 600 }
+    );
+
+    return c.json({
+      success: true,
+      data: {
+        secret,
+        uri,
+        issuer: 'TNC Trading',
+        message: 'Scannez le QR code avec votre application d\'authentification',
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('2FA setup-init error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de la configuration 2FA',
+      },
+      requestId,
+    }, 500);
+  }
+});
+
+// POST /auth/2fa/setup-complete - Complete 2FA setup and login
+auth.post('/2fa/setup-complete', async (c) => {
+  const requestId = crypto.randomUUID();
+  const ipAddress = getClientIp(c);
+  const userAgent = getUserAgent(c);
+
+  try {
+    const body = await c.req.json();
+    const { setupToken, code } = body;
+
+    if (!setupToken || !code) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Token et code requis',
+        },
+        requestId,
+      }, 400);
+    }
+
+    // Get pending setup data
+    const pendingDataStr = await c.env.CACHE.get(`user_2fa_pending:${setupToken}`);
+    if (!pendingDataStr) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'SETUP_EXPIRED',
+          message: 'Session de configuration expirée. Recommencez.',
+        },
+        requestId,
+      }, 400);
+    }
+
+    const pendingData = JSON.parse(pendingDataStr);
+
+    // Verify TOTP code
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
+    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code);
+
+    if (!isValidCode) {
+      return c.json({
+        success: false,
+        error: {
+          code: '2FA_INVALID_CODE',
+          message: 'Code incorrect. Vérifiez l\'heure de votre appareil.',
+        },
+        requestId,
+      }, 400);
+    }
+
+    // Save 2FA secret to user
+    await c.env.DB
+      .prepare('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
+      .bind(pendingData.secret, pendingData.userId)
+      .run();
+
+    // Clear setup tokens
+    await c.env.CACHE.delete(`user_2fa_setup:${setupToken}`);
+    await c.env.CACHE.delete(`user_2fa_pending:${setupToken}`);
+
+    // Get user data
+    const user = await c.env.DB
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(pendingData.userId)
+      .first<any>();
+
+    if (!user) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'Utilisateur non trouvé',
+        },
+        requestId,
+      }, 404);
+    }
+
+    // Generate login tokens
+    const authService = new AuthService(c.env.JWT_SECRET, configService);
+    const tokens = await authService.generateTokens({
+      sub: user.id,
+      email: user.email,
+      kycLevel: user.kyc_level,
+    });
+
+    // Create session record
+    const sessionId = crypto.randomUUID();
+    const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
+    const secCfg = await securityService.getSecurityConfig();
+
+    await c.env.DB
+      .prepare(`
+        INSERT INTO active_sessions (id, user_id, session_token_hash, ip_address, user_agent, device_type, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+' || ? || ' hours'), datetime('now'))
+      `)
+      .bind(sessionId, user.id, sessionTokenHash, ipAddress, userAgent, 'web', secCfg.absoluteSessionTimeoutHours)
+      .run();
+
+    // Log successful login
+    await securityService.logAuditEvent({
+      userId: user.id,
+      action: 'USER_2FA_SETUP_COMPLETED',
+      entityType: 'user',
+      entityId: user.id,
+      ipAddress,
+      userAgent,
+      riskLevel: 'high',
+      success: true,
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        message: '2FA activé avec succès',
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          country: user.country,
+          kycLevel: user.kyc_level,
+          kycStatus: user.kyc_status,
+          emailVerified: Boolean(user.email_verified),
+          phoneVerified: Boolean(user.phone_verified),
+          twoFactorEnabled: true,
+        },
+        sessionId,
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('2FA setup-complete error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de l\'activation 2FA',
       },
       requestId,
     }, 500);

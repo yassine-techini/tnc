@@ -161,7 +161,76 @@ class ApiClient {
   }
 
   async login(identifier: string, password: string, totpCode?: string) {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password, totpCode }),
+    });
+
+    const data = await response.json();
+
+    // Handle 2FA setup required
+    if (data.error?.code === 'AUTH_2FA_SETUP_REQUIRED') {
+      return {
+        success: false as const,
+        requires2FASetup: true,
+        setupToken: data.data?.setupToken,
+        error: data.error,
+      };
+    }
+
+    // Handle 2FA code required
+    if (data.error?.code === 'AUTH_2FA_REQUIRED') {
+      return {
+        success: false as const,
+        requires2FA: true,
+        error: data.error,
+      };
+    }
+
+    // Handle other errors
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Erreur de connexion');
+    }
+
+    return {
+      success: true as const,
+      data: data.data as {
+        accessToken: string;
+        refreshToken: string;
+        expiresIn: number;
+        user: {
+          id: string;
+          email: string;
+          phone: string;
+          country: string;
+          kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
+          kycStatus: string;
+          emailVerified: boolean;
+          phoneVerified: boolean;
+          twoFactorEnabled: boolean;
+        };
+      },
+    };
+  }
+
+  // 2FA Setup - get secret and QR code (using setup token)
+  async setup2FA(setupToken: string) {
     return this.request<{
+      secret: string;
+      uri: string;
+      issuer: string;
+      message: string;
+    }>('/api/v1/auth/2fa/setup-init', {
+      method: 'POST',
+      body: JSON.stringify({ setupToken }),
+    });
+  }
+
+  // 2FA Complete - verify code and complete setup
+  async complete2FASetup(setupToken: string, code: string) {
+    return this.request<{
+      message: string;
       accessToken: string;
       refreshToken: string;
       expiresIn: number;
@@ -176,9 +245,9 @@ class ApiClient {
         phoneVerified: boolean;
         twoFactorEnabled: boolean;
       };
-    }>('/api/v1/auth/login', {
+    }>('/api/v1/auth/2fa/setup-complete', {
       method: 'POST',
-      body: JSON.stringify({ identifier, password, totpCode }),
+      body: JSON.stringify({ setupToken, code }),
     });
   }
 
