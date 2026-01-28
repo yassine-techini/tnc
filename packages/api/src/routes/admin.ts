@@ -4,6 +4,7 @@ import { AuthService } from '../services/auth.service';
 import { PaymentService } from '../services/payment.service';
 import { NotificationService } from '../services/notification.service';
 import { ReconciliationService } from '../services/reconciliation.service';
+import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
@@ -87,11 +88,11 @@ async function adminJwtMiddleware(c: any, next: any) {
   }
 }
 
-// POST /admin/login - Admin login
+// POST /admin/login - Admin login with mandatory 2FA
 admin.post('/login', async (c) => {
   try {
     const body = await c.req.json();
-    const { email, password } = body;
+    const { email, password, totpCode } = body;
 
     if (!email || !password) {
       return c.json({
@@ -136,6 +137,58 @@ admin.post('/login', async (c) => {
       }, 401);
     }
 
+    // Check if 2FA is set up (mandatory for admins)
+    if (!adminUser.two_factor_secret) {
+      // 2FA not set up - generate setup token and require setup
+      const setupToken = crypto.randomUUID();
+      await c.env.CACHE.put(
+        `admin_2fa_setup:${setupToken}`,
+        JSON.stringify({ adminId: adminUser.id, email: adminUser.email }),
+        { expirationTtl: 600 } // 10 minutes
+      );
+
+      return c.json({
+        success: false,
+        error: {
+          code: '2FA_SETUP_REQUIRED',
+          message: 'Configuration 2FA obligatoire. Scannez le QR code pour activer.',
+        },
+        data: {
+          setupToken,
+          adminId: adminUser.id,
+        },
+        requestId: crypto.randomUUID(),
+      }, 403);
+    }
+
+    // 2FA is set up - verify code
+    if (!totpCode) {
+      return c.json({
+        success: false,
+        error: {
+          code: '2FA_REQUIRED',
+          message: 'Code d\'authentification à deux facteurs requis',
+        },
+        requestId: crypto.randomUUID(),
+      }, 401);
+    }
+
+    // Verify TOTP code
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
+    const isValidTotp = await securityService.verifyTotpCode(adminUser.two_factor_secret, totpCode);
+
+    if (!isValidTotp) {
+      return c.json({
+        success: false,
+        error: {
+          code: '2FA_INVALID',
+          message: 'Code 2FA invalide',
+        },
+        requestId: crypto.randomUUID(),
+      }, 401);
+    }
+
     // Update last login
     await c.env.DB
       .prepare('UPDATE admins SET last_login_at = datetime(\'now\') WHERE id = ?')
@@ -161,6 +214,7 @@ admin.post('/login', async (c) => {
           name: adminUser.name,
           role: adminUser.role,
           permissions,
+          twoFactorEnabled: true,
         },
         tokens,
       },
@@ -173,6 +227,177 @@ admin.post('/login', async (c) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Erreur interne',
+      },
+      requestId: crypto.randomUUID(),
+    }, 500);
+  }
+});
+
+// POST /admin/2fa/setup - Generate 2FA setup (requires setup token)
+admin.post('/2fa/setup', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { setupToken } = body;
+
+    if (!setupToken) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Token de configuration requis',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
+
+    // Verify setup token
+    const setupDataStr = await c.env.CACHE.get(`admin_2fa_setup:${setupToken}`);
+    if (!setupDataStr) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'SETUP_TOKEN_EXPIRED',
+          message: 'Session de configuration expirée. Reconnectez-vous.',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
+
+    const setupData = JSON.parse(setupDataStr);
+
+    // Generate TOTP secret
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
+    const secret = securityService.generateTotpSecret();
+    const uri = await securityService.generateTotpUri(secret, setupData.email);
+
+    // Store pending 2FA setup
+    await c.env.CACHE.put(
+      `admin_2fa_pending:${setupToken}`,
+      JSON.stringify({ secret, adminId: setupData.adminId, email: setupData.email }),
+      { expirationTtl: 600 }
+    );
+
+    return c.json({
+      success: true,
+      data: {
+        secret,
+        uri,
+        issuer: 'TNC Trading Admin',
+        message: 'Scannez le QR code avec votre application d\'authentification',
+      },
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    console.error('Admin 2FA setup error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de la configuration 2FA',
+      },
+      requestId: crypto.randomUUID(),
+    }, 500);
+  }
+});
+
+// POST /admin/2fa/verify - Verify and complete 2FA setup
+admin.post('/2fa/verify', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { setupToken, code } = body;
+
+    if (!setupToken || !code) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Token et code requis',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
+
+    // Get pending setup data
+    const pendingDataStr = await c.env.CACHE.get(`admin_2fa_pending:${setupToken}`);
+    if (!pendingDataStr) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'SETUP_EXPIRED',
+          message: 'Session de configuration expirée. Recommencez.',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
+
+    const pendingData = JSON.parse(pendingDataStr);
+
+    // Verify TOTP code
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
+    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code);
+
+    if (!isValidCode) {
+      return c.json({
+        success: false,
+        error: {
+          code: '2FA_INVALID_CODE',
+          message: 'Code incorrect. Vérifiez l\'heure de votre appareil.',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
+
+    // Save 2FA secret to admin
+    await c.env.DB
+      .prepare('UPDATE admins SET two_factor_secret = ?, two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
+      .bind(pendingData.secret, pendingData.adminId)
+      .run();
+
+    // Clear setup tokens
+    await c.env.CACHE.delete(`admin_2fa_setup:${setupToken}`);
+    await c.env.CACHE.delete(`admin_2fa_pending:${setupToken}`);
+
+    // Generate login tokens
+    const authService = new AuthService(c.env.JWT_SECRET);
+    const tokens = await authService.generateTokens({
+      sub: pendingData.adminId,
+      email: pendingData.email,
+      kycLevel: 'VERIFIED',
+    });
+
+    // Get admin details and permissions
+    const adminUser = await c.env.DB
+      .prepare('SELECT * FROM admins WHERE id = ?')
+      .bind(pendingData.adminId)
+      .first<any>();
+
+    const permissions = await resolvePermissions(c.env.DB, pendingData.adminId, adminUser?.role || 'ADMIN');
+
+    return c.json({
+      success: true,
+      data: {
+        message: '2FA activé avec succès',
+        user: {
+          id: pendingData.adminId,
+          email: pendingData.email,
+          name: adminUser?.name,
+          role: adminUser?.role,
+          permissions,
+          twoFactorEnabled: true,
+        },
+        tokens,
+      },
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    console.error('Admin 2FA verify error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de l\'activation 2FA',
       },
       requestId: crypto.randomUUID(),
     }, 500);

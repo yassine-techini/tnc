@@ -130,23 +130,91 @@ class StateApiClient {
     return data;
   }
 
-  // State Auth (via Cloudflare Access)
-  async stateLogin(email: string, password: string) {
+  // State Auth with 2FA support
+  async stateLogin(email: string, password: string, totpCode?: string) {
+    const response = await fetch(`${this.baseUrl}/api/v1/state/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, totpCode }),
+    });
+
+    const data = await response.json();
+
+    // Handle 2FA setup required
+    if (data.error?.code === '2FA_SETUP_REQUIRED') {
+      return {
+        success: false as const,
+        requires2FASetup: true,
+        setupToken: data.data?.setupToken,
+        error: data.error,
+      };
+    }
+
+    // Handle 2FA code required
+    if (data.error?.code === '2FA_REQUIRED') {
+      return {
+        success: false as const,
+        requires2FA: true,
+        error: data.error,
+      };
+    }
+
+    // Handle other errors
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Erreur de connexion');
+    }
+
+    return {
+      success: true as const,
+      data: data.data as {
+        user: {
+          id: string;
+          email: string;
+          name: string;
+          ministry: string;
+          twoFactorEnabled: boolean;
+        };
+        tokens: {
+          accessToken: string;
+          refreshToken: string;
+          expiresIn: number;
+        };
+      },
+    };
+  }
+
+  // 2FA Setup - get secret and QR code
+  async state2FASetup(setupToken: string) {
     return this.request<{
+      secret: string;
+      uri: string;
+      issuer: string;
+      message: string;
+    }>('/api/v1/state/2fa/setup', {
+      method: 'POST',
+      body: JSON.stringify({ setupToken }),
+    });
+  }
+
+  // 2FA Verify - complete setup and get tokens
+  async state2FAVerify(setupToken: string, code: string) {
+    return this.request<{
+      message: string;
       user: {
         id: string;
         email: string;
         name: string;
         ministry: string;
+        twoFactorEnabled: boolean;
       };
       tokens: {
         accessToken: string;
         refreshToken: string;
         expiresIn: number;
       };
-    }>('/api/v1/state/login', {
+    }>('/api/v1/state/2fa/verify', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ setupToken, code }),
     });
   }
 
