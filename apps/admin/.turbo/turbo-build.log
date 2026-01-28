@@ -7,25 +7,32 @@ transforming...
 ✓ 931 modules transformed.
 rendering chunks...
 computing gzip size...
-dist/index.html                           0.73 kB │ gzip:  0.39 kB
-dist/assets/index-DesavjfR.css           56.49 kB │ gzip:  8.30 kB
-dist/assets/Login-DW7nxWgk.js             4.89 kB │ gzip:  1.77 kB
-dist/assets/api-TfdtjHgm.js               6.01 kB │ gzip:  1.73 kB
-dist/assets/AdminDetail-DtyTNReQ.js       7.96 kB │ gzip:  2.62 kB
-dist/assets/Withdrawals-LSEUW9po.js       8.48 kB │ gzip:  2.51 kB
-dist/assets/UserDetail-BoBKuO8E.js       10.93 kB │ gzip:  2.74 kB
-dist/assets/Integrations-CokszfH7.js     10.99 kB │ gzip:  3.50 kB
-dist/assets/AuditLog-Bes4NQUJ.js         11.22 kB │ gzip:  3.10 kB
-dist/assets/Stock-CiytXru8.js            11.26 kB │ gzip:  3.05 kB
-dist/assets/Admins-DuSfOXzw.js           11.99 kB │ gzip:  2.80 kB
-dist/assets/Users-BaGHQntQ.js            12.32 kB │ gzip:  3.47 kB
-dist/assets/Reconciliation-BbV2i2we.js   13.48 kB │ gzip:  3.38 kB
-dist/assets/Dashboard-CJ-pdkB5.js        14.31 kB │ gzip:  3.43 kB
-dist/assets/KycReview-CFKKqZ4T.js        14.33 kB │ gzip:  3.59 kB
-dist/assets/Transactions-DnXqpv10.js     14.46 kB │ gzip:  3.86 kB
-dist/assets/Configuration-BrayDlHn.js    17.40 kB │ gzip:  5.27 kB
-dist/assets/query-CoPFeybR.js            49.13 kB │ gzip: 15.00 kB
-dist/assets/index-BqtA2sC0.js            52.33 kB │ gzip: 17.20 kB
-dist/assets/vendor-C4kM_9FL.js          156.62 kB │ gzip: 51.30 kB
-dist/assets/charts-BgTVJn92.js          359.59 kB │ gzip: 99.42 kB
-✓ built in 16.91s
+dist/index.html                                              0.73 kB │ gzip:  0.39 kB
+dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2     10.25 kB
+dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2      11.23 kB
+dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2       18.75 kB
+dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2          19.00 kB
+dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2   25.96 kB
+dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2          48.26 kB
+dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2      85.07 kB
+dist/assets/index-C4R91-Kc.css                              58.42 kB │ gzip:  8.81 kB
+dist/assets/Login-9FzMyYs4.js                                4.89 kB │ gzip:  1.77 kB
+dist/assets/api-TfdtjHgm.js                                  6.01 kB │ gzip:  1.73 kB
+dist/assets/AdminDetail-BQZaaz3h.js                          7.96 kB │ gzip:  2.62 kB
+dist/assets/Withdrawals-Dst5estS.js                          8.48 kB │ gzip:  2.51 kB
+dist/assets/UserDetail-BcmAiOLQ.js                          10.93 kB │ gzip:  2.74 kB
+dist/assets/Integrations-DXDqTYfE.js                        10.99 kB │ gzip:  3.50 kB
+dist/assets/AuditLog-DpeiEOoj.js                            11.22 kB │ gzip:  3.10 kB
+dist/assets/Stock-BVKgK88x.js                               11.26 kB │ gzip:  3.05 kB
+dist/assets/Admins-Ykemntaw.js                              11.99 kB │ gzip:  2.80 kB
+dist/assets/Users-D7a5gwWQ.js                               12.32 kB │ gzip:  3.46 kB
+dist/assets/Reconciliation-C9EM9EJX.js                      13.48 kB │ gzip:  3.38 kB
+dist/assets/Dashboard-i8O7ZURa.js                           14.31 kB │ gzip:  3.43 kB
+dist/assets/KycReview-B84Q-7i0.js                           14.33 kB │ gzip:  3.59 kB
+dist/assets/Transactions-DcExczpd.js                        14.46 kB │ gzip:  3.86 kB
+dist/assets/Configuration-DsuSyrYC.js                       17.40 kB │ gzip:  5.27 kB
+dist/assets/query-CoPFeybR.js                               49.13 kB │ gzip: 15.00 kB
+dist/assets/index-DHxTHruR.js                               52.33 kB │ gzip: 17.20 kB
+dist/assets/vendor-C4kM_9FL.js                             156.62 kB │ gzip: 51.30 kB
+dist/assets/charts-BgTVJn92.js                             359.59 kB │ gzip: 99.42 kB
+✓ built in 29.49s
