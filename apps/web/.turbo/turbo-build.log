@@ -31,7 +31,7 @@ dist/assets/Settings-BOXRHbIb.js            26.83 kB │ gzip:  5.49 kB
 dist/assets/Wallet-G6YqMEHq.js              30.69 kB │ gzip:  7.42 kB
 dist/assets/PriceChart-XpecmZfI.js         171.36 kB │ gzip: 54.90 kB
 dist/assets/index-CgZohbeH.js              252.52 kB │ gzip: 80.10 kB
-✓ built in 15.08s
+✓ built in 31.33s
 
 PWA v0.17.5
 mode      generateSW

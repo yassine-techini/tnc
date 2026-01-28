@@ -4,23 +4,28 @@
 
 vite v5.4.21 building for production...
 transforming...
-✓ 926 modules transformed.
+✓ 931 modules transformed.
 rendering chunks...
 computing gzip size...
 dist/index.html                           0.73 kB │ gzip:  0.39 kB
-dist/assets/index-ByXk_-O6.css           50.15 kB │ gzip:  7.50 kB
-dist/assets/api-Dao6QSKS.js               4.14 kB │ gzip:  1.41 kB
-dist/assets/Login-w9yZnQib.js             4.84 kB │ gzip:  1.76 kB
-dist/assets/Withdrawals-BgLOOr96.js       8.48 kB │ gzip:  2.51 kB
-dist/assets/UserDetail-C2mTBW3a.js       10.93 kB │ gzip:  2.75 kB
-dist/assets/Stock-BzyEjXww.js            11.26 kB │ gzip:  3.06 kB
-dist/assets/Users-CR2tA2ZI.js            12.32 kB │ gzip:  3.47 kB
-dist/assets/Reconciliation-3YtExhZE.js   13.48 kB │ gzip:  3.38 kB
-dist/assets/Dashboard-JbHuNnGP.js        14.31 kB │ gzip:  3.43 kB
-dist/assets/KycReview-Bfev7LJI.js        14.33 kB │ gzip:  3.59 kB
-dist/assets/Transactions-S0-6ztq5.js     14.46 kB │ gzip:  3.87 kB
+dist/assets/index-DesavjfR.css           56.49 kB │ gzip:  8.30 kB
+dist/assets/Login-DW7nxWgk.js             4.89 kB │ gzip:  1.77 kB
+dist/assets/api-TfdtjHgm.js               6.01 kB │ gzip:  1.73 kB
+dist/assets/AdminDetail-DtyTNReQ.js       7.96 kB │ gzip:  2.62 kB
+dist/assets/Withdrawals-LSEUW9po.js       8.48 kB │ gzip:  2.51 kB
+dist/assets/UserDetail-BoBKuO8E.js       10.93 kB │ gzip:  2.74 kB
+dist/assets/Integrations-CokszfH7.js     10.99 kB │ gzip:  3.50 kB
+dist/assets/AuditLog-Bes4NQUJ.js         11.22 kB │ gzip:  3.10 kB
+dist/assets/Stock-CiytXru8.js            11.26 kB │ gzip:  3.05 kB
+dist/assets/Admins-DuSfOXzw.js           11.99 kB │ gzip:  2.80 kB
+dist/assets/Users-BaGHQntQ.js            12.32 kB │ gzip:  3.47 kB
+dist/assets/Reconciliation-BbV2i2we.js   13.48 kB │ gzip:  3.38 kB
+dist/assets/Dashboard-CJ-pdkB5.js        14.31 kB │ gzip:  3.43 kB
+dist/assets/KycReview-CFKKqZ4T.js        14.33 kB │ gzip:  3.59 kB
+dist/assets/Transactions-DnXqpv10.js     14.46 kB │ gzip:  3.86 kB
+dist/assets/Configuration-BrayDlHn.js    17.40 kB │ gzip:  5.27 kB
 dist/assets/query-CoPFeybR.js            49.13 kB │ gzip: 15.00 kB
-dist/assets/index-_gyfTFLQ.js            50.42 kB │ gzip: 16.72 kB
+dist/assets/index-BqtA2sC0.js            52.33 kB │ gzip: 17.20 kB
 dist/assets/vendor-C4kM_9FL.js          156.62 kB │ gzip: 51.30 kB
 dist/assets/charts-BgTVJn92.js          359.59 kB │ gzip: 99.42 kB
-✓ built in 18.14s
+✓ built in 16.91s

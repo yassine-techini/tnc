@@ -17,7 +17,6 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/profile': () => import('../pages/Profile'),
   '/kyc': () => import('../pages/KYC'),
   '/settings': () => import('../pages/Settings'),
-  '/': () => import('../pages/Landing'),
   '/login': () => import('../pages/auth/Login'),
   '/register': () => import('../pages/auth/Register'),
 };
