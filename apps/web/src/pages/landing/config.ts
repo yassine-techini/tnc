@@ -7,8 +7,8 @@ export const LINKS = {
   login: '/login',
   register: '/register',
   verify: '/verify',
-  admin: 'https://tnc-trading-admin.pages.dev',
-  state: 'https://tnc-trading-state-portal.pages.dev',
+  admin: 'https://bf-admin.tnc.trading',
+  state: 'https://bf-state.tnc.trading',
   appStore: 'https://apps.apple.com/bf/app/tnc-trading/id0000000000',
   playStore: 'https://play.google.com/store/apps/details?id=com.tnc.trading',
 };

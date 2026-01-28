@@ -121,10 +121,10 @@ crons = [
 # ============================================
 
 [env.production]
-name = "tnc-trading-api"
+name = "tnc-trading-api-bf"
 workers_dev = false
 routes = [
-  { pattern = "api.tnc-trading.com/*", zone_name = "tnc-trading.com" }
+  { pattern = "bf-api.tnc.trading/*", zone_name = "tnc.trading" }
 ]
 
 [env.production.vars]

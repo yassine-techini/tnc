@@ -6,8 +6,8 @@
 
 -- Platform URLs & Branding
 INSERT OR IGNORE INTO config (key, value, description) VALUES
-    ('app_url', 'https://tnc-trading-web.pages.dev', 'URL de l''application web'),
-    ('api_url', 'https://tnc-trading-api.yassine-techini.workers.dev', 'URL de l''API'),
+    ('app_url', 'https://bf.tnc.trading', 'URL de l''application web'),
+    ('api_url', 'https://bf-api.tnc.trading', 'URL de l''API'),
     ('app_name', 'TNC Trading', 'Nom de la plateforme'),
     ('app_tagline', 'Plateforme de Tokenisation d''Or', 'Sous-titre de la plateforme'),
     ('email_from_address', 'noreply@tnc-trading.com', 'Adresse email expéditeur'),
