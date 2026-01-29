@@ -120,12 +120,13 @@ bucket_name = "tnc-trading-logs-staging"
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications-staging"
 
-[[env.staging.queues.consumers]]
-queue = "tnc-notifications-staging"
-max_batch_size = 10
-max_batch_timeout = 30
-max_retries = 3
-dead_letter_queue = "tnc-notifications-dlq-staging"
+# Consumer already configured on this queue
+# [[env.staging.queues.consumers]]
+# queue = "tnc-notifications-staging"
+# max_batch_size = 10
+# max_batch_timeout = 30
+# max_retries = 3
+# dead_letter_queue = "tnc-notifications-dlq-staging"
 
 [[env.staging.queues.producers]]
 binding = "ALERT_QUEUE"
