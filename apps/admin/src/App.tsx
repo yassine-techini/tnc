@@ -18,6 +18,8 @@ const AdminDetail = lazy(() => import('./pages/AdminDetail'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
 const Configuration = lazy(() => import('./pages/Configuration'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const ProofOfReserve = lazy(() => import('./pages/ProofOfReserve'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAdminStore();
@@ -59,6 +61,8 @@ export default function App() {
                     <Route path="/integrations" element={<Integrations />} />
                     <Route path="/configuration" element={<Configuration />} />
                     <Route path="/audit" element={<AuditLog />} />
+                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/proof-of-reserve" element={<ProofOfReserve />} />
                   </Routes>
                   </ErrorBoundary>
                 </AdminLayout>

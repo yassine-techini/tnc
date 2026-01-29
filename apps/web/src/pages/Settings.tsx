@@ -27,7 +27,7 @@ interface PriceAlert {
 }
 
 export default function Settings() {
-  const { user, tokens, logout, updateUser } = useAuthStore();
+  const { user, isAuthenticated, logout, updateUser } = useAuthStore();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<ActiveSection>('none');
   const [isLoading, setIsLoading] = useState(false);
@@ -57,11 +57,8 @@ export default function Settings() {
   // Wallet query for delete account check
   const { data: walletData } = useQuery({
     queryKey: ['wallet'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) return null;
-      return api.getWallet(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getWallet(),
+    enabled: isAuthenticated,
   });
 
   const wallet = walletData?.data;
@@ -71,19 +68,16 @@ export default function Settings() {
   const { data: notificationPrefs, isLoading: notifLoading } = useQuery({
     queryKey: ['notificationPreferences'],
     queryFn: async () => {
-      if (!tokens?.accessToken) return null;
-      const response = await api.getNotificationPreferences(tokens.accessToken);
+      const response = await api.getNotificationPreferences();
       return response.data;
     },
-    enabled: !!tokens?.accessToken,
+    enabled: isAuthenticated,
   });
 
   // Notifications mutation
   const updateNotificationsMutation = useMutation({
-    mutationFn: async (prefs: { email?: boolean; sms?: boolean; priceAlerts?: boolean; transactionAlerts?: boolean; marketingEmails?: boolean }) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.updateNotificationPreferences(prefs, tokens.accessToken);
-    },
+    mutationFn: (prefs: { email?: boolean; sms?: boolean; priceAlerts?: boolean; transactionAlerts?: boolean; marketingEmails?: boolean }) =>
+      api.updateNotificationPreferences(prefs),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationPreferences'] });
     },
@@ -93,19 +87,16 @@ export default function Settings() {
   const { data: priceAlertsData, isLoading: alertsLoading } = useQuery({
     queryKey: ['priceAlerts'],
     queryFn: async () => {
-      if (!tokens?.accessToken) return null;
-      const response = await api.getPriceAlerts(tokens.accessToken, true);
+      const response = await api.getPriceAlerts(true);
       return response.data;
     },
-    enabled: !!tokens?.accessToken,
+    enabled: isAuthenticated,
   });
 
   // Price alerts mutations
   const createAlertMutation = useMutation({
-    mutationFn: async (data: { alertType: 'ABOVE' | 'BELOW'; targetPrice: number; notificationMethod?: 'PUSH' | 'EMAIL' | 'SMS' | 'ALL'; note?: string }) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.createPriceAlert(data, tokens.accessToken);
-    },
+    mutationFn: (data: { alertType: 'ABOVE' | 'BELOW'; targetPrice: number; notificationMethod?: 'PUSH' | 'EMAIL' | 'SMS' | 'ALL'; note?: string }) =>
+      api.createPriceAlert(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['priceAlerts'] });
       closeSection();
@@ -117,20 +108,15 @@ export default function Settings() {
   });
 
   const toggleAlertMutation = useMutation({
-    mutationFn: async ({ alertId, isActive }: { alertId: string; isActive: boolean }) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.updatePriceAlert(alertId, { isActive }, tokens.accessToken);
-    },
+    mutationFn: ({ alertId, isActive }: { alertId: string; isActive: boolean }) =>
+      api.updatePriceAlert(alertId, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['priceAlerts'] });
     },
   });
 
   const deleteAlertMutation = useMutation({
-    mutationFn: async (alertId: string) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.deletePriceAlert(alertId, tokens.accessToken);
-    },
+    mutationFn: (alertId: string) => api.deletePriceAlert(alertId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['priceAlerts'] });
       setSuccess('Alerte supprimée');
@@ -139,10 +125,7 @@ export default function Settings() {
 
   // Delete account mutation
   const deleteAccountMutation = useMutation({
-    mutationFn: async (password: string) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.deleteAccount(password, tokens.accessToken);
-    },
+    mutationFn: (password: string) => api.deleteAccount(password),
     onSuccess: () => {
       logout();
     },
@@ -190,12 +173,11 @@ export default function Settings() {
   };
 
   const handleSetup2FA = async () => {
-    if (!tokens?.accessToken) return;
     setIsLoading(true);
     setError('');
 
     try {
-      const response = await api.setup2FAProfile(tokens.accessToken);
+      const response = await api.setup2FAProfile();
       setTwoFactorData(response.data);
       setActiveSection('2fa-setup');
     } catch (err) {
@@ -207,12 +189,11 @@ export default function Settings() {
 
   const handleVerify2FA = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tokens?.accessToken) return;
     setIsLoading(true);
     setError('');
 
     try {
-      const response = await api.verify2FA(totpCode, tokens.accessToken);
+      const response = await api.verify2FA(totpCode);
       setBackupCodes(response.data.backupCodes);
       updateUser({ twoFactorEnabled: true });
       setSuccess('2FA activé avec succès !');
@@ -225,12 +206,11 @@ export default function Settings() {
 
   const handleDisable2FA = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tokens?.accessToken) return;
     setIsLoading(true);
     setError('');
 
     try {
-      await api.disable2FA(totpCode, tokens.accessToken);
+      await api.disable2FA(totpCode);
       updateUser({ twoFactorEnabled: false });
       closeSection();
       setSuccess('2FA désactivé avec succès');
@@ -243,7 +223,6 @@ export default function Settings() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tokens?.accessToken) return;
 
     if (passwordData.new !== passwordData.confirm) {
       setError('Les mots de passe ne correspondent pas');
@@ -259,7 +238,7 @@ export default function Settings() {
     setError('');
 
     try {
-      await api.changePassword(passwordData.current, passwordData.new, tokens.accessToken);
+      await api.changePassword(passwordData.current, passwordData.new);
       closeSection();
       setSuccess('Mot de passe modifié avec succès');
     } catch (err) {

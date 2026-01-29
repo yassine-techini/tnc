@@ -1,18 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, AuthTokens } from '@tnc-trading/shared';
+import type { User } from '@tnc-trading/shared';
+import api from '../lib/api';
 
 interface AuthState {
   user: User | null;
-  tokens: AuthTokens | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   _hasHydrated: boolean;
 
   // Actions
   setUser: (user: User) => void;
-  setTokens: (tokens: AuthTokens) => void;
-  login: (user: User, tokens: AuthTokens) => void;
+  login: (user: User) => void;
   logout: () => void;
   setLoading: (loading: boolean) => void;
   updateUser: (updates: Partial<User>) => void;
@@ -25,25 +24,20 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      tokens: null,
       isAuthenticated: false,
       isLoading: true,
       _hasHydrated: false,
 
       setUser: (user) => set({ user }),
 
-      setTokens: (tokens) => set({ tokens }),
-
-      login: (user, tokens) => set({
+      login: (user) => set({
         user,
-        tokens,
         isAuthenticated: true,
         isLoading: false,
       }),
 
       logout: () => set({
         user: null,
-        tokens: null,
         isAuthenticated: false,
         isLoading: false,
       }),
@@ -58,8 +52,8 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'tnc-auth-storage',
+      // Only persist user info for UI state, NOT tokens (tokens are in httpOnly cookies)
       partialize: (state) => ({
-        tokens: state.tokens,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
@@ -69,6 +63,12 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+// Set up API client auth error callback to trigger logout
+api.setAuthErrorCallback(() => {
+  useAuthStore.getState().logout();
+  window.location.href = '/login?reason=session_expired';
+});
 
 // Inactivity monitor: auto-logout after 30 min idle
 let _lastActivity = Date.now();
@@ -85,6 +85,8 @@ export function startInactivityMonitor() {
   _inactivityTimer = setInterval(() => {
     const { isAuthenticated, logout } = useAuthStore.getState();
     if (isAuthenticated && Date.now() - _lastActivity > SESSION_TIMEOUT_MS) {
+      // Call logout endpoint to clear cookies server-side
+      api.logout().catch(() => {});
       logout();
       window.location.href = '/login?reason=timeout';
     }

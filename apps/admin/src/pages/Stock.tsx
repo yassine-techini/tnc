@@ -4,7 +4,7 @@ import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
 
 export default function Stock() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const queryClient = useQueryClient();
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustAmount, setAdjustAmount] = useState('');
@@ -12,11 +12,8 @@ export default function Stock() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-stock'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getStock(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getStock(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData } = useQuery({
@@ -25,10 +22,7 @@ export default function Stock() {
   });
 
   const adjustMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.adjustStock(tokens.accessToken, parseFloat(adjustAmount), adjustReason);
-    },
+    mutationFn: () => adminApi.adjustStock(parseFloat(adjustAmount), adjustReason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-stock'] });
       setShowAdjustModal(false);

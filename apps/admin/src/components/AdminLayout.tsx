@@ -12,10 +12,12 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Tableau de bord', href: '/', icon: '📊' },
+  { name: 'Analytics', href: '/analytics', icon: '📈', permission: { module: 'analytics', action: 'view' } },
   { name: 'Utilisateurs', href: '/users', icon: '👥', permission: { module: 'users', action: 'view' } },
   { name: 'Vérification KYC', href: '/kyc', icon: '🪪', permission: { module: 'kyc', action: 'view' } },
   { name: 'Transactions', href: '/transactions', icon: '💳', permission: { module: 'transactions', action: 'view' } },
   { name: 'Stock Or', href: '/stock', icon: '🪙', permission: { module: 'stock', action: 'view' } },
+  { name: 'Proof of Reserve', href: '/proof-of-reserve', icon: '🔒', permission: { module: 'stock', action: 'view' } },
   { name: 'Reconciliation', href: '/reconciliation', icon: '⚖️', permission: { module: 'reconciliation', action: 'view' } },
   { name: 'Retraits', href: '/withdrawals', icon: '📤', permission: { module: 'withdrawals', action: 'view' } },
   { name: 'Intégrations', href: '/integrations', icon: '🔌', permission: { module: 'integrations', action: 'view' } },
@@ -28,6 +30,7 @@ const getPageTitle = (pathname: string) => {
   const route = navigation.find(n => n.href === pathname);
   if (route) return route.name;
   if (pathname === '/configuration') return 'Configuration';
+  if (pathname === '/analytics') return 'Analytics & Monitoring';
   if (pathname.startsWith('/admins/')) return 'Détail administrateur';
   if (pathname.startsWith('/users/')) return 'Détail utilisateur';
   return 'Administration';

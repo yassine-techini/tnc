@@ -27,7 +27,7 @@ type ReviewModal = {
 
 export default function KycReview() {
   const queryClient = useQueryClient();
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<ReviewModal>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -35,22 +35,16 @@ export default function KycReview() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin-pending-kyc', page],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getPendingKyc(tokens.accessToken, page);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getPendingKyc(page),
+    enabled: isAuthenticated,
   });
 
   const reviewMutation = useMutation({
-    mutationFn: async ({ submissionId, action, data }: {
+    mutationFn: ({ submissionId, action, data }: {
       submissionId: string;
       action: 'approve' | 'reject';
       data: { newLevel?: 'STANDARD' | 'VERIFIED'; rejectionReason?: string };
-    }) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.reviewKyc(tokens.accessToken, submissionId, action, data);
-    },
+    }) => adminApi.reviewKyc(submissionId, action, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-pending-kyc'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });

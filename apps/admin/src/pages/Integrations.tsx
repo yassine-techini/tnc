@@ -109,7 +109,7 @@ interface Integration {
 
 export default function Integrations() {
   const queryClient = useQueryClient();
-  const { tokens, hasPermission } = useAdminStore();
+  const { isAuthenticated, hasPermission } = useAdminStore();
   const [configModal, setConfigModal] = useState<Integration | null>(null);
   const [configForm, setConfigForm] = useState<Record<string, string>>({});
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
@@ -117,19 +117,19 @@ export default function Integrations() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['integrations'],
-    queryFn: () => adminApi.getIntegrations(tokens!.accessToken),
-    enabled: !!tokens,
+    queryFn: () => adminApi.getIntegrations(),
+    enabled: isAuthenticated,
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ provider, enabled }: { provider: string; enabled: boolean }) =>
-      adminApi.updateIntegration(tokens!.accessToken, provider, { enabled }),
+      adminApi.updateIntegration(provider, { enabled }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['integrations'] }),
   });
 
   const configMutation = useMutation({
     mutationFn: ({ provider, config }: { provider: string; config: Record<string, string> }) =>
-      adminApi.updateIntegration(tokens!.accessToken, provider, { config }),
+      adminApi.updateIntegration(provider, { config }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
       setConfigModal(null);
@@ -137,7 +137,7 @@ export default function Integrations() {
   });
 
   const testMutation = useMutation({
-    mutationFn: (provider: string) => adminApi.testIntegration(tokens!.accessToken, provider),
+    mutationFn: (provider: string) => adminApi.testIntegration(provider),
     onSuccess: (res) => {
       setTestResult({ provider: res.data.provider, success: res.data.testResult === 'success', message: res.data.message });
       setTestingProvider(null);

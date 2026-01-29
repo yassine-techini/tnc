@@ -25,64 +25,34 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
 
 class StateApiClient {
   private baseUrl: string;
-  private refreshPromise: Promise<string | null> | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
+  private onAuthError: (() => void) | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
 
-  private getStoredAuth(): { accessToken: string; refreshToken: string } | null {
-    try {
-      const raw = localStorage.getItem('tnc-state-auth');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const tokens = parsed?.state?.tokens;
-      if (tokens?.accessToken && tokens?.refreshToken) return tokens;
-      return null;
-    } catch {
-      return null;
-    }
+  /**
+   * Set callback for auth errors (session expiry, etc.)
+   */
+  setAuthErrorCallback(callback: () => void) {
+    this.onAuthError = callback;
   }
 
-  private updateStoredTokens(accessToken: string, refreshToken: string, expiresIn: number) {
-    try {
-      const raw = localStorage.getItem('tnc-state-auth');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state.tokens = { accessToken, refreshToken, expiresIn };
-      localStorage.setItem('tnc-state-auth', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private clearStoredAuth() {
-    try {
-      const raw = localStorage.getItem('tnc-state-auth');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state = { user: null, tokens: null, isAuthenticated: false };
-      localStorage.setItem('tnc-state-auth', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private async refreshAccessToken(): Promise<string | null> {
-    const auth = this.getStoredAuth();
-    if (!auth?.refreshToken) return null;
-
+  /**
+   * Attempt to refresh the session using httpOnly refresh cookie
+   */
+  private async refreshSession(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+        credentials: 'include', // Send cookies
       });
-
       const data = await response.json();
-      if (data.success && data.data?.accessToken) {
-        this.updateStoredTokens(data.data.accessToken, data.data.refreshToken, data.data.expiresIn);
-        return data.data.accessToken;
-      }
-      return null;
+      return data.success === true;
     } catch {
-      return null;
+      return false;
     }
   }
 
@@ -94,6 +64,7 @@ class StateApiClient {
       ...options.headers,
     };
 
+    // For backward compatibility, still support explicit token
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -101,23 +72,26 @@ class StateApiClient {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...fetchOptions,
       headers,
+      credentials: 'include', // Send httpOnly cookies
     });
 
-    // On 401, try to refresh the token once
-    if (response.status === 401 && token && !_isRetry) {
+    // On 401, try to refresh the session once (using httpOnly cookie)
+    if (response.status === 401 && !_isRetry) {
       if (!this.refreshPromise) {
-        this.refreshPromise = this.refreshAccessToken().finally(() => {
+        this.refreshPromise = this.refreshSession().finally(() => {
           this.refreshPromise = null;
         });
       }
 
-      const newToken = await this.refreshPromise;
-      if (newToken) {
-        return this.request<T>(endpoint, { ...options, token: newToken, _isRetry: true });
+      const refreshed = await this.refreshPromise;
+      if (refreshed) {
+        return this.request<T>(endpoint, { ...options, _isRetry: true });
       }
 
-      this.clearStoredAuth();
-      window.location.href = '/login';
+      // Refresh failed - notify auth error handler
+      if (this.onAuthError) {
+        this.onAuthError();
+      }
       throw new Error('Session expirée, veuillez vous reconnecter');
     }
 
@@ -136,6 +110,7 @@ class StateApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, totpCode }),
+      credentials: 'include', // Receive httpOnly cookies
     });
 
     const data = await response.json();
@@ -219,7 +194,7 @@ class StateApiClient {
   }
 
   // Dashboard
-  async getDashboard(token: string) {
+  async getDashboard(token?: string) {
     return this.request<{
       totalAllocated: number;
       tokensIssued: number;
@@ -232,7 +207,7 @@ class StateApiClient {
   }
 
   // Stock
-  async getStock(token: string) {
+  async getStock(token?: string) {
     return this.request<{
       totalAllocated: number;
       tokensIssued: number;
@@ -248,7 +223,7 @@ class StateApiClient {
   }
 
   // Reports
-  async getProofOfReserve(token: string) {
+  async getProofOfReserve(token?: string) {
     return this.request<{
       reportDate: string;
       totalAllocatedGold: number;
@@ -260,7 +235,7 @@ class StateApiClient {
     }>('/api/v1/state/reports/por', { token });
   }
 
-  async getMonthlyReport(token: string, month?: string) {
+  async getMonthlyReport(month?: string, token?: string) {
     const params = month ? `?month=${month}` : '';
     return this.request<{
       month: string;
@@ -291,7 +266,7 @@ class StateApiClient {
   }
 
   // Price History
-  async getPriceHistory(token: string, days = 30) {
+  async getPriceHistory(days = 30, token?: string) {
     return this.request<{
       items: Array<{
         date: string;
@@ -302,7 +277,7 @@ class StateApiClient {
   }
 
   // Transaction Stats
-  async getTransactionStats(token: string, period: 'day' | 'week' | 'month' = 'month') {
+  async getTransactionStats(period: 'day' | 'week' | 'month' = 'month', token?: string) {
     return this.request<{
       items: Array<{
         date: string;
@@ -315,36 +290,30 @@ class StateApiClient {
   }
 
   // Export reports
-  async exportPorReport(token: string): Promise<Blob> {
+  async exportPorReport(): Promise<Blob> {
     const response = await fetch(`${this.baseUrl}/api/v1/state/reports/por/export`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+      credentials: 'include', // Use httpOnly cookies
     });
     if (!response.ok) throw new Error('Export failed');
     return response.blob();
   }
 
-  async exportMonthlyReport(token: string, month?: string): Promise<Blob> {
+  async exportMonthlyReport(month?: string): Promise<Blob> {
     const params = month ? `?month=${month}` : '';
     const response = await fetch(`${this.baseUrl}/api/v1/state/reports/monthly/export${params}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+      credentials: 'include', // Use httpOnly cookies
     });
     if (!response.ok) throw new Error('Export failed');
     return response.blob();
   }
 
-  async exportRawData(token: string, startDate?: string, endDate?: string): Promise<Blob> {
+  async exportRawData(startDate?: string, endDate?: string): Promise<Blob> {
     const params = new URLSearchParams();
     if (startDate) params.set('start', startDate);
     if (endDate) params.set('end', endDate);
     const query = params.toString() ? `?${params}` : '';
     const response = await fetch(`${this.baseUrl}/api/v1/state/reports/data/export${query}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+      credentials: 'include', // Use httpOnly cookies
     });
     if (!response.ok) throw new Error('Export failed');
     return response.blob();

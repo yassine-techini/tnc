@@ -42,7 +42,7 @@ interface Transaction {
 }
 
 export default function Transactions() {
-  const { tokens } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
@@ -52,11 +52,8 @@ export default function Transactions() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['transactions', page],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getTransactions(tokens.accessToken, page, limit);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getTransactions(page, limit),
+    enabled: isAuthenticated,
   });
 
   const allTransactions: Transaction[] = data?.data?.items || [];

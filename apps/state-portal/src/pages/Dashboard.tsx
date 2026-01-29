@@ -18,17 +18,14 @@ const txPeriodOptions = [
 ];
 
 export default function Dashboard() {
-  const { tokens } = useStateStore();
+  const { isAuthenticated } = useStateStore();
   const [chartPeriod, setChartPeriod] = useState(7);
   const [txPeriod, setTxPeriod] = useState<'day' | 'week' | 'month'>('day');
 
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ['state-dashboard'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getDashboard(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getDashboard(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData } = useQuery({
@@ -39,20 +36,14 @@ export default function Dashboard() {
 
   const { data: priceHistoryData } = useQuery({
     queryKey: ['state-price-history', chartPeriod],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getPriceHistory(tokens.accessToken, chartPeriod);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getPriceHistory(chartPeriod),
+    enabled: isAuthenticated,
   });
 
   const { data: txStatsData } = useQuery({
     queryKey: ['state-tx-stats-dashboard', txPeriod],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getTransactionStats(tokens.accessToken, txPeriod);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getTransactionStats(txPeriod),
+    enabled: isAuthenticated,
   });
 
   const stats = dashboardData?.data;

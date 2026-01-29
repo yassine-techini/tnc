@@ -26,34 +26,25 @@ interface ReconciliationData {
 }
 
 export default function Reconciliation() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'week' | 'month' | 'all'>('day');
 
   const { data: stockData, isLoading: stockLoading } = useQuery({
     queryKey: ['admin-stock'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getStock(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getStock(),
+    enabled: isAuthenticated,
   });
 
   const { data: statsData, isLoading: statsLoading } = useQuery({
     queryKey: ['admin-stats'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getDashboard(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getDashboard(),
+    enabled: isAuthenticated,
   });
 
   const { data: transactionsData } = useQuery({
     queryKey: ['admin-transactions-summary', selectedPeriod],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getTransactions(tokens.accessToken, 1, 1000);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getTransactions(1, 1000),
+    enabled: isAuthenticated,
   });
 
   const isLoading = stockLoading || statsLoading;

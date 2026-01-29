@@ -30,64 +30,35 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
 
 class ApiClient {
   private baseUrl: string;
-  private refreshPromise: Promise<string | null> | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
+  private onAuthError: (() => void) | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
 
-  private getStoredAuth(): { accessToken: string; refreshToken: string } | null {
-    try {
-      const raw = localStorage.getItem('tnc-auth-storage');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const tokens = parsed?.state?.tokens;
-      if (tokens?.accessToken && tokens?.refreshToken) return tokens;
-      return null;
-    } catch {
-      return null;
-    }
+  /**
+   * Set callback for auth errors (session expiry, etc.)
+   */
+  setAuthErrorCallback(callback: () => void) {
+    this.onAuthError = callback;
   }
 
-  private updateStoredTokens(accessToken: string, refreshToken: string, expiresIn: number) {
-    try {
-      const raw = localStorage.getItem('tnc-auth-storage');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state.tokens = { accessToken, refreshToken, expiresIn };
-      localStorage.setItem('tnc-auth-storage', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private clearStoredAuth() {
-    try {
-      const raw = localStorage.getItem('tnc-auth-storage');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state = { user: null, tokens: null, isAuthenticated: false };
-      localStorage.setItem('tnc-auth-storage', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private async refreshAccessToken(): Promise<string | null> {
-    const auth = this.getStoredAuth();
-    if (!auth?.refreshToken) return null;
-
+  /**
+   * Attempt to refresh the session using httpOnly refresh cookie
+   */
+  private async refreshSession(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+        credentials: 'include', // Send cookies
       });
 
       const data = await response.json();
-      if (data.success && data.data?.accessToken) {
-        this.updateStoredTokens(data.data.accessToken, data.data.refreshToken, data.data.expiresIn);
-        return data.data.accessToken;
-      }
-      return null;
+      return data.success === true;
     } catch {
-      return null;
+      return false;
     }
   }
 
@@ -99,6 +70,7 @@ class ApiClient {
       ...options.headers,
     };
 
+    // For backward compatibility, still support explicit token (e.g., for mobile)
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -108,38 +80,48 @@ class ApiClient {
       response = await fetch(`${this.baseUrl}${endpoint}`, {
         ...fetchOptions,
         headers,
+        credentials: 'include', // Send httpOnly cookies
       });
     } catch (error) {
       // Retry on network errors (max 2 retries with exponential backoff)
       if (!_isRetry && error instanceof TypeError) {
         await new Promise((r) => setTimeout(r, 1000));
         try {
-          response = await fetch(`${this.baseUrl}${endpoint}`, { ...fetchOptions, headers });
+          response = await fetch(`${this.baseUrl}${endpoint}`, {
+            ...fetchOptions,
+            headers,
+            credentials: 'include',
+          });
         } catch {
           await new Promise((r) => setTimeout(r, 2000));
-          response = await fetch(`${this.baseUrl}${endpoint}`, { ...fetchOptions, headers });
+          response = await fetch(`${this.baseUrl}${endpoint}`, {
+            ...fetchOptions,
+            headers,
+            credentials: 'include',
+          });
         }
       } else {
         throw error;
       }
     }
 
-    // On 401, try to refresh the token once
-    if (response.status === 401 && token && !_isRetry) {
+    // On 401, try to refresh the session once (using httpOnly cookie)
+    if (response.status === 401 && !_isRetry) {
       if (!this.refreshPromise) {
-        this.refreshPromise = this.refreshAccessToken().finally(() => {
+        this.refreshPromise = this.refreshSession().finally(() => {
           this.refreshPromise = null;
         });
       }
 
-      const newToken = await this.refreshPromise;
-      if (newToken) {
-        return this.request<T>(endpoint, { ...options, token: newToken, _isRetry: true });
+      const refreshed = await this.refreshPromise;
+      if (refreshed) {
+        return this.request<T>(endpoint, { ...options, _isRetry: true });
       }
 
-      // Refresh failed - clear auth and redirect to login
-      this.clearStoredAuth();
-      window.location.href = '/login';
+      // Refresh failed - notify auth error handler
+      if (this.onAuthError) {
+        this.onAuthError();
+      }
       throw new Error('Session expirée, veuillez vous reconnecter');
     }
 
@@ -164,6 +146,7 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // Allow server to set httpOnly cookies
       body: JSON.stringify({ identifier, password, totpCode }),
     });
 
@@ -262,11 +245,68 @@ class ApiClient {
     });
   }
 
-  async logout(token: string) {
+  async logout(token?: string) {
     return this.request<{ message: string }>('/api/v1/auth/logout', {
       method: 'POST',
-      token,
+      token, // Optional for backward compatibility with mobile
     });
+  }
+
+  // Passwordless Authentication
+  async requestPasswordlessCode(identifier: string, method: 'email' | 'sms' = 'email') {
+    return this.request<{
+      message: string;
+      method: string;
+      expiresIn: number;
+    }>('/api/v1/auth/passwordless/request', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, method }),
+    });
+  }
+
+  async verifyPasswordlessCode(identifier: string, code: string, totpCode?: string) {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/passwordless/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // Allow server to set httpOnly cookies
+      body: JSON.stringify({ identifier, code, totpCode }),
+    });
+
+    const data = await response.json();
+
+    // Handle 2FA required
+    if (data.error?.code === 'AUTH_2FA_REQUIRED') {
+      return {
+        success: false as const,
+        requires2FA: true,
+        error: data.error,
+      };
+    }
+
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Code invalide');
+    }
+
+    return {
+      success: true as const,
+      data: data.data as {
+        accessToken: string;
+        refreshToken: string;
+        expiresIn: number;
+        user: {
+          id: string;
+          email: string;
+          phone: string;
+          country: string;
+          kycLevel: string;
+          kycStatus: string;
+          emailVerified: boolean;
+          phoneVerified: boolean;
+          twoFactorEnabled: boolean;
+        };
+        sessionId: string;
+      },
+    };
   }
 
   // Market
@@ -301,7 +341,7 @@ class ApiClient {
     }>('/api/v1/market/stock');
   }
 
-  async getQuote(type: 'BUY' | 'SELL', amount: number, amountType: 'grams' | 'xof', token: string) {
+  async getQuote(type: 'BUY' | 'SELL', amount: number, amountType: 'grams' | 'xof', token?: string) {
     return this.request<{
       quoteId: string;
       type: 'BUY' | 'SELL';
@@ -318,7 +358,7 @@ class ApiClient {
     });
   }
 
-  async executeBuy(quoteId: string, paymentMethod: string, token: string) {
+  async executeBuy(quoteId: string, paymentMethod: string, token?: string) {
     return this.request<{
       transactionId: string;
       type: 'BUY';
@@ -332,7 +372,7 @@ class ApiClient {
     });
   }
 
-  async executeSell(quoteId: string, paymentMethod: string, token: string) {
+  async executeSell(quoteId: string, paymentMethod: string, token?: string) {
     return this.request<{
       transactionId: string;
       type: 'SELL';
@@ -347,7 +387,7 @@ class ApiClient {
   }
 
   // Wallet
-  async getWallet(token: string) {
+  async getWallet(token?: string) {
     return this.request<{
       id: string;
       userId: string;
@@ -362,7 +402,7 @@ class ApiClient {
     }>('/api/v1/wallet', { token });
   }
 
-  async getTransactions(token: string, page = 1, limit = 20) {
+  async getTransactions(page = 1, limit = 20, token?: string) {
     return this.request<{
       items: {
         id: string;
@@ -383,7 +423,7 @@ class ApiClient {
     }>(`/api/v1/wallet/transactions?page=${page}&limit=${limit}`, { token });
   }
 
-  async deposit(amount: number, paymentMethod: string, phoneNumber: string, token: string) {
+  async deposit(amount: number, paymentMethod: string, phoneNumber: string, token?: string) {
     return this.request<{
       transactionId: string;
       amount: number;
@@ -397,7 +437,7 @@ class ApiClient {
     });
   }
 
-  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token: string) {
+  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token?: string) {
     return this.request<{
       withdrawalId: string;
       amount: number;
@@ -412,7 +452,7 @@ class ApiClient {
   }
 
   // User
-  async getProfile(token: string) {
+  async getProfile(token?: string) {
     return this.request<{
       id: string;
       email: string;
@@ -422,7 +462,7 @@ class ApiClient {
     }>('/api/v1/users/me', { token });
   }
 
-  async updateProfile(data: { phone?: string; country?: string }, token: string) {
+  async updateProfile(data: { phone?: string; country?: string }, token?: string) {
     return this.request<{ message: string }>('/api/v1/users/me', {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -446,7 +486,7 @@ class ApiClient {
   }
 
   // Phone verification
-  async sendPhoneVerification(phone: string, authToken: string) {
+  async sendPhoneVerification(phone: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/verify-phone/send', {
       method: 'POST',
       body: JSON.stringify({ phone }),
@@ -454,7 +494,7 @@ class ApiClient {
     });
   }
 
-  async verifyPhone(code: string, authToken: string) {
+  async verifyPhone(code: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/verify-phone', {
       method: 'POST',
       body: JSON.stringify({ code }),
@@ -477,7 +517,7 @@ class ApiClient {
     });
   }
 
-  async changePassword(currentPassword: string, newPassword: string, authToken: string) {
+  async changePassword(currentPassword: string, newPassword: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
@@ -485,8 +525,8 @@ class ApiClient {
     });
   }
 
-  // 2FA (from profile settings - requires existing auth token)
-  async setup2FAProfile(authToken: string) {
+  // 2FA (from profile settings)
+  async setup2FAProfile(authToken?: string) {
     return this.request<{
       secret: string;
       qrCodeUrl: string;
@@ -496,7 +536,7 @@ class ApiClient {
     });
   }
 
-  async verify2FA(code: string, authToken: string) {
+  async verify2FA(code: string, authToken?: string) {
     return this.request<{
       message: string;
       backupCodes: string[];
@@ -507,7 +547,7 @@ class ApiClient {
     });
   }
 
-  async disable2FA(code: string, authToken: string) {
+  async disable2FA(code: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/2fa/disable', {
       method: 'POST',
       body: JSON.stringify({ code }),
@@ -516,7 +556,7 @@ class ApiClient {
   }
 
   // Sessions
-  async getSessions(authToken: string) {
+  async getSessions(authToken?: string) {
     return this.request<{
       sessions: {
         id: string;
@@ -529,14 +569,14 @@ class ApiClient {
     }>('/api/v1/auth/sessions', { token: authToken });
   }
 
-  async revokeSession(sessionId: string, authToken: string) {
+  async revokeSession(sessionId: string, authToken?: string) {
     return this.request<{ message: string }>(`/api/v1/auth/sessions/${sessionId}`, {
       method: 'DELETE',
       token: authToken,
     });
   }
 
-  async revokeAllSessions(authToken: string) {
+  async revokeAllSessions(authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/sessions', {
       method: 'DELETE',
       token: authToken,
@@ -544,7 +584,7 @@ class ApiClient {
   }
 
   // KYC
-  async getKycStatus(authToken: string) {
+  async getKycStatus(authToken?: string) {
     return this.request<{
       level: 'BASIC' | 'STANDARD' | 'VERIFIED';
       status: 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
@@ -570,7 +610,7 @@ class ApiClient {
       backImage?: string;
       selfieImage: string;
     },
-    authToken: string
+    authToken?: string
   ) {
     return this.request<{
       message: string;
@@ -582,15 +622,20 @@ class ApiClient {
     });
   }
 
-  async uploadKycDocument(file: File, authToken: string) {
+  async uploadKycDocument(file: File, authToken?: string) {
     const formData = new FormData();
     formData.append('file', file);
 
+    const headers: Record<string, string> = {};
+    // For backward compatibility with mobile, still support explicit token
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(`${this.baseUrl}/api/v1/users/me/kyc/documents`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
+      headers,
+      credentials: 'include', // Send httpOnly cookies
       body: formData,
     });
 
@@ -604,7 +649,7 @@ class ApiClient {
   }
 
   // Notification Preferences
-  async getNotificationPreferences(authToken: string) {
+  async getNotificationPreferences(authToken?: string) {
     return this.request<{
       email: boolean;
       sms: boolean;
@@ -622,7 +667,7 @@ class ApiClient {
       transactionAlerts?: boolean;
       marketingEmails?: boolean;
     },
-    authToken: string
+    authToken?: string
   ) {
     return this.request<{
       email: boolean;
@@ -638,7 +683,7 @@ class ApiClient {
   }
 
   // Price Alerts
-  async getPriceAlerts(authToken: string, includeTriggered = false) {
+  async getPriceAlerts(includeTriggered = false, authToken?: string) {
     return this.request<{
       items: {
         id: string;
@@ -666,7 +711,7 @@ class ApiClient {
       notificationMethod?: 'PUSH' | 'EMAIL' | 'SMS' | 'ALL';
       note?: string;
     },
-    authToken: string
+    authToken?: string
   ) {
     return this.request<{
       id: string;
@@ -690,7 +735,7 @@ class ApiClient {
       isActive?: boolean;
       note?: string;
     },
-    authToken: string
+    authToken?: string
   ) {
     return this.request<{ id: string; message: string }>(`/api/v1/users/me/price-alerts/${alertId}`, {
       method: 'PATCH',
@@ -699,7 +744,7 @@ class ApiClient {
     });
   }
 
-  async deletePriceAlert(alertId: string, authToken: string) {
+  async deletePriceAlert(alertId: string, authToken?: string) {
     return this.request<{ message: string }>(`/api/v1/users/me/price-alerts/${alertId}`, {
       method: 'DELETE',
       token: authToken,
@@ -707,7 +752,7 @@ class ApiClient {
   }
 
   // Certificate
-  async generateCertificate(authToken: string) {
+  async generateCertificate(authToken?: string) {
     return this.request<{
       certificateId: string;
       downloadUrl: string;
@@ -723,7 +768,7 @@ class ApiClient {
   }
 
   // Account deletion
-  async deleteAccount(password: string, authToken: string) {
+  async deleteAccount(password: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/users/me', {
       method: 'DELETE',
       body: JSON.stringify({ password }),

@@ -20,7 +20,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function Withdrawals() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [selectedWithdrawal, setSelectedWithdrawal] = useState<string | null>(null);
@@ -28,18 +28,12 @@ export default function Withdrawals() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-withdrawals', statusFilter],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getWithdrawals(tokens.accessToken, statusFilter || undefined);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getWithdrawals(statusFilter || undefined),
+    enabled: isAuthenticated,
   });
 
   const processMutation = useMutation({
-    mutationFn: async ({ id, action, reason }: { id: string; action: 'approve' | 'reject'; reason?: string }) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.processWithdrawal(tokens.accessToken, id, action, reason);
-    },
+    mutationFn: ({ id, action, reason }: { id: string; action: 'approve' | 'reject'; reason?: string }) => adminApi.processWithdrawal(id, action, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-withdrawals'] });
       setSelectedWithdrawal(null);

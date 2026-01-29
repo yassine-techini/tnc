@@ -48,7 +48,7 @@ interface Transaction {
 }
 
 export default function Transactions() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [page, setPage] = useState(1);
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -58,11 +58,8 @@ export default function Transactions() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-transactions', page, typeFilter],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getTransactions(tokens.accessToken, page, 100, typeFilter || undefined);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getTransactions(page, 100, typeFilter || undefined),
+    enabled: isAuthenticated,
   });
 
   const allTransactions: Transaction[] = data?.data?.items || [];

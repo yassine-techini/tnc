@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adminApi } from '../lib/api';
 
 export type PermissionMap = Record<string, string[]>;
 
@@ -10,19 +11,12 @@ interface AdminUser {
   role: string;
 }
 
-interface AdminTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-}
-
 interface AdminState {
   user: AdminUser | null;
-  tokens: AdminTokens | null;
   permissions: PermissionMap | null;
   isAuthenticated: boolean;
   lastActivity: number;
-  login: (user: AdminUser, tokens: AdminTokens, permissions?: PermissionMap) => void;
+  login: (user: AdminUser, permissions?: PermissionMap) => void;
   setPermissions: (permissions: PermissionMap) => void;
   logout: () => void;
   touch: () => void;
@@ -35,14 +29,12 @@ export const useAdminStore = create<AdminState>()(
   persist(
     (set, get) => ({
       user: null,
-      tokens: null,
       permissions: null,
       isAuthenticated: false,
       lastActivity: Date.now(),
-      login: (user, tokens, permissions) =>
+      login: (user, permissions) =>
         set({
           user,
-          tokens,
           permissions: permissions || null,
           isAuthenticated: true,
           lastActivity: Date.now(),
@@ -51,7 +43,6 @@ export const useAdminStore = create<AdminState>()(
       logout: () =>
         set({
           user: null,
-          tokens: null,
           permissions: null,
           isAuthenticated: false,
           lastActivity: 0,
@@ -65,9 +56,22 @@ export const useAdminStore = create<AdminState>()(
     }),
     {
       name: 'tnc-admin-auth',
+      // Only persist user info and permissions for UI state, NOT tokens (tokens are in httpOnly cookies)
+      partialize: (state) => ({
+        user: state.user,
+        permissions: state.permissions,
+        isAuthenticated: state.isAuthenticated,
+        lastActivity: state.lastActivity,
+      }),
     }
   )
 );
+
+// Set up API client auth error callback to trigger logout
+adminApi.setAuthErrorCallback(() => {
+  useAdminStore.getState().logout();
+  window.location.href = '/login?reason=session_expired';
+});
 
 // Inactivity monitor: auto-logout after 30 min idle
 let _inactivityTimer: ReturnType<typeof setInterval> | null = null;

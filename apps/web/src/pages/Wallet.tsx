@@ -20,7 +20,7 @@ type TransactionResult = {
 };
 
 export default function Wallet() {
-  const { tokens, user } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const queryClient = useQueryClient();
 
   // Active section state (replaces modal states)
@@ -42,11 +42,8 @@ export default function Wallet() {
 
   const { data: walletData, isLoading } = useQuery({
     queryKey: ['wallet'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getWallet(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getWallet(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData } = useQuery({
@@ -56,23 +53,19 @@ export default function Wallet() {
 
   const { data: txData } = useQuery({
     queryKey: ['transactions'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getTransactions(tokens.accessToken, 1, 10);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getTransactions(1, 10),
+    enabled: isAuthenticated,
   });
 
   const depositMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       if (!amount || amount < 1000) {
         throw new Error('Montant minimum: 1,000 FCFA');
       }
       const fullPhone = paymentMethod === 'stripe' || paymentMethod === 'card'
         ? undefined
         : (phoneNumber.startsWith('+') ? phoneNumber : `+226${phoneNumber}`);
-      return api.deposit(amount, paymentMethod, fullPhone || '', tokens.accessToken);
+      return api.deposit(amount, paymentMethod, fullPhone || '');
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -94,7 +87,6 @@ export default function Wallet() {
 
   const withdrawMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       if (!amount || amount < 1000) {
         throw new Error('Montant minimum: 1,000 FCFA');
       }
@@ -107,7 +99,7 @@ export default function Wallet() {
         throw new Error(`Limite de retrait: ${dailyLimit.toLocaleString()} FCFA/jour pour votre niveau KYC`);
       }
       const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `+226${phoneNumber}`;
-      return api.withdraw(amount, paymentMethod, fullPhone, tokens.accessToken);
+      return api.withdraw(amount, paymentMethod, fullPhone);
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -156,10 +148,7 @@ export default function Wallet() {
   };
 
   const certificateMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.generateCertificate(tokens.accessToken);
-    },
+    mutationFn: () => api.generateCertificate(),
     onSuccess: (data) => {
       setCertificateData({
         certificateId: data.data.certificateId,

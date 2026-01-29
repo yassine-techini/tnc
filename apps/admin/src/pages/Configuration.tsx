@@ -369,20 +369,20 @@ const KEY_LABELS: Record<string, string> = {
 
 export default function Configuration() {
   const queryClient = useQueryClient();
-  const { tokens, hasPermission } = useAdminStore();
+  const { isAuthenticated, hasPermission } = useAdminStore();
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['config'],
-    queryFn: () => adminApi.getConfig(tokens!.accessToken),
-    enabled: !!tokens,
+    queryFn: () => adminApi.getConfig(),
+    enabled: isAuthenticated,
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
-      adminApi.updateConfig(tokens!.accessToken, key, value),
+      adminApi.updateConfig(key, value),
     onSuccess: (_res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['config'] });
       setEditingKey(null);

@@ -25,7 +25,7 @@ const roleBadgeColors: Record<string, string> = {
 export default function Admins() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { tokens, hasPermission } = useAdminStore();
+  const { isAuthenticated, hasPermission } = useAdminStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<any>(null);
   const [createForm, setCreateForm] = useState({ email: '', name: '', password: '', role: 'ADMIN' });
@@ -33,12 +33,12 @@ export default function Admins() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admins'],
-    queryFn: () => adminApi.getAdmins(tokens!.accessToken),
-    enabled: !!tokens,
+    queryFn: () => adminApi.getAdmins(),
+    enabled: isAuthenticated,
   });
 
   const createMutation = useMutation({
-    mutationFn: (form: typeof createForm) => adminApi.createAdmin(tokens!.accessToken, form),
+    mutationFn: (form: typeof createForm) => adminApi.createAdmin(form),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admins'] });
       setShowCreateModal(false);
@@ -49,7 +49,7 @@ export default function Admins() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => adminApi.updateAdmin(tokens!.accessToken, id, data),
+    mutationFn: ({ id, data }: { id: string; data: any }) => adminApi.updateAdmin(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admins'] });
       setEditingAdmin(null);
@@ -58,7 +58,7 @@ export default function Admins() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => adminApi.deleteAdmin(tokens!.accessToken, id),
+    mutationFn: (id: string) => adminApi.deleteAdmin(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admins'] }),
     onError: (err: any) => setError(err.message),
   });

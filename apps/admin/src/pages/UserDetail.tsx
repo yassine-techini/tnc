@@ -8,24 +8,18 @@ export default function UserDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-user', id],
-    queryFn: async () => {
-      if (!tokens?.accessToken || !id) throw new Error('Non authentifié');
-      return adminApi.getUser(tokens.accessToken, id);
-    },
-    enabled: !!tokens?.accessToken && !!id,
+    queryFn: () => adminApi.getUser(id!),
+    enabled: isAuthenticated && !!id,
   });
 
   const kycMutation = useMutation({
-    mutationFn: async ({ action, reason }: { action: 'approve' | 'reject'; reason?: string }) => {
-      if (!tokens?.accessToken || !id) throw new Error('Non authentifié');
-      return adminApi.updateUserKyc(tokens.accessToken, id, action, reason);
-    },
+    mutationFn: ({ action, reason }: { action: 'approve' | 'reject'; reason?: string }) => adminApi.updateUserKyc(id!, action, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-user', id] });
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });

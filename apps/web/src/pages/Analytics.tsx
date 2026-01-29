@@ -36,29 +36,22 @@ interface TransactionStats {
 }
 
 export default function Analytics() {
-  const { tokens } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [period, setPeriod] = useState<Period>('30d');
   const [chartPeriod, setChartPeriod] = useState<'24h' | '7d' | '30d' | '1y'>('30d');
 
   // Fetch all transactions for analytics
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['transactions-all', period],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      // Fetch up to 1000 transactions for analytics
-      return api.getTransactions(tokens.accessToken, 1, 1000);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getTransactions(1, 1000), // Fetch up to 1000 transactions
+    enabled: isAuthenticated,
   });
 
   // Fetch wallet data
   const { data: walletData, isLoading: walletLoading } = useQuery({
     queryKey: ['wallet'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getWallet(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getWallet(),
+    enabled: isAuthenticated,
   });
 
   // Fetch price data

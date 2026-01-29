@@ -17,7 +17,7 @@ const pricePeriodOptions = [
 ];
 
 export default function Reports() {
-  const { tokens } = useStateStore();
+  const { isAuthenticated } = useStateStore();
   const [selectedMonth, setSelectedMonth] = useState('');
   const [txPeriod, setTxPeriod] = useState<'day' | 'week' | 'month'>('day');
   const [pricePeriod, setPricePeriod] = useState(30);
@@ -26,44 +26,31 @@ export default function Reports() {
 
   const { data: porData, isLoading: porLoading } = useQuery({
     queryKey: ['state-por'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getProofOfReserve(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getProofOfReserve(),
+    enabled: isAuthenticated,
   });
 
   const { data: monthlyData, isLoading: monthlyLoading } = useQuery({
     queryKey: ['state-monthly', selectedMonth],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getMonthlyReport(tokens.accessToken, selectedMonth || undefined);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getMonthlyReport(selectedMonth || undefined),
+    enabled: isAuthenticated,
   });
 
   const { data: priceHistoryData } = useQuery({
     queryKey: ['state-price-history', pricePeriod],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getPriceHistory(tokens.accessToken, pricePeriod);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getPriceHistory(pricePeriod),
+    enabled: isAuthenticated,
   });
 
   const { data: txStatsData } = useQuery({
     queryKey: ['state-tx-stats', txPeriod],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getTransactionStats(tokens.accessToken, txPeriod);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getTransactionStats(txPeriod),
+    enabled: isAuthenticated,
   });
 
   const exportPorMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      const blob = await stateApi.exportPorReport(tokens.accessToken);
+      const blob = await stateApi.exportPorReport();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -77,8 +64,7 @@ export default function Reports() {
 
   const exportMonthlyMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      const blob = await stateApi.exportMonthlyReport(tokens.accessToken, selectedMonth || undefined);
+      const blob = await stateApi.exportMonthlyReport(selectedMonth || undefined);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -92,9 +78,7 @@ export default function Reports() {
 
   const exportDataMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       const blob = await stateApi.exportRawData(
-        tokens.accessToken,
         exportStartDate || undefined,
         exportEndDate || undefined
       );

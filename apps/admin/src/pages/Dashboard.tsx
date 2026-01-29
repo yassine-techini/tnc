@@ -20,15 +20,12 @@ const typeBadge: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
 
   const { data: dashboardData, isLoading } = useQuery({
     queryKey: ['admin-dashboard'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getDashboard(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getDashboard(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData } = useQuery({
@@ -39,29 +36,20 @@ export default function Dashboard() {
 
   const { data: stockData } = useQuery({
     queryKey: ['admin-stock'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getStock(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getStock(),
+    enabled: isAuthenticated,
   });
 
   const { data: pendingKycData } = useQuery({
     queryKey: ['admin-pending-kyc-dashboard'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getPendingKyc(tokens.accessToken, 1, 5);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getPendingKyc(1, 5),
+    enabled: isAuthenticated,
   });
 
   const { data: pendingWithdrawalsData } = useQuery({
     queryKey: ['admin-pending-withdrawals-dashboard'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return adminApi.getWithdrawals(tokens.accessToken, 'PENDING');
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getWithdrawals('PENDING'),
+    enabled: isAuthenticated,
   });
 
   const stats = dashboardData?.data;

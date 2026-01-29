@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { stateApi } from '../lib/api';
 
 interface StateUser {
   id: string;
@@ -7,17 +8,10 @@ interface StateUser {
   ministry: string;
 }
 
-interface StateTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-}
-
 interface StateAuthState {
   user: StateUser | null;
-  tokens: StateTokens | null;
   isAuthenticated: boolean;
-  login: (user: StateUser, tokens: StateTokens) => void;
+  login: (user: StateUser) => void;
   logout: () => void;
 }
 
@@ -27,26 +21,34 @@ export const useStateStore = create<StateAuthState>()(
   persist(
     (set) => ({
       user: null,
-      tokens: null,
       isAuthenticated: false,
-      login: (user, tokens) =>
+      login: (user) =>
         set({
           user,
-          tokens,
           isAuthenticated: true,
         }),
       logout: () =>
         set({
           user: null,
-          tokens: null,
           isAuthenticated: false,
         }),
     }),
     {
       name: 'tnc-state-auth',
+      // Only persist user info for UI state, NOT tokens (tokens are in httpOnly cookies)
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+      }),
     }
   )
 );
+
+// Set up API client auth error callback to trigger logout
+stateApi.setAuthErrorCallback(() => {
+  useStateStore.getState().logout();
+  window.location.href = '/login?reason=session_expired';
+});
 
 // Inactivity monitor: auto-logout after 30 min idle
 let _lastActivity = Date.now();
@@ -74,4 +76,8 @@ export function stopInactivityMonitor() {
     clearInterval(_inactivityTimer);
     _inactivityTimer = null;
   }
+}
+
+export function touchActivity() {
+  _lastActivity = Date.now();
 }

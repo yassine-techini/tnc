@@ -42,15 +42,15 @@ export default function AdminDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { tokens, hasPermission } = useAdminStore();
+  const { isAuthenticated, hasPermission } = useAdminStore();
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', id],
-    queryFn: () => adminApi.getAdmin(tokens!.accessToken, id!),
-    enabled: !!tokens && !!id,
+    queryFn: () => adminApi.getAdmin(id!),
+    enabled: isAuthenticated && !!id,
     select: (res) => res.data,
   });
 
@@ -108,14 +108,14 @@ export default function AdminDetail() {
   };
 
   const savePermissions = async () => {
-    if (!id || !tokens) return;
+    if (!id) return;
     setSaving(true);
     try {
       const overridesList = Array.from(overrides.entries()).map(([key, granted]) => {
         const [module, action] = key.split(':');
         return { module, action, granted };
       });
-      await adminApi.updateAdminPermissions(tokens.accessToken, id, overridesList);
+      await adminApi.updateAdminPermissions(id, overridesList);
       queryClient.invalidateQueries({ queryKey: ['admin', id] });
       setDirty(false);
     } catch (err: any) {

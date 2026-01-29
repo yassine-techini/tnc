@@ -58,18 +58,13 @@ export default function Login() {
         // 2FA required - show input
         setStep('2fa_verify');
       } else if (response.success) {
-        // Login successful
+        // Login successful - tokens are now set as httpOnly cookies by the server
         login(
           {
             id: response.data.user.id,
             email: response.data.user.email,
             name: response.data.user.name,
             role: response.data.user.role,
-          },
-          {
-            accessToken: response.data.tokens.accessToken,
-            refreshToken: response.data.tokens.refreshToken,
-            expiresIn: response.data.tokens.expiresIn,
           },
           response.data.user.permissions
         );
@@ -89,7 +84,7 @@ export default function Login() {
 
     try {
       if (step === '2fa_setup' && setupData) {
-        // Verify and complete 2FA setup
+        // Verify and complete 2FA setup - tokens are now set as httpOnly cookies by the server
         const response = await adminApi.admin2FAVerify(setupData.setupToken, formData.totpCode);
         login(
           {
@@ -98,16 +93,11 @@ export default function Login() {
             name: response.data.user.name,
             role: response.data.user.role,
           },
-          {
-            accessToken: response.data.tokens.accessToken,
-            refreshToken: response.data.tokens.refreshToken,
-            expiresIn: response.data.tokens.expiresIn,
-          },
           response.data.user.permissions
         );
         navigate('/');
       } else if (step === '2fa_verify') {
-        // Login with 2FA code
+        // Login with 2FA code - tokens are now set as httpOnly cookies by the server
         const response = await adminApi.adminLogin(formData.email, formData.password, formData.totpCode);
         if (response.success) {
           login(
@@ -116,11 +106,6 @@ export default function Login() {
               email: response.data.user.email,
               name: response.data.user.name,
               role: response.data.user.role,
-            },
-            {
-              accessToken: response.data.tokens.accessToken,
-              refreshToken: response.data.tokens.refreshToken,
-              expiresIn: response.data.tokens.expiresIn,
             },
             response.data.user.permissions
           );

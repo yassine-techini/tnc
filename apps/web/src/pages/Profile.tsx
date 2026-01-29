@@ -8,7 +8,7 @@ import { SessionList } from '../components/security/SessionCard';
 type ActiveSection = 'none' | 'password' | '2fa' | 'phone-verify';
 
 export default function Profile() {
-  const { user, tokens, setUser } = useAuthStore();
+  const { user, isAuthenticated, setUser } = useAuthStore();
   const queryClient = useQueryClient();
 
   // Active section state (replaces modal states)
@@ -31,11 +31,8 @@ export default function Profile() {
   // Sessions query
   const { data: sessionsData } = useQuery({
     queryKey: ['sessions'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getSessions(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getSessions(),
+    enabled: isAuthenticated,
   });
 
   const sessions = sessionsData?.data?.sessions || [];
@@ -43,14 +40,13 @@ export default function Profile() {
   // Change password mutation
   const changePasswordMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       if (newPassword !== confirmPassword) {
         throw new Error('Les mots de passe ne correspondent pas');
       }
       if (newPassword.length < 8) {
         throw new Error('Le mot de passe doit contenir au moins 8 caractères');
       }
-      return api.changePassword(currentPassword, newPassword, tokens.accessToken);
+      return api.changePassword(currentPassword, newPassword);
     },
     onSuccess: () => {
       closeSection();
@@ -64,10 +60,7 @@ export default function Profile() {
 
   // Setup 2FA mutation
   const setup2FAMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.setup2FAProfile(tokens.accessToken);
-    },
+    mutationFn: () => api.setup2FAProfile(),
     onSuccess: (data) => {
       setQrCodeUrl(data.data.qrCodeUrl);
       setSecret(data.data.secret);
@@ -80,10 +73,7 @@ export default function Profile() {
 
   // Verify 2FA mutation
   const verify2FAMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.verify2FA(totpCode, tokens.accessToken);
-    },
+    mutationFn: () => api.verify2FA(totpCode),
     onSuccess: (data) => {
       setBackupCodes(data.data.backupCodes);
       if (user) {
@@ -98,10 +88,7 @@ export default function Profile() {
 
   // Disable 2FA mutation
   const disable2FAMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.disable2FA(totpCode, tokens.accessToken);
-    },
+    mutationFn: () => api.disable2FA(totpCode),
     onSuccess: () => {
       if (user) {
         setUser({ ...user, twoFactorEnabled: false });
@@ -117,10 +104,7 @@ export default function Profile() {
 
   // Revoke session mutation
   const revokeSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.revokeSession(sessionId, tokens.accessToken);
-    },
+    mutationFn: (sessionId: string) => api.revokeSession(sessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       setSuccess('Session révoquée');
@@ -133,10 +117,7 @@ export default function Profile() {
 
   // Revoke all sessions mutation
   const revokeAllSessionsMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.revokeAllSessions(tokens.accessToken);
-    },
+    mutationFn: () => api.revokeAllSessions(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       setSuccess('Toutes les sessions ont été révoquées');
@@ -150,9 +131,8 @@ export default function Profile() {
   // Update phone mutation
   const updatePhoneMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       const fullPhone = newPhone.startsWith('+') ? newPhone : `+226${newPhone}`;
-      return api.updateProfile({ phone: fullPhone }, tokens.accessToken);
+      return api.updateProfile({ phone: fullPhone });
     },
     onSuccess: () => {
       if (user) {
@@ -172,9 +152,8 @@ export default function Profile() {
   // Send phone verification code mutation
   const sendPhoneCodeMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
       if (!user?.phone) throw new Error('Numéro de téléphone non défini');
-      return api.sendPhoneVerification(user.phone, tokens.accessToken);
+      return api.sendPhoneVerification(user.phone);
     },
     onSuccess: () => {
       setActiveSection('phone-verify');
@@ -187,10 +166,7 @@ export default function Profile() {
 
   // Verify phone mutation
   const verifyPhoneMutation = useMutation({
-    mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.verifyPhone(verificationCode, tokens.accessToken);
-    },
+    mutationFn: () => api.verifyPhone(verificationCode),
     onSuccess: () => {
       if (user) {
         setUser({ ...user, phoneVerified: true });

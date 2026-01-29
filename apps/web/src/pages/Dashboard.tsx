@@ -29,16 +29,13 @@ const periodOptions = [
 ];
 
 export default function Dashboard() {
-  const { user, tokens } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const [chartPeriod, setChartPeriod] = useState<'24h' | '7d' | '30d' | '1y'>('7d');
 
   const { data: walletData, isLoading: walletLoading } = useQuery({
     queryKey: ['wallet'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getWallet(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getWallet(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData, isLoading: priceLoading } = useQuery({
@@ -54,11 +51,8 @@ export default function Dashboard() {
 
   const { data: txData, isLoading: txLoading } = useQuery({
     queryKey: ['transactions-recent'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return api.getTransactions(tokens.accessToken, 1, 5);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getTransactions(1, 5),
+    enabled: isAuthenticated,
   });
 
   const { data: stockData } = useQuery({

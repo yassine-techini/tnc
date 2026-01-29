@@ -4,15 +4,12 @@ import { useStateStore } from '../stores/auth';
 import { stateApi } from '../lib/api';
 
 export default function Stock() {
-  const { tokens } = useStateStore();
+  const { isAuthenticated } = useStateStore();
 
   const { data, isLoading } = useQuery({
     queryKey: ['state-stock'],
-    queryFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Non authentifié');
-      return stateApi.getStock(tokens.accessToken);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => stateApi.getStock(),
+    enabled: isAuthenticated,
   });
 
   const { data: priceData } = useQuery({

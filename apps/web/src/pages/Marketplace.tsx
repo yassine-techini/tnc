@@ -54,7 +54,7 @@ interface Quote {
 
 export default function Marketplace() {
   const queryClient = useQueryClient();
-  const { tokens, user } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const [tab, setTab] = useState<TabType>('buy');
   const [amount, setAmount] = useState('');
   const [amountType, setAmountType] = useState<'grams' | 'xof'>('grams');
@@ -87,8 +87,8 @@ export default function Marketplace() {
 
   const { data: walletData } = useQuery({
     queryKey: ['wallet'],
-    queryFn: () => api.getWallet(tokens?.accessToken || ''),
-    enabled: !!tokens?.accessToken,
+    queryFn: () => api.getWallet(),
+    enabled: isAuthenticated,
   });
 
   const price = priceData?.data;
@@ -107,15 +107,13 @@ export default function Marketplace() {
   // Quote mutation
   const quoteMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken) throw new Error('Vous devez être connecté');
       const numAmount = parseFloat(amount);
       if (!numAmount || numAmount <= 0) throw new Error('Montant invalide');
 
       return api.getQuote(
         tab === 'buy' ? 'BUY' : 'SELL',
         numAmount,
-        amountType,
-        tokens.accessToken
+        amountType
       );
     },
     onSuccess: (data) => {
@@ -131,8 +129,8 @@ export default function Marketplace() {
   // Buy mutation
   const buyMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken || !quote) throw new Error('Erreur de session');
-      return api.executeBuy(quote.quoteId, 'wallet_balance', tokens.accessToken);
+      if (!quote) throw new Error('Erreur de session');
+      return api.executeBuy(quote.quoteId, 'wallet_balance');
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -154,8 +152,8 @@ export default function Marketplace() {
   // Sell mutation
   const sellMutation = useMutation({
     mutationFn: async () => {
-      if (!tokens?.accessToken || !quote) throw new Error('Erreur de session');
-      return api.executeSell(quote.quoteId, 'wallet_balance', tokens.accessToken);
+      if (!quote) throw new Error('Erreur de session');
+      return api.executeSell(quote.quoteId, 'wallet_balance');
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -191,7 +189,7 @@ export default function Marketplace() {
     setError('');
 
     // Validation
-    if (!tokens?.accessToken) {
+    if (!isAuthenticated) {
       setError('Vous devez être connecté pour effectuer des transactions');
       return;
     }

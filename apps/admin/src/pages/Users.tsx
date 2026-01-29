@@ -41,7 +41,7 @@ interface User {
 }
 
 export default function Users() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -59,12 +59,8 @@ export default function Users() {
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['admin-users', page, debouncedSearch],
-    queryFn: async () => {
-      const auth = tokens?.accessToken;
-      if (!auth) throw new Error('Non authentifié');
-      return adminApi.getUsers(auth, page, 50, debouncedSearch || undefined);
-    },
-    enabled: !!tokens?.accessToken,
+    queryFn: () => adminApi.getUsers(page, 50, debouncedSearch || undefined),
+    enabled: isAuthenticated,
   });
 
   const allUsers: User[] = data?.data?.items || [];

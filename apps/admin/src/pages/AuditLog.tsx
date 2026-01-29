@@ -30,7 +30,7 @@ const entityTypeLabels: Record<string, string> = {
 };
 
 export default function AuditLog() {
-  const { tokens } = useAdminStore();
+  const { isAuthenticated } = useAdminStore();
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState({
     action: '',
@@ -43,7 +43,7 @@ export default function AuditLog() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-logs', page, filters],
-    queryFn: () => adminApi.getAuditLogs(tokens!.accessToken, {
+    queryFn: () => adminApi.getAuditLogs({
       page,
       limit: 30,
       ...(filters.action && { action: filters.action }),
@@ -52,7 +52,7 @@ export default function AuditLog() {
       ...(filters.startDate && { startDate: filters.startDate }),
       ...(filters.endDate && { endDate: filters.endDate }),
     }),
-    enabled: !!tokens,
+    enabled: isAuthenticated,
   });
 
   const logs = data?.data?.items || [];

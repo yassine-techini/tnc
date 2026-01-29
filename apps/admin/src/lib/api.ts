@@ -25,64 +25,34 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
 
 class AdminApiClient {
   private baseUrl: string;
-  private refreshPromise: Promise<string | null> | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
+  private onAuthError: (() => void) | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
 
-  private getStoredAuth(): { accessToken: string; refreshToken: string } | null {
-    try {
-      const raw = localStorage.getItem('tnc-admin-auth');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const tokens = parsed?.state?.tokens;
-      if (tokens?.accessToken && tokens?.refreshToken) return tokens;
-      return null;
-    } catch {
-      return null;
-    }
+  /**
+   * Set callback for auth errors (session expiry, etc.)
+   */
+  setAuthErrorCallback(callback: () => void) {
+    this.onAuthError = callback;
   }
 
-  private updateStoredTokens(accessToken: string, refreshToken: string, expiresIn: number) {
-    try {
-      const raw = localStorage.getItem('tnc-admin-auth');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state.tokens = { accessToken, refreshToken, expiresIn };
-      localStorage.setItem('tnc-admin-auth', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private clearStoredAuth() {
-    try {
-      const raw = localStorage.getItem('tnc-admin-auth');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      parsed.state = { user: null, tokens: null, isAuthenticated: false };
-      localStorage.setItem('tnc-admin-auth', JSON.stringify(parsed));
-    } catch { /* ignore */ }
-  }
-
-  private async refreshAccessToken(): Promise<string | null> {
-    const auth = this.getStoredAuth();
-    if (!auth?.refreshToken) return null;
-
+  /**
+   * Attempt to refresh the session using httpOnly refresh cookie
+   */
+  private async refreshSession(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+        credentials: 'include', // Send cookies
       });
-
       const data = await response.json();
-      if (data.success && data.data?.accessToken) {
-        this.updateStoredTokens(data.data.accessToken, data.data.refreshToken, data.data.expiresIn);
-        return data.data.accessToken;
-      }
-      return null;
+      return data.success === true;
     } catch {
-      return null;
+      return false;
     }
   }
 
@@ -94,6 +64,7 @@ class AdminApiClient {
       ...options.headers,
     };
 
+    // For backward compatibility, still support explicit token
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -101,24 +72,26 @@ class AdminApiClient {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...fetchOptions,
       headers,
+      credentials: 'include', // Send httpOnly cookies
     });
 
-    // On 401, try to refresh the token once
-    if (response.status === 401 && token && !_isRetry) {
+    // On 401, try to refresh the session once (using httpOnly cookie)
+    if (response.status === 401 && !_isRetry) {
       if (!this.refreshPromise) {
-        this.refreshPromise = this.refreshAccessToken().finally(() => {
+        this.refreshPromise = this.refreshSession().finally(() => {
           this.refreshPromise = null;
         });
       }
 
-      const newToken = await this.refreshPromise;
-      if (newToken) {
-        return this.request<T>(endpoint, { ...options, token: newToken, _isRetry: true });
+      const refreshed = await this.refreshPromise;
+      if (refreshed) {
+        return this.request<T>(endpoint, { ...options, _isRetry: true });
       }
 
-      // Refresh failed - clear auth and redirect to login
-      this.clearStoredAuth();
-      window.location.href = '/login';
+      // Refresh failed - notify auth error handler
+      if (this.onAuthError) {
+        this.onAuthError();
+      }
       throw new Error('Session expirée, veuillez vous reconnecter');
     }
 
@@ -137,6 +110,7 @@ class AdminApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, totpCode }),
+      credentials: 'include', // Receive httpOnly cookies
     });
 
     const data = await response.json();
@@ -222,7 +196,7 @@ class AdminApiClient {
   }
 
   // Dashboard
-  async getDashboard(token: string) {
+  async getDashboard(token?: string) {
     return this.request<{
       totalUsers: number;
       activeUsers: number;
@@ -241,7 +215,7 @@ class AdminApiClient {
   }
 
   // Users
-  async getUsers(token: string, page = 1, limit = 20, search?: string) {
+  async getUsers(page = 1, limit = 20, search?: string, token?: string) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (search) params.set('search', search);
     return this.request<{
@@ -261,7 +235,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/users?${params}`, { token });
   }
 
-  async getUser(token: string, userId: string) {
+  async getUser(userId: string, token?: string) {
     return this.request<{
       id: string;
       email: string;
@@ -286,7 +260,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/users/${userId}`, { token });
   }
 
-  async updateUserKyc(token: string, userId: string, action: 'approve' | 'reject', reason?: string) {
+  async updateUserKyc(userId: string, action: 'approve' | 'reject', reason?: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/users/${userId}/kyc`, {
       method: 'PATCH',
       body: JSON.stringify({ action, reason }),
@@ -295,7 +269,7 @@ class AdminApiClient {
   }
 
   // Transactions
-  async getTransactions(token: string, page = 1, limit = 20, type?: string) {
+  async getTransactions(page = 1, limit = 20, type?: string, token?: string) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (type) params.set('type', type);
     return this.request<{
@@ -318,7 +292,7 @@ class AdminApiClient {
   }
 
   // Stock
-  async getStock(token: string) {
+  async getStock(token?: string) {
     return this.request<{
       totalAllocated: number;
       tokensIssued: number;
@@ -328,7 +302,7 @@ class AdminApiClient {
     }>('/api/v1/admin/stock', { token });
   }
 
-  async adjustStock(token: string, amount: number, reason: string) {
+  async adjustStock(amount: number, reason: string, token?: string) {
     return this.request<{ message: string; newTotal: number }>('/api/v1/admin/stock/adjust', {
       method: 'POST',
       body: JSON.stringify({ amount, reason }),
@@ -337,7 +311,7 @@ class AdminApiClient {
   }
 
   // Withdrawals
-  async getWithdrawals(token: string, status?: string) {
+  async getWithdrawals(status?: string, token?: string) {
     const params = status ? `?status=${status}` : '';
     return this.request<{
       items: Array<{
@@ -353,7 +327,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/withdrawals${params}`, { token });
   }
 
-  async processWithdrawal(token: string, withdrawalId: string, action: 'approve' | 'reject', reason?: string) {
+  async processWithdrawal(withdrawalId: string, action: 'approve' | 'reject', reason?: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/withdrawals/${withdrawalId}`, {
       method: 'PATCH',
       body: JSON.stringify({ action, reason }),
@@ -377,7 +351,7 @@ class AdminApiClient {
   }
 
   // KYC Queue
-  async getPendingKyc(token: string, page = 1, limit = 20) {
+  async getPendingKyc(page = 1, limit = 20, token?: string) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     return this.request<{
       items: Array<{
@@ -403,7 +377,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/kyc/pending?${params}`, { token });
   }
 
-  async getKycSubmission(token: string, submissionId: string) {
+  async getKycSubmission(submissionId: string, token?: string) {
     return this.request<{
       id: string;
       userId: string;
@@ -429,10 +403,10 @@ class AdminApiClient {
     }>(`/api/v1/admin/kyc/${submissionId}`, { token });
   }
 
-  async reviewKyc(token: string, submissionId: string, action: 'approve' | 'reject', data: {
+  async reviewKyc(submissionId: string, action: 'approve' | 'reject', data: {
     newLevel?: 'STANDARD' | 'VERIFIED';
     rejectionReason?: string;
-  }) {
+  }, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/kyc/${submissionId}/review`, {
       method: 'POST',
       body: JSON.stringify({ action, ...data }),
@@ -441,7 +415,7 @@ class AdminApiClient {
   }
 
   // User suspension
-  async suspendUser(token: string, userId: string, reason: string) {
+  async suspendUser(userId: string, reason: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/users/${userId}/suspend`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
@@ -449,7 +423,7 @@ class AdminApiClient {
     });
   }
 
-  async unsuspendUser(token: string, userId: string) {
+  async unsuspendUser(userId: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/users/${userId}/unsuspend`, {
       method: 'POST',
       token,
@@ -457,12 +431,12 @@ class AdminApiClient {
   }
 
   // My permissions
-  async getMyPermissions(token: string) {
+  async getMyPermissions(token?: string) {
     return this.request<{ permissions: Record<string, string[]> }>('/api/v1/admin/me/permissions', { token });
   }
 
   // Admin Management
-  async getAdmins(token: string) {
+  async getAdmins(token?: string) {
     return this.request<{
       items: Array<{
         id: string;
@@ -476,7 +450,7 @@ class AdminApiClient {
     }>('/api/v1/admin/admins', { token });
   }
 
-  async getAdmin(token: string, adminId: string) {
+  async getAdmin(adminId: string, token?: string) {
     return this.request<{
       id: string;
       email: string;
@@ -490,7 +464,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/admins/${adminId}`, { token });
   }
 
-  async createAdmin(token: string, data: { email: string; name?: string; password: string; role: string }) {
+  async createAdmin(data: { email: string; name?: string; password: string; role: string }, token?: string) {
     return this.request<{ id: string; email: string; name: string; role: string }>('/api/v1/admin/admins', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -498,7 +472,7 @@ class AdminApiClient {
     });
   }
 
-  async updateAdmin(token: string, adminId: string, data: { role?: string; active?: boolean; name?: string }) {
+  async updateAdmin(adminId: string, data: { role?: string; active?: boolean; name?: string }, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -506,20 +480,20 @@ class AdminApiClient {
     });
   }
 
-  async deleteAdmin(token: string, adminId: string) {
+  async deleteAdmin(adminId: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}`, {
       method: 'DELETE',
       token,
     });
   }
 
-  async getAdminPermissions(token: string, adminId: string) {
+  async getAdminPermissions(adminId: string, token?: string) {
     return this.request<{
       overrides: Array<{ module: string; action: string; granted: boolean }>;
     }>(`/api/v1/admin/admins/${adminId}/permissions`, { token });
   }
 
-  async updateAdminPermissions(token: string, adminId: string, overrides: Array<{ module: string; action: string; granted: boolean }>) {
+  async updateAdminPermissions(adminId: string, overrides: Array<{ module: string; action: string; granted: boolean }>, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/admins/${adminId}/permissions`, {
       method: 'PUT',
       body: JSON.stringify({ overrides }),
@@ -528,7 +502,7 @@ class AdminApiClient {
   }
 
   // Integrations
-  async getIntegrations(token: string) {
+  async getIntegrations(token?: string) {
     return this.request<{
       items: Array<{
         id: string;
@@ -544,7 +518,7 @@ class AdminApiClient {
     }>('/api/v1/admin/integrations', { token });
   }
 
-  async getIntegration(token: string, provider: string) {
+  async getIntegration(provider: string, token?: string) {
     return this.request<{
       id: string;
       provider: string;
@@ -559,7 +533,7 @@ class AdminApiClient {
     }>(`/api/v1/admin/integrations/${provider}`, { token });
   }
 
-  async updateIntegration(token: string, provider: string, data: { enabled?: boolean; config?: Record<string, string> }) {
+  async updateIntegration(provider: string, data: { enabled?: boolean; config?: Record<string, string> }, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/integrations/${provider}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -567,7 +541,7 @@ class AdminApiClient {
     });
   }
 
-  async testIntegration(token: string, provider: string) {
+  async testIntegration(provider: string, token?: string) {
     return this.request<{
       provider: string;
       testResult: string;
@@ -580,7 +554,7 @@ class AdminApiClient {
   }
 
   // Configuration
-  async getConfig(token: string) {
+  async getConfig(token?: string) {
     return this.request<{
       items: Array<{
         key: string;
@@ -592,7 +566,7 @@ class AdminApiClient {
     }>('/api/v1/admin/config', { token });
   }
 
-  async updateConfig(token: string, key: string, value: string) {
+  async updateConfig(key: string, value: string, token?: string) {
     return this.request<{ message: string }>(`/api/v1/admin/config/${encodeURIComponent(key)}`, {
       method: 'PATCH',
       body: JSON.stringify({ value }),
@@ -601,7 +575,7 @@ class AdminApiClient {
   }
 
   // Audit Logs
-  async getAuditLogs(token: string, params: {
+  async getAuditLogs(params: {
     page?: number;
     limit?: number;
     action?: string;
@@ -609,7 +583,7 @@ class AdminApiClient {
     adminId?: string;
     startDate?: string;
     endDate?: string;
-  } = {}) {
+  } = {}, token?: string) {
     const qs = new URLSearchParams();
     if (params.page) qs.set('page', String(params.page));
     if (params.limit) qs.set('limit', String(params.limit));
@@ -638,6 +612,322 @@ class AdminApiClient {
       page: number;
       limit: number;
     }>(`/api/v1/admin/audit-logs?${qs}`, { token });
+  }
+  // Analytics
+  async getAnalyticsDashboard(token?: string) {
+    return this.request<{
+      realtime: {
+        requestsLast5Min: number;
+        errorsLast5Min: number;
+        transactionsLast5Min: number;
+        activeUsers: number;
+        avgLatencyMs: number;
+      } | null;
+      todayTransactions: Array<{
+        type: string;
+        status: string;
+        count: number;
+        total_amount: number;
+      }>;
+      pendingKyc: number;
+      pendingWithdrawals: number;
+      activeAlerts: number;
+      goldStock: {
+        total_allocated: number;
+        tokens_issued: number;
+        available_stock: number;
+      } | null;
+      timestamp: string;
+    }>('/api/v1/admin/analytics/dashboard', { token });
+  }
+
+  async getRealtimeMetrics(token?: string) {
+    return this.request<{
+      metrics: {
+        requestsLast5Min: number;
+        requestsLast1Hr: number;
+        requestsLast24Hr: number;
+        errorsLast5Min: number;
+        errorsLast1Hr: number;
+        avgLatencyMs: number;
+        p95LatencyMs: number;
+        p99LatencyMs: number;
+        transactionsLast5Min: number;
+        transactionsLast1Hr: number;
+        volumeLast24Hr: number;
+        activeUsers: number;
+        errorRateLast5Min: number;
+        goldStockCoverage: number;
+        pendingKyc: number;
+        pendingWithdrawals: number;
+      };
+      connectedClients: number;
+      lastUpdate: string;
+    }>('/api/v1/admin/analytics/realtime', { token });
+  }
+
+  async getAnalyticsHistory(period: '24h' | '7d' | '30d' = '24h', token?: string) {
+    return this.request<{
+      snapshots: Array<{
+        timestamp: string;
+        metrics: Record<string, number>;
+      }>;
+    }>(`/api/v1/admin/analytics/history?period=${period}`, { token });
+  }
+
+  async searchLogs(filters: {
+    startDate?: string;
+    endDate?: string;
+    level?: string;
+    category?: string;
+    action?: string;
+    userId?: string;
+    requestId?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }, token?: string) {
+    const params = new URLSearchParams();
+    if (filters.startDate) params.set('startDate', filters.startDate);
+    if (filters.endDate) params.set('endDate', filters.endDate);
+    if (filters.level) params.set('level', filters.level);
+    if (filters.category) params.set('category', filters.category);
+    if (filters.action) params.set('action', filters.action);
+    if (filters.userId) params.set('userId', filters.userId);
+    if (filters.requestId) params.set('requestId', filters.requestId);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    if (filters.offset) params.set('offset', String(filters.offset));
+    return this.request<{
+      logs: Array<{
+        id: string;
+        timestamp: string;
+        level: string;
+        category: string;
+        action: string | null;
+        userId: string | null;
+        requestId: string | null;
+        messagePreview: string;
+      }>;
+      total: number;
+    }>(`/api/v1/admin/analytics/logs?${params}`, { token });
+  }
+
+  async getLogDetail(logId: string, token?: string) {
+    return this.request<{
+      id: string;
+      timestamp: string;
+      level: string;
+      category: string;
+      action?: string;
+      message: string;
+      userId?: string;
+      requestId?: string;
+      entityType?: string;
+      entityId?: string;
+      metadata?: Record<string, unknown>;
+      stack?: string;
+    }>(`/api/v1/admin/analytics/logs/${logId}`, { token });
+  }
+
+  async getLogStats(startDate?: string, endDate?: string, token?: string) {
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    return this.request<{
+      totalLogs: number;
+      byLevel: Record<string, number>;
+      byCategory: Record<string, number>;
+      recentErrors: number;
+    }>(`/api/v1/admin/analytics/logs/stats?${params}`, { token });
+  }
+
+  async getAlertRules(token?: string) {
+    return this.request<{
+      rules: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        metric: string;
+        operator: string;
+        threshold: number;
+        severity: string;
+        cooldown_minutes: number;
+        notify_email: number;
+        notify_sms: number;
+        notify_webhook: string | null;
+        enabled: number;
+        last_triggered_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+    }>('/api/v1/admin/analytics/alerts/rules', { token });
+  }
+
+  async createAlertRule(data: {
+    name: string;
+    description?: string;
+    metric: string;
+    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+    threshold: number;
+    severity: 'info' | 'warning' | 'critical';
+    cooldownMinutes?: number;
+    notifyEmail?: boolean;
+    notifySms?: boolean;
+    notifyWebhook?: string;
+  }, token?: string) {
+    return this.request<{ id: string }>('/api/v1/admin/analytics/alerts/rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async updateAlertRule(ruleId: string, data: Partial<{
+    name: string;
+    description: string;
+    metric: string;
+    operator: string;
+    threshold: number;
+    severity: string;
+    cooldownMinutes: number;
+    notifyEmail: boolean;
+    notifySms: boolean;
+    notifyWebhook: string;
+    enabled: boolean;
+  }>, token?: string) {
+    return this.request<{ id: string }>(`/api/v1/admin/analytics/alerts/rules/${ruleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async deleteAlertRule(ruleId: string, token?: string) {
+    return this.request<{ deleted: boolean }>(`/api/v1/admin/analytics/alerts/rules/${ruleId}`, {
+      method: 'DELETE',
+      token,
+    });
+  }
+
+  async getAlerts(filters: { severity?: string; resolved?: boolean; limit?: number; offset?: number } = {}, token?: string) {
+    const params = new URLSearchParams();
+    if (filters.severity) params.set('severity', filters.severity);
+    if (filters.resolved !== undefined) params.set('resolved', String(filters.resolved));
+    if (filters.limit) params.set('limit', String(filters.limit));
+    if (filters.offset) params.set('offset', String(filters.offset));
+    return this.request<{
+      alerts: Array<{
+        id: string;
+        rule_id: string;
+        rule_name: string;
+        severity: string;
+        message: string;
+        current_value: number;
+        threshold: number;
+        triggered_at: string;
+        acknowledged: number;
+        acknowledged_by: string | null;
+        acknowledged_at: string | null;
+        resolved: number;
+        resolved_at: string | null;
+      }>;
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/v1/admin/analytics/alerts?${params}`, { token });
+  }
+
+  async acknowledgeAlert(alertId: string, token?: string) {
+    return this.request<{ acknowledged: boolean }>(`/api/v1/admin/analytics/alerts/${alertId}/acknowledge`, {
+      method: 'POST',
+      token,
+    });
+  }
+
+  async resolveAlert(alertId: string, token?: string) {
+    return this.request<{ resolved: boolean }>(`/api/v1/admin/analytics/alerts/${alertId}/resolve`, {
+      method: 'POST',
+      token,
+    });
+  }
+
+  async getTransactionAnalytics(period: '24h' | '7d' | '30d' | '90d' = '7d', token?: string) {
+    return this.request<{
+      period: string;
+      startDate: string;
+      endDate: string;
+      results: Array<{
+        date: string;
+        type: string;
+        status: string;
+        count: number;
+        total_tokens: number;
+        total_cash: number;
+        total_fees: number;
+        avg_price: number;
+      }>;
+    }>(`/api/v1/admin/analytics/transactions?period=${period}`, { token });
+  }
+
+  async getUserAnalytics(period: '7d' | '30d' | '90d' | '365d' = '30d', token?: string) {
+    return this.request<{
+      period: string;
+      totalUsers: number;
+      newUsers: Array<{ date: string; count: number }>;
+      byKycLevel: Array<{ kyc_level: string; kyc_status: string; count: number }>;
+      byCountry: Array<{ country: string; count: number }>;
+    }>(`/api/v1/admin/analytics/users?period=${period}`, { token });
+  }
+
+  // Proof of Reserve Report
+  async getProofOfReserve(token?: string) {
+    return this.request<{
+      reportDate: string;
+      reportType: string;
+      version: string;
+      goldStock: {
+        totalAllocated: number;
+        tokensIssued: number;
+        availableStock: number;
+        coverage: number;
+        coveragePercent: string;
+        isCovered: boolean;
+      };
+      tokenHolders: {
+        totalHolders: number;
+        totalTokensHeld: number;
+        averageHolding: number;
+        distribution: Array<{
+          range: string;
+          count: number;
+          totalTokens: number;
+        }>;
+      };
+      transactions: {
+        last24h: { buys: number; sells: number; volume: number };
+        last7d: { buys: number; sells: number; volume: number };
+        last30d: { buys: number; sells: number; volume: number };
+      };
+      pricing: {
+        currentPrice: number;
+        priceSource: string;
+        lastUpdate: string;
+        buyPrice: number;
+        sellPrice: number;
+        spread: number;
+      };
+      audit: {
+        lastAuditDate: string | null;
+        lastAuditResult: string | null;
+        nextScheduledAudit: string | null;
+      };
+      verification: {
+        generatedBy: string;
+        generatedAt: string;
+        checksum: string;
+      };
+    }>('/api/v1/admin/reports/por', { token });
   }
 }
 

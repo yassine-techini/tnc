@@ -32,7 +32,7 @@ const documentTypes: { value: DocumentType; label: string; hasBack: boolean }[] 
 ];
 
 export default function KYC() {
-  const { user, tokens, updateUser } = useAuthStore();
+  const { user, isAuthenticated, updateUser } = useAuthStore();
   const [step, setStep] = useState<KycStep>('info');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -55,9 +55,9 @@ export default function KYC() {
   // Fetch KYC status on mount
   useEffect(() => {
     const fetchStatus = async () => {
-      if (!tokens?.accessToken) return;
+      if (!isAuthenticated) return;
       try {
-        const response = await api.getKycStatus(tokens.accessToken);
+        const response = await api.getKycStatus();
         setKycStatus(response.data);
         if (response.data.status === 'SUBMITTED') {
           setStep('submitted');
@@ -67,13 +67,11 @@ export default function KYC() {
       }
     };
     fetchStatus();
-  }, [tokens?.accessToken]);
+  }, [isAuthenticated]);
 
   const selectedDocType = documentTypes.find(d => d.value === formData.documentType);
 
   const handleFileUpload = useCallback(async (file: File, type: 'front' | 'back' | 'selfie') => {
-    if (!tokens?.accessToken) return;
-
     // Validate file
     if (!file.type.startsWith('image/')) {
       setError('Veuillez sélectionner une image');
@@ -88,7 +86,7 @@ export default function KYC() {
     setError('');
 
     try {
-      const response = await api.uploadKycDocument(file, tokens.accessToken);
+      const response = await api.uploadKycDocument(file);
       const field = type === 'front' ? 'frontImage' : type === 'back' ? 'backImage' : 'selfieImage';
       setFormData(prev => ({ ...prev, [field]: response.data.url }));
     } catch (err) {
@@ -96,10 +94,9 @@ export default function KYC() {
     } finally {
       setIsLoading(false);
     }
-  }, [tokens?.accessToken]);
+  }, []);
 
   const handleSubmit = async () => {
-    if (!tokens?.accessToken) return;
     setIsLoading(true);
     setError('');
 
@@ -113,7 +110,7 @@ export default function KYC() {
         frontImage: formData.frontImage,
         backImage: selectedDocType?.hasBack ? formData.backImage : undefined,
         selfieImage: formData.selfieImage,
-      }, tokens.accessToken);
+      });
 
       updateUser({ kycStatus: 'SUBMITTED' });
       setStep('submitted');

@@ -55,19 +55,12 @@ export default function Login() {
         // 2FA required - show input
         setStep('2fa_verify');
       } else if (response.success) {
-        // Login successful
-        login(
-          {
-            id: response.data.user.id,
-            email: response.data.user.email,
-            ministry: response.data.user.ministry,
-          },
-          {
-            accessToken: response.data.tokens.accessToken,
-            refreshToken: response.data.tokens.refreshToken,
-            expiresIn: response.data.tokens.expiresIn,
-          }
-        );
+        // Login successful - tokens are now set as httpOnly cookies by the server
+        login({
+          id: response.data.user.id,
+          email: response.data.user.email,
+          ministry: response.data.user.ministry,
+        });
         navigate('/');
       }
     } catch (err) {
@@ -84,37 +77,23 @@ export default function Login() {
 
     try {
       if (step === '2fa_setup' && setupData) {
-        // Verify and complete 2FA setup
+        // Verify and complete 2FA setup - tokens are now set as httpOnly cookies by the server
         const response = await stateApi.state2FAVerify(setupData.setupToken, formData.totpCode);
-        login(
-          {
+        login({
+          id: response.data.user.id,
+          email: response.data.user.email,
+          ministry: response.data.user.ministry,
+        });
+        navigate('/');
+      } else if (step === '2fa_verify') {
+        // Login with 2FA code - tokens are now set as httpOnly cookies by the server
+        const response = await stateApi.stateLogin(formData.email, formData.password, formData.totpCode);
+        if (response.success) {
+          login({
             id: response.data.user.id,
             email: response.data.user.email,
             ministry: response.data.user.ministry,
-          },
-          {
-            accessToken: response.data.tokens.accessToken,
-            refreshToken: response.data.tokens.refreshToken,
-            expiresIn: response.data.tokens.expiresIn,
-          }
-        );
-        navigate('/');
-      } else if (step === '2fa_verify') {
-        // Login with 2FA code
-        const response = await stateApi.stateLogin(formData.email, formData.password, formData.totpCode);
-        if (response.success) {
-          login(
-            {
-              id: response.data.user.id,
-              email: response.data.user.email,
-              ministry: response.data.user.ministry,
-            },
-            {
-              accessToken: response.data.tokens.accessToken,
-              refreshToken: response.data.tokens.refreshToken,
-              expiresIn: response.data.tokens.expiresIn,
-            }
-          );
+          });
           navigate('/');
         }
       }
