@@ -117,4 +117,140 @@ export class ConfigService {
       return [];
     }
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // API Keys helpers - these read from config table (set by super admin)
+  // Falls back to env if provided (for backwards compatibility)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * Get Gold API key (from config or env fallback)
+   */
+  async getGoldApiKey(envFallback?: string): Promise<string | null> {
+    return await this.get('gold_api_key', envFallback);
+  }
+
+  /**
+   * Get Exchange Rate API key
+   */
+  async getExchangeRateApiKey(envFallback?: string): Promise<string | null> {
+    return await this.get('exchange_rate_api_key', envFallback);
+  }
+
+  /**
+   * Get Twilio credentials
+   */
+  async getTwilioConfig(env?: { accountSid?: string; authToken?: string; phoneNumber?: string }) {
+    const [accountSid, authToken, phoneNumber] = await Promise.all([
+      this.get('twilio_account_sid', env?.accountSid),
+      this.get('twilio_auth_token', env?.authToken),
+      this.get('twilio_phone_number', env?.phoneNumber),
+    ]);
+    return { accountSid, authToken, phoneNumber };
+  }
+
+  /**
+   * Get Resend API key
+   */
+  async getResendApiKey(envFallback?: string): Promise<string | null> {
+    return await this.get('resend_api_key', envFallback);
+  }
+
+  /**
+   * Get SendGrid API key
+   */
+  async getSendGridApiKey(envFallback?: string): Promise<string | null> {
+    return await this.get('sendgrid_api_key', envFallback);
+  }
+
+  /**
+   * Get Orange Money credentials
+   */
+  async getOrangeMoneyConfig(env?: { apiKey?: string; merchantId?: string; clientSecret?: string }) {
+    const [apiKey, merchantId, clientSecret] = await Promise.all([
+      this.get('orange_money_api_key', env?.apiKey),
+      this.get('orange_money_merchant_id', env?.merchantId),
+      this.get('orange_money_client_secret', env?.clientSecret),
+    ]);
+    return { apiKey, merchantId, clientSecret };
+  }
+
+  /**
+   * Get Moov credentials
+   */
+  async getMoovConfig(env?: { apiKey?: string; merchantId?: string; moneyApiKey?: string }) {
+    const [apiKey, merchantId, moneyApiKey] = await Promise.all([
+      this.get('moov_api_key', env?.apiKey),
+      this.get('moov_merchant_id', env?.merchantId),
+      this.get('moov_money_api_key', env?.moneyApiKey),
+    ]);
+    return { apiKey, merchantId, moneyApiKey };
+  }
+
+  /**
+   * Get CinetPay credentials
+   */
+  async getCinetPayConfig(env?: { apiKey?: string; siteId?: string }) {
+    const [apiKey, siteId] = await Promise.all([
+      this.get('cinetpay_api_key', env?.apiKey),
+      this.get('cinetpay_site_id', env?.siteId),
+    ]);
+    return { apiKey, siteId };
+  }
+
+  /**
+   * Get Stripe credentials
+   */
+  async getStripeConfig(env?: { secretKey?: string; webhookSecret?: string }) {
+    const [secretKey, webhookSecret] = await Promise.all([
+      this.get('stripe_secret_key', env?.secretKey),
+      this.get('stripe_webhook_secret', env?.webhookSecret),
+    ]);
+    return { secretKey, webhookSecret };
+  }
+
+  /**
+   * Get Smile Identity (KYC) credentials
+   */
+  async getSmileIdentityConfig(env?: { apiKey?: string; partnerId?: string }) {
+    const [apiKey, partnerId] = await Promise.all([
+      this.get('smile_identity_api_key', env?.apiKey),
+      this.get('smile_identity_partner_id', env?.partnerId),
+    ]);
+    return { apiKey, partnerId };
+  }
+
+  /**
+   * Get webhook secret for validating incoming webhooks
+   */
+  async getWebhookSecret(envFallback?: string): Promise<string | null> {
+    return await this.get('webhook_secret', envFallback);
+  }
+
+  /**
+   * Get FCM server key for push notifications
+   */
+  async getFcmServerKey(envFallback?: string): Promise<string | null> {
+    return await this.get('fcm_server_key', envFallback);
+  }
+
+  /**
+   * Check if platform is configured (has essential API keys)
+   */
+  async isPlatformConfigured(): Promise<{ configured: boolean; missing: string[] }> {
+    const essentialKeys = [
+      'gold_api_key',
+      'twilio_account_sid',
+      'twilio_auth_token',
+      'resend_api_key',
+    ];
+
+    const missing: string[] = [];
+    for (const key of essentialKeys) {
+      const value = await this.get(key);
+      if (!value) missing.push(key);
+    }
+
+    return { configured: missing.length === 0, missing };
+  }
 }

@@ -51,10 +51,12 @@ export interface ExchangeRateResponse {
 import { ConfigService } from './config.service';
 
 export class GoldAPIService {
-  private goldApiKey: string;
-  private exchangeApiKey: string;
+  private goldApiKeyFromEnv: string;
+  private exchangeApiKeyFromEnv: string;
   private db: D1Database | null;
   private configService: ConfigService | null;
+  private _cachedGoldApiKey: string | null = null;
+  private _cachedExchangeApiKey: string | null = null;
 
   constructor(
     private kv: KVNamespace,
@@ -63,10 +65,38 @@ export class GoldAPIService {
     db?: D1Database,
     configService?: ConfigService
   ) {
-    this.goldApiKey = goldApiKey || '';
-    this.exchangeApiKey = exchangeApiKey || '';
+    this.goldApiKeyFromEnv = goldApiKey || '';
+    this.exchangeApiKeyFromEnv = exchangeApiKey || '';
     this.db = db || null;
     this.configService = configService || (db ? new ConfigService(db, kv) : null);
+  }
+
+  /**
+   * Get Gold API key from config (preferred) or env fallback
+   */
+  private async getGoldApiKey(): Promise<string> {
+    if (this._cachedGoldApiKey) return this._cachedGoldApiKey;
+
+    if (this.configService) {
+      const key = await this.configService.getGoldApiKey(this.goldApiKeyFromEnv);
+      this._cachedGoldApiKey = key || '';
+      return this._cachedGoldApiKey;
+    }
+    return this.goldApiKeyFromEnv;
+  }
+
+  /**
+   * Get Exchange Rate API key from config (preferred) or env fallback
+   */
+  private async getExchangeApiKey(): Promise<string> {
+    if (this._cachedExchangeApiKey) return this._cachedExchangeApiKey;
+
+    if (this.configService) {
+      const key = await this.configService.getExchangeRateApiKey(this.exchangeApiKeyFromEnv);
+      this._cachedExchangeApiKey = key || '';
+      return this._cachedExchangeApiKey;
+    }
+    return this.exchangeApiKeyFromEnv;
   }
 
   /**
@@ -89,7 +119,8 @@ export class GoldAPIService {
    * Fetch current gold price from GoldAPI.io
    */
   private async fetchFromGoldAPI(): Promise<{ priceUsd: number } | null> {
-    if (!this.goldApiKey) {
+    const goldApiKey = await this.getGoldApiKey();
+    if (!goldApiKey) {
       console.log('GoldAPI key not configured');
       return null;
     }
@@ -100,7 +131,7 @@ export class GoldAPIService {
         : 'https://www.goldapi.io/api';
       const response = await fetch(`${goldApiBaseUrl}/XAU/USD`, {
         headers: {
-          'x-access-token': this.goldApiKey,
+          'x-access-token': goldApiKey,
           'Content-Type': 'application/json',
         },
       });
@@ -175,10 +206,11 @@ export class GoldAPIService {
       : 3600;
 
     // Try Exchange Rate API
-    if (this.exchangeApiKey) {
+    const exchangeApiKey = await this.getExchangeApiKey();
+    if (exchangeApiKey) {
       try {
         const response = await fetch(
-          `${exchangeRateApiUrl}/${this.exchangeApiKey}/latest/USD`
+          `${exchangeRateApiUrl}/${exchangeApiKey}/latest/USD`
         );
 
         if (response.ok) {
@@ -346,7 +378,8 @@ export class GoldAPIService {
     };
 
     // Check GoldAPI
-    if (this.goldApiKey) {
+    const goldApiKey = await this.getGoldApiKey();
+    if (goldApiKey) {
       const goldData = await this.fetchFromGoldAPI();
       health.goldApi = goldData !== null;
     }

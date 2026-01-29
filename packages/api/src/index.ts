@@ -40,22 +40,17 @@ const app = new Hono<AppEnv>();
 // ============================================
 
 // Environment validation — fail fast if critical secrets are missing
+// Note: API keys (GOLD_API_KEY, TWILIO_*, RESEND_*, etc.) are now configured
+// via the admin UI in the config table, not as environment secrets.
 app.use('*', async (c, next) => {
   const env = c.env;
 
-  // Critical bindings that must always be present
+  // Only these core bindings must be present at startup
+  // All other API keys are configured via super admin interface
   const requiredBindings: Array<{ key: keyof Env; name: string }> = [
     { key: 'DB', name: 'D1 database binding' },
     { key: 'JWT_SECRET', name: 'JWT secret' },
     { key: 'ENCRYPTION_KEY', name: 'Encryption key' },
-  ];
-
-  // Production-only requirements (payment providers, notifications)
-  const productionRequirements: Array<{ key: keyof Env; name: string }> = [
-    { key: 'GOLD_API_KEY', name: 'Gold API key' },
-    { key: 'TWILIO_ACCOUNT_SID', name: 'Twilio account SID' },
-    { key: 'TWILIO_AUTH_TOKEN', name: 'Twilio auth token' },
-    { key: 'RESEND_API_KEY', name: 'Resend API key' },
   ];
 
   // Validate required bindings
@@ -66,19 +61,6 @@ app.use('*', async (c, next) => {
         success: false,
         error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' }
       }, 500);
-    }
-  }
-
-  // Validate production requirements
-  if (env.ENVIRONMENT === 'production') {
-    for (const { key, name } of productionRequirements) {
-      if (!env[key]) {
-        console.error(`FATAL: ${name} (${key}) is required in production`);
-        return c.json({
-          success: false,
-          error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' }
-        }, 500);
-      }
     }
   }
 
@@ -311,6 +293,9 @@ import { NotificationService, type NotificationQueueMessage } from './services/n
 // Import alert service for queue consumer
 import { AlertService, type AlertQueueMessage } from './services/alert.service';
 
+// Import config service for runtime configuration
+import { ConfigService } from './services/config.service';
+
 // Import tail handler for log archival
 import { handleTail, type TraceItem } from './tail-handler';
 
@@ -333,7 +318,11 @@ export default {
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
-    // Initialize services
+    // Initialize config service for runtime configuration
+    const configService = new ConfigService(env.DB, env.CACHE);
+
+    // Initialize services with config service for runtime API key loading
+    // Env values serve as fallback if not configured in DB
     const notificationService = new NotificationService(env.DB, {
       resendApiKey: env.RESEND_API_KEY,
       sendgridApiKey: env.SENDGRID_API_KEY,
@@ -341,7 +330,7 @@ export default {
       twilioAuthToken: env.TWILIO_AUTH_TOKEN,
       twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
       fcmServerKey: env.FCM_SERVER_KEY,
-    });
+    }, undefined, configService);
 
     const alertService = new AlertService(env.DB, undefined, {
       resendApiKey: env.RESEND_API_KEY,
@@ -350,7 +339,7 @@ export default {
       twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
       alertEmailRecipients: env.ALERT_EMAIL_RECIPIENTS,
       alertSmsRecipients: env.ALERT_SMS_RECIPIENTS,
-    });
+    }, configService);
 
     for (const message of batch.messages) {
       try {

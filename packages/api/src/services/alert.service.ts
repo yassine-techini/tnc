@@ -4,6 +4,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { ConfigService } from './config.service';
 
 export interface AlertRule {
   id: string;
@@ -66,11 +67,45 @@ function evaluateCondition(
  * Alert Service for managing and processing alerts
  */
 export class AlertService {
+  private configService: ConfigService | null;
+  private _cachedConfig: NotificationConfig | null = null;
+
   constructor(
     private db: D1Database,
     private alertQueue: Queue | undefined,
-    private notificationConfig: NotificationConfig
-  ) {}
+    private notificationConfig: NotificationConfig,
+    configService?: ConfigService
+  ) {
+    this.configService = configService || null;
+  }
+
+  /**
+   * Get notification config - loads from ConfigService if available, falls back to constructor config
+   */
+  private async getConfig(): Promise<NotificationConfig> {
+    if (this._cachedConfig) return this._cachedConfig;
+
+    if (this.configService) {
+      const twilioConfig = await this.configService.getTwilioConfig({
+        accountSid: this.notificationConfig.twilioAccountSid,
+        authToken: this.notificationConfig.twilioAuthToken,
+        phoneNumber: this.notificationConfig.twilioPhoneNumber,
+      });
+      const resendApiKey = await this.configService.getResendApiKey(this.notificationConfig.resendApiKey);
+
+      this._cachedConfig = {
+        resendApiKey: resendApiKey || undefined,
+        twilioAccountSid: twilioConfig.accountSid || undefined,
+        twilioAuthToken: twilioConfig.authToken || undefined,
+        twilioPhoneNumber: twilioConfig.phoneNumber || undefined,
+        alertEmailRecipients: this.notificationConfig.alertEmailRecipients,
+        alertSmsRecipients: this.notificationConfig.alertSmsRecipients,
+      };
+      return this._cachedConfig;
+    }
+
+    return this.notificationConfig;
+  }
 
   /**
    * Get all enabled alert rules
@@ -209,19 +244,20 @@ export class AlertService {
    * Send alert notifications
    */
   async sendNotifications(rule: AlertRule, message: string): Promise<void> {
+    const config = await this.getConfig();
     const promises: Promise<void>[] = [];
 
     // Email notification
-    if (rule.notifyEmail && this.notificationConfig.resendApiKey) {
-      const recipients = this.notificationConfig.alertEmailRecipients?.split(',').map(e => e.trim()) || [];
+    if (rule.notifyEmail && config.resendApiKey) {
+      const recipients = config.alertEmailRecipients?.split(',').map(e => e.trim()) || [];
       for (const email of recipients) {
         promises.push(this.sendEmailNotification(email, rule, message));
       }
     }
 
     // SMS notification
-    if (rule.notifySms && this.notificationConfig.twilioAccountSid) {
-      const recipients = this.notificationConfig.alertSmsRecipients?.split(',').map(e => e.trim()) || [];
+    if (rule.notifySms && config.twilioAccountSid) {
+      const recipients = config.alertSmsRecipients?.split(',').map(e => e.trim()) || [];
       for (const phone of recipients) {
         promises.push(this.sendSmsNotification(phone, rule, message));
       }
@@ -243,7 +279,8 @@ export class AlertService {
     rule: AlertRule,
     message: string
   ): Promise<void> {
-    if (!this.notificationConfig.resendApiKey) return;
+    const config = await this.getConfig();
+    if (!config.resendApiKey) return;
 
     const severityColors: Record<string, string> = {
       info: '#3B82F6',
@@ -255,7 +292,7 @@ export class AlertService {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.notificationConfig.resendApiKey}`,
+          'Authorization': `Bearer ${config.resendApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -292,17 +329,18 @@ export class AlertService {
     rule: AlertRule,
     message: string
   ): Promise<void> {
-    if (!this.notificationConfig.twilioAccountSid ||
-        !this.notificationConfig.twilioAuthToken ||
-        !this.notificationConfig.twilioPhoneNumber) {
+    const config = await this.getConfig();
+    if (!config.twilioAccountSid ||
+        !config.twilioAuthToken ||
+        !config.twilioPhoneNumber) {
       return;
     }
 
     try {
-      const auth = btoa(`${this.notificationConfig.twilioAccountSid}:${this.notificationConfig.twilioAuthToken}`);
+      const auth = btoa(`${config.twilioAccountSid}:${config.twilioAuthToken}`);
 
       await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${this.notificationConfig.twilioAccountSid}/Messages.json`,
+        `https://api.twilio.com/2010-04-01/Accounts/${config.twilioAccountSid}/Messages.json`,
         {
           method: 'POST',
           headers: {
@@ -310,7 +348,7 @@ export class AlertService {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams({
-            From: this.notificationConfig.twilioPhoneNumber,
+            From: config.twilioPhoneNumber,
             To: to,
             Body: `[TNC ${rule.severity.toUpperCase()}] ${message}`,
           }),

@@ -383,6 +383,7 @@ interface PlatformBranding {
 export class NotificationService {
   private queue: Queue<NotificationQueueMessage> | null;
   private configService: ConfigService | null;
+  private _cachedConfig: NotificationConfig | null = null;
 
   constructor(
     private db: D1Database,
@@ -392,6 +393,36 @@ export class NotificationService {
   ) {
     this.queue = queue || null;
     this.configService = configService || null;
+  }
+
+  /**
+   * Get notification config - loads from ConfigService if available, falls back to constructor config
+   */
+  private async getConfig(): Promise<NotificationConfig> {
+    if (this._cachedConfig) return this._cachedConfig;
+
+    if (this.configService) {
+      const twilioConfig = await this.configService.getTwilioConfig({
+        accountSid: this.config.twilioAccountSid,
+        authToken: this.config.twilioAuthToken,
+        phoneNumber: this.config.twilioPhoneNumber,
+      });
+      const resendApiKey = await this.configService.getResendApiKey(this.config.resendApiKey);
+      const sendgridApiKey = await this.configService.getSendGridApiKey(this.config.sendgridApiKey);
+      const fcmServerKey = await this.configService.getFcmServerKey(this.config.fcmServerKey);
+
+      this._cachedConfig = {
+        resendApiKey: resendApiKey || undefined,
+        sendgridApiKey: sendgridApiKey || undefined,
+        twilioAccountSid: twilioConfig.accountSid || undefined,
+        twilioAuthToken: twilioConfig.authToken || undefined,
+        twilioPhoneNumber: twilioConfig.phoneNumber || undefined,
+        fcmServerKey: fcmServerKey || undefined,
+      };
+      return this._cachedConfig;
+    }
+
+    return this.config;
   }
 
   /**
@@ -482,7 +513,8 @@ export class NotificationService {
    * Send email via Resend
    */
   private async sendViaResend(options: EmailOptions): Promise<NotificationResult> {
-    if (!this.config.resendApiKey) {
+    const config = await this.getConfig();
+    if (!config.resendApiKey) {
       return { success: false, provider: 'resend', error: 'API key not configured' };
     }
 
@@ -494,7 +526,7 @@ export class NotificationService {
       const response = await fetch(resendApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.config.resendApiKey}`,
+          'Authorization': `Bearer ${config.resendApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -522,7 +554,8 @@ export class NotificationService {
    * Send email via SendGrid (fallback)
    */
   private async sendViaSendGrid(options: EmailOptions): Promise<NotificationResult> {
-    if (!this.config.sendgridApiKey) {
+    const config = await this.getConfig();
+    if (!config.sendgridApiKey) {
       return { success: false, provider: 'sendgrid', error: 'API key not configured' };
     }
 
@@ -534,7 +567,7 @@ export class NotificationService {
       const response = await fetch(sendgridApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.config.sendgridApiKey}`,
+          'Authorization': `Bearer ${config.sendgridApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -579,7 +612,8 @@ export class NotificationService {
     }
 
     // Fallback to SendGrid if Resend fails or disabled (if SendGrid enabled)
-    if (!result.success && this.config.sendgridApiKey && await this.isProviderEnabled('sendgrid')) {
+    const config = await this.getConfig();
+    if (!result.success && config.sendgridApiKey && await this.isProviderEnabled('sendgrid')) {
       result = await this.sendViaSendGrid(brandedOptions);
     }
 
@@ -597,18 +631,19 @@ export class NotificationService {
       return { success: false, provider: 'twilio', error: 'Twilio is currently disabled' };
     }
 
-    if (!this.config.twilioAccountSid || !this.config.twilioAuthToken) {
+    const config = await this.getConfig();
+    if (!config.twilioAccountSid || !config.twilioAuthToken) {
       return { success: false, provider: 'twilio', error: 'Twilio not configured' };
     }
 
     try {
-      const auth = btoa(`${this.config.twilioAccountSid}:${this.config.twilioAuthToken}`);
+      const auth = btoa(`${config.twilioAccountSid}:${config.twilioAuthToken}`);
 
       const twilioApiUrl = this.configService
         ? await this.configService.get('twilio_api_url', 'https://api.twilio.com/2010-04-01')
         : 'https://api.twilio.com/2010-04-01';
       const response = await fetch(
-        `${twilioApiUrl}/Accounts/${this.config.twilioAccountSid}/Messages.json`,
+        `${twilioApiUrl}/Accounts/${config.twilioAccountSid}/Messages.json`,
         {
           method: 'POST',
           headers: {
@@ -616,7 +651,7 @@ export class NotificationService {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams({
-            From: this.config.twilioPhoneNumber || '',
+            From: config.twilioPhoneNumber || '',
             To: options.to,
             Body: this.applyBranding(options.message, await this.getBranding()),
           }),
@@ -645,7 +680,8 @@ export class NotificationService {
       return { success: false, provider: 'fcm', error: 'FCM is currently disabled' };
     }
 
-    if (!this.config.fcmServerKey) {
+    const config = await this.getConfig();
+    if (!config.fcmServerKey) {
       return { success: false, provider: 'fcm', error: 'FCM not configured' };
     }
 
@@ -656,7 +692,7 @@ export class NotificationService {
       const response = await fetch(fcmApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `key=${this.config.fcmServerKey}`,
+          'Authorization': `key=${config.fcmServerKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

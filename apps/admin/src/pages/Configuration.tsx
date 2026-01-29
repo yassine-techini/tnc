@@ -20,6 +20,22 @@ interface ConfigGroup {
 
 const CONFIG_GROUPS: ConfigGroup[] = [
   {
+    label: '🔐 Clés API & Secrets',
+    icon: '🔑',
+    description: 'Clés API pour les services externes (Gold API, SMS, Email, Paiements)',
+    keys: [
+      'gold_api_key', 'exchange_rate_api_key',
+      'twilio_account_sid', 'twilio_auth_token', 'twilio_phone_number',
+      'resend_api_key', 'sendgrid_api_key',
+      'orange_money_api_key', 'orange_money_merchant_id', 'orange_money_client_secret',
+      'moov_api_key', 'moov_merchant_id', 'moov_money_api_key',
+      'cinetpay_api_key', 'cinetpay_site_id',
+      'stripe_secret_key', 'stripe_webhook_secret',
+      'smile_identity_api_key', 'smile_identity_partner_id',
+      'webhook_secret', 'fcm_server_key',
+    ],
+  },
+  {
     label: 'Plateforme',
     icon: '🌐',
     description: 'Nom, URLs, branding de la plateforme',
@@ -195,6 +211,28 @@ const CONFIG_GROUPS: ConfigGroup[] = [
 ];
 
 const KEY_LABELS: Record<string, string> = {
+  // Clés API & Secrets
+  gold_api_key: 'Clé API GoldAPI.io',
+  exchange_rate_api_key: 'Clé API taux de change',
+  twilio_account_sid: 'Twilio Account SID',
+  twilio_auth_token: 'Twilio Auth Token',
+  twilio_phone_number: 'Numéro Twilio (ex: +1234567890)',
+  resend_api_key: 'Clé API Resend (email)',
+  sendgrid_api_key: 'Clé API SendGrid (email)',
+  orange_money_api_key: 'Clé API Orange Money',
+  orange_money_merchant_id: 'Merchant ID Orange Money',
+  orange_money_client_secret: 'Client Secret Orange Money',
+  moov_api_key: 'Clé API Moov',
+  moov_merchant_id: 'Merchant ID Moov',
+  moov_money_api_key: 'Clé API Moov Money',
+  cinetpay_api_key: 'Clé API CinetPay',
+  cinetpay_site_id: 'Site ID CinetPay',
+  stripe_secret_key: 'Clé secrète Stripe (sk_...)',
+  stripe_webhook_secret: 'Secret Webhook Stripe (whsec_...)',
+  smile_identity_api_key: 'Clé API Smile Identity (KYC)',
+  smile_identity_partner_id: 'Partner ID Smile Identity',
+  webhook_secret: 'Secret pour webhooks entrants',
+  fcm_server_key: 'Clé serveur Firebase Cloud Messaging',
   // Plateforme
   app_name: 'Nom de la plateforme',
   app_tagline: 'Slogan',
