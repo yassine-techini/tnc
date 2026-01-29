@@ -3,6 +3,7 @@ import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 import { logger } from '../lib/logger';
+import { getAccessToken } from '../lib/cookies';
 
 // Cache for Cloudflare Access public keys
 let cfAccessKeysCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
@@ -159,11 +160,13 @@ async function verifyCloudflareAccessJWT(
 
 /**
  * Middleware for authenticating regular users via JWT
+ * Supports both Authorization header (mobile) and httpOnly cookies (web)
  */
 export async function authMiddleware(c: Context<AppEnv>, next: Next) {
-  const authHeader = c.req.header('Authorization');
+  // Get token from header or cookie
+  const token = getAccessToken(c);
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     return c.json({
       success: false,
       error: {
@@ -173,8 +176,6 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       requestId: crypto.randomUUID(),
     }, 401);
   }
-
-  const token = authHeader.substring(7);
 
   try {
     const authService = new AuthService(c.env.JWT_SECRET);

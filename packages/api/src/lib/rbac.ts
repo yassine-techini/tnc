@@ -6,6 +6,7 @@
 export const MODULES = [
   'dashboard', 'users', 'kyc', 'transactions', 'stock',
   'withdrawals', 'reconciliation', 'integrations', 'audit', 'admins',
+  'analytics', 'logs', 'alerts',
 ] as const;
 
 export const ACTIONS = [
@@ -33,6 +34,9 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     integrations: ['view', 'update'],
     audit: ['view', 'export'],
     admins: ['view', 'create', 'update', 'delete'],
+    analytics: ['view', 'export'],
+    logs: ['view', 'export'],
+    alerts: ['view', 'create', 'update', 'delete'],
   },
   ADMIN: {
     dashboard: ['view'],
@@ -45,6 +49,9 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     integrations: ['view'],
     audit: ['view'],
     admins: [],
+    analytics: ['view'],
+    logs: ['view'],
+    alerts: ['view', 'update'],
   },
   KYC_REVIEWER: {
     dashboard: ['view'],
@@ -57,6 +64,9 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     integrations: [],
     audit: [],
     admins: [],
+    analytics: [],
+    logs: [],
+    alerts: [],
   },
   FINANCE: {
     dashboard: ['view'],
@@ -69,6 +79,9 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     integrations: [],
     audit: ['view'],
     admins: [],
+    analytics: ['view'],
+    logs: [],
+    alerts: ['view'],
   },
   SUPPORT: {
     dashboard: ['view'],
@@ -81,6 +94,25 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     integrations: [],
     audit: [],
     admins: [],
+    analytics: [],
+    logs: [],
+    alerts: ['view'],
+  },
+  STATE_OPERATOR: {
+    // Read-only access for government monitoring
+    dashboard: ['view'],
+    users: ['view'], // Can view aggregate user stats
+    kyc: [], // No access to individual KYC documents
+    transactions: ['view', 'export'], // Can view and export transaction reports
+    stock: ['view'], // Can view gold stock levels
+    withdrawals: ['view'], // Can view withdrawal stats
+    reconciliation: ['view'], // Can view reconciliation reports
+    integrations: [], // No access to integrations
+    audit: ['view'], // Can view audit logs
+    admins: [], // No access to admin management
+    analytics: ['view', 'export'], // Full analytics access
+    logs: ['view'], // Can view system logs
+    alerts: ['view'], // Can view alerts
   },
 };
 

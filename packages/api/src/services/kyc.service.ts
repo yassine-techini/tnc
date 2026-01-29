@@ -117,6 +117,51 @@ export class KycService {
   }
 
   /**
+   * Verify Smile Identity webhook signature
+   * Smile Identity signs webhooks with HMAC-SHA256 using the API key
+   */
+  async verifyWebhookSignature(payload: string, signature: string): Promise<boolean> {
+    if (!signature) {
+      return false;
+    }
+
+    try {
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(this.config.apiKey),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+
+      const signatureBuffer = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        encoder.encode(payload)
+      );
+
+      const computedSignature = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      // Constant-time comparison to prevent timing attacks
+      if (computedSignature.length !== signature.length) {
+        return false;
+      }
+
+      let result = 0;
+      for (let i = 0; i < computedSignature.length; i++) {
+        result |= computedSignature.charCodeAt(i) ^ signature.charCodeAt(i);
+      }
+      return result === 0;
+    } catch (error) {
+      console.error('Failed to verify Smile Identity webhook signature:', error);
+      return false;
+    }
+  }
+
+  /**
    * Load KYC limits from config (or use defaults)
    */
   private async getKycLimits(): Promise<Record<string, { dailyBuy: number; monthlyBuy: number; canSell: boolean; dailyWithdraw: number }>> {

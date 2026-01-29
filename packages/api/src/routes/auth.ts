@@ -8,6 +8,7 @@ import { WalletService } from '../services/wallet.service';
 import { SecurityService, SECURITY_DEFAULTS } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
+import { setAuthCookies, clearAuthCookies, getRefreshToken } from '../lib/cookies';
 
 const auth = new Hono<AppEnv>();
 
@@ -37,7 +38,7 @@ const loginSchema = z.object({
 });
 
 const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1).optional(), // Optional - can also come from cookie
 });
 
 const verifyEmailSchema = z.object({
@@ -530,9 +531,13 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       success: true,
     });
 
+    // Set httpOnly cookies for secure token storage
+    setAuthCookies(c, tokens.accessToken, tokens.refreshToken, tokens.expiresIn, c.env.ENVIRONMENT || 'development');
+
     return c.json({
       success: true,
       data: {
+        // Still return tokens in body for mobile apps (they don't use cookies)
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresIn: tokens.expiresIn,
@@ -572,7 +577,21 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
   const authService = new AuthService(c.env.JWT_SECRET);
 
   try {
-    const tokens = await authService.refreshAccessToken(body.refreshToken);
+    // Get refresh token from body or cookie
+    const refreshToken = body.refreshToken || getRefreshToken(c);
+
+    if (!refreshToken) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_REFRESH_TOKEN_REQUIRED',
+          message: 'Token de rafraîchissement requis',
+        },
+        requestId,
+      }, 400);
+    }
+
+    const tokens = await authService.refreshAccessToken(refreshToken);
 
     if (!tokens) {
       return c.json({
@@ -584,6 +603,9 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
         requestId,
       }, 401);
     }
+
+    // Set new cookies
+    setAuthCookies(c, tokens.accessToken, tokens.refreshToken, tokens.expiresIn, c.env.ENVIRONMENT || 'development');
 
     return c.json({
       success: true,
@@ -613,9 +635,11 @@ auth.post('/logout', async (c) => {
   const ipAddress = getClientIp(c);
 
   try {
-    const authHeader = c.req.header('Authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
+    // Get token from header or cookie
+    const { getAccessToken } = await import('../lib/cookies');
+    const token = getAccessToken(c);
+
+    if (token) {
       const authService = new AuthService(c.env.JWT_SECRET);
       const payload = await authService.verifyToken(token);
 
@@ -637,6 +661,9 @@ auth.post('/logout', async (c) => {
         });
       }
     }
+
+    // Clear auth cookies
+    clearAuthCookies(c, c.env.ENVIRONMENT || 'development');
 
     return c.json({
       success: true,
@@ -1911,6 +1938,370 @@ auth.post('/2fa/setup-complete', async (c) => {
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Erreur lors de l\'activation 2FA',
+      },
+      requestId,
+    }, 500);
+  }
+});
+
+// ==========================================
+// PASSWORDLESS AUTHENTICATION
+// ==========================================
+
+const passwordlessRequestSchema = z.object({
+  identifier: z.string().min(1, 'Email ou téléphone requis'),
+  method: z.enum(['email', 'sms']).default('email'),
+});
+
+const passwordlessVerifySchema = z.object({
+  identifier: z.string().min(1, 'Identifiant requis'),
+  code: z.string().length(6, 'Code doit être 6 chiffres'),
+  totpCode: z.string().length(6).optional(),
+});
+
+// POST /auth/passwordless/request - Request a one-time code
+auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema), async (c) => {
+  const body = c.req.valid('json');
+  const requestId = crypto.randomUUID();
+  const ipAddress = getClientIp(c);
+
+  const userService = new UserService(c.env.DB);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const notificationService = new NotificationService(c.env.DB, {
+    resendApiKey: c.env.RESEND_API_KEY,
+    sendgridApiKey: c.env.SENDGRID_API_KEY,
+    twilioAccountSid: c.env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: c.env.TWILIO_AUTH_TOKEN,
+    twilioPhoneNumber: c.env.TWILIO_PHONE_NUMBER,
+  });
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+
+  try {
+    const identifier = body.identifier.toLowerCase().trim();
+    const isEmail = identifier.includes('@');
+    const isPhone = /^\+?[0-9]{10,15}$/.test(identifier.replace(/\s/g, ''));
+
+    // Determine contact method
+    let method = body.method;
+    if (isEmail && method === 'sms') {
+      method = 'email'; // Can't send SMS to email
+    }
+    if (isPhone && !isEmail && method === 'email') {
+      method = 'sms'; // Can't send email to phone
+    }
+
+    // Find user by email or phone
+    let user;
+    if (isEmail) {
+      user = await userService.findByEmail(identifier);
+    } else if (isPhone) {
+      user = await userService.findByPhone(identifier.replace(/\s/g, ''));
+    }
+
+    // Always return success to prevent user enumeration
+    if (!user) {
+      // Still wait a bit to prevent timing attacks
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return c.json({
+        success: true,
+        data: {
+          message: 'Si un compte existe, un code a été envoyé',
+          method: method,
+          expiresIn: 300,
+        },
+        requestId,
+      });
+    }
+
+    // Check rate limiting
+    const rateLimitKey = `passwordless:${identifier}`;
+    const recentAttempts = await c.env.CACHE.get(rateLimitKey);
+    if (recentAttempts) {
+      const attempts = parseInt(recentAttempts);
+      if (attempts >= 3) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'AUTH_RATE_LIMITED',
+            message: 'Trop de demandes. Veuillez réessayer dans quelques minutes.',
+          },
+          requestId,
+        }, 429);
+      }
+      await c.env.CACHE.put(rateLimitKey, String(attempts + 1), { expirationTtl: 300 });
+    } else {
+      await c.env.CACHE.put(rateLimitKey, '1', { expirationTtl: 300 });
+    }
+
+    // Generate 6-digit OTP code
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+
+    // Store code in cache with expiration (5 minutes)
+    const codeData = {
+      code,
+      userId: user.id,
+      method,
+      attempts: 0,
+      createdAt: Date.now(),
+    };
+    await c.env.CACHE.put(
+      `passwordless:code:${identifier}`,
+      JSON.stringify(codeData),
+      { expirationTtl: 300 }
+    );
+
+    // Send code via email or SMS
+    if (method === 'email' && user.email) {
+      await notificationService.sendEmail({
+        to: user.email,
+        subject: 'Votre code de connexion TNC Trading',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #D4AF37;">Code de connexion</h2>
+            <p>Bonjour,</p>
+            <p>Votre code de connexion à usage unique est :</p>
+            <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 20px 0;">
+              ${code}
+            </div>
+            <p>Ce code expire dans 5 minutes.</p>
+            <p style="color: #666; font-size: 12px;">Si vous n'avez pas demandé ce code, ignorez cet email.</p>
+          </div>
+        `,
+        text: `Votre code de connexion TNC Trading: ${code}. Ce code expire dans 5 minutes.`,
+      });
+    } else if (method === 'sms' && user.phone) {
+      await notificationService.sendSms({
+        to: user.phone,
+        message: `TNC Trading: Votre code de connexion est ${code}. Valide 5 minutes.`,
+      });
+    }
+
+    // Log the attempt
+    await securityService.logAuditEvent({
+      userId: user.id,
+      action: 'PASSWORDLESS_CODE_REQUESTED',
+      entityType: 'user',
+      entityId: user.id,
+      ipAddress,
+      riskLevel: 'medium',
+      success: true,
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        message: 'Code envoyé avec succès',
+        method,
+        expiresIn: 300,
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Passwordless request error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de l\'envoi du code',
+      },
+      requestId,
+    }, 500);
+  }
+});
+
+// POST /auth/passwordless/verify - Verify code and login
+auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), async (c) => {
+  const body = c.req.valid('json');
+  const requestId = crypto.randomUUID();
+  const ipAddress = getClientIp(c);
+  const userAgent = getUserAgent(c);
+
+  const userService = new UserService(c.env.DB);
+  const securityService = new SecurityService(c.env.DB, c.env.CACHE);
+  const configService = new ConfigService(c.env.DB, c.env.CACHE);
+  const authService = new AuthService(c.env.JWT_SECRET, configService);
+
+  try {
+    const identifier = body.identifier.toLowerCase().trim();
+
+    // Get stored code
+    const storedDataStr = await c.env.CACHE.get(`passwordless:code:${identifier}`);
+    if (!storedDataStr) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_INVALID_CODE',
+          message: 'Code invalide ou expiré',
+        },
+        requestId,
+      }, 400);
+    }
+
+    const storedData = JSON.parse(storedDataStr);
+
+    // Check max attempts
+    if (storedData.attempts >= 5) {
+      await c.env.CACHE.delete(`passwordless:code:${identifier}`);
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_TOO_MANY_ATTEMPTS',
+          message: 'Trop de tentatives. Veuillez demander un nouveau code.',
+        },
+        requestId,
+      }, 400);
+    }
+
+    // Verify code
+    if (storedData.code !== body.code) {
+      storedData.attempts++;
+      await c.env.CACHE.put(
+        `passwordless:code:${identifier}`,
+        JSON.stringify(storedData),
+        { expirationTtl: 300 }
+      );
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_INVALID_CODE',
+          message: 'Code incorrect',
+          attemptsRemaining: 5 - storedData.attempts,
+        },
+        requestId,
+      }, 400);
+    }
+
+    // Get user
+    const user = await c.env.DB
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(storedData.userId)
+      .first<any>();
+
+    if (!user) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_USER_NOT_FOUND',
+          message: 'Utilisateur non trouvé',
+        },
+        requestId,
+      }, 404);
+    }
+
+    // Check if user is suspended
+    if (user.suspended) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_ACCOUNT_SUSPENDED',
+          message: 'Compte suspendu',
+        },
+        requestId,
+      }, 403);
+    }
+
+    // Check 2FA if enabled (still required even for passwordless)
+    if (user.two_factor_secret && user.two_factor_enabled) {
+      if (!body.totpCode) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'AUTH_2FA_REQUIRED',
+            message: 'Code 2FA requis',
+          },
+          requestId,
+        }, 403);
+      }
+
+      const isValid2FA = await securityService.verifyTotpCode(user.two_factor_secret, body.totpCode);
+      if (!isValid2FA) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'AUTH_2FA_INVALID',
+            message: 'Code 2FA invalide',
+          },
+          requestId,
+        }, 400);
+      }
+    }
+
+    // Delete used code
+    await c.env.CACHE.delete(`passwordless:code:${identifier}`);
+
+    // Generate tokens
+    const tokens = await authService.generateTokens({
+      sub: user.id,
+      email: user.email,
+      kycLevel: user.kyc_level,
+    });
+
+    // Store refresh token
+    const refreshTokenHash = await authService.hashPassword(tokens.refreshToken);
+    const refreshTokenExpiry = await configService.getNumber('refresh_token_expiry_days', 30);
+    await c.env.DB
+      .prepare(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
+                VALUES (?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'))`)
+      .bind(crypto.randomUUID(), user.id, refreshTokenHash, refreshTokenExpiry)
+      .run();
+
+    // Create session
+    const sessionId = crypto.randomUUID();
+    const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
+    const secCfg = await securityService.getSecurityConfig();
+
+    await c.env.DB
+      .prepare(`INSERT INTO active_sessions (id, user_id, session_token_hash, ip_address, user_agent, device_type, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+' || ? || ' hours'), datetime('now'))`)
+      .bind(sessionId, user.id, sessionTokenHash, ipAddress, userAgent, 'web', secCfg.absoluteSessionTimeoutHours)
+      .run();
+
+    // Update last login
+    await c.env.DB
+      .prepare('UPDATE users SET last_login_at = datetime(\'now\'), failed_login_attempts = 0 WHERE id = ?')
+      .bind(user.id)
+      .run();
+
+    // Log successful login
+    await securityService.logAuditEvent({
+      userId: user.id,
+      action: 'USER_PASSWORDLESS_LOGIN',
+      entityType: 'user',
+      entityId: user.id,
+      ipAddress,
+      userAgent,
+      riskLevel: 'medium',
+      success: true,
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        user: {
+          id: user.id,
+          email: user.email,
+          phone: user.phone,
+          country: user.country,
+          kycLevel: user.kyc_level,
+          kycStatus: user.kyc_status,
+          emailVerified: Boolean(user.email_verified),
+          phoneVerified: Boolean(user.phone_verified),
+          twoFactorEnabled: Boolean(user.two_factor_enabled),
+        },
+        sessionId,
+      },
+      requestId,
+    });
+  } catch (error) {
+    console.error('Passwordless verify error:', error);
+    return c.json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erreur lors de la vérification',
       },
       requestId,
     }, 500);

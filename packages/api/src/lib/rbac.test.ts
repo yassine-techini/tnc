@@ -13,12 +13,15 @@ import {
 // ─── Constants ─────────────────────────────────────────
 
 describe('RBAC constants', () => {
-  it('defines 10 modules', () => {
-    expect(MODULES).toHaveLength(10);
+  it('defines 13 modules', () => {
+    expect(MODULES).toHaveLength(13);
     expect(MODULES).toContain('dashboard');
     expect(MODULES).toContain('admins');
     expect(MODULES).toContain('integrations');
     expect(MODULES).toContain('audit');
+    expect(MODULES).toContain('analytics');
+    expect(MODULES).toContain('logs');
+    expect(MODULES).toContain('alerts');
   });
 
   it('defines 7 actions', () => {
@@ -28,12 +31,32 @@ describe('RBAC constants', () => {
     expect(ACTIONS).toContain('export');
   });
 
-  it('defines 5 roles', () => {
+  it('defines 6 roles', () => {
     const roles = Object.keys(ROLE_DEFAULTS);
-    expect(roles).toHaveLength(5);
+    expect(roles).toHaveLength(6);
     expect(roles).toEqual(expect.arrayContaining([
-      'SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT',
+      'SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT', 'STATE_OPERATOR',
     ]));
+  });
+
+  it('STATE_OPERATOR has read-only access for government monitoring', () => {
+    const stateOp = ROLE_DEFAULTS.STATE_OPERATOR;
+    // Has view access to key areas
+    expect(stateOp.dashboard).toContain('view');
+    expect(stateOp.stock).toContain('view');
+    expect(stateOp.users).toContain('view');
+    expect(stateOp.transactions).toContain('view');
+    expect(stateOp.analytics).toContain('view');
+    // Has export for reports
+    expect(stateOp.analytics).toContain('export');
+    expect(stateOp.transactions).toContain('export');
+    // No write access anywhere
+    expect(stateOp.kyc).toHaveLength(0);
+    expect(stateOp.admins).toHaveLength(0);
+    expect(stateOp.integrations).toHaveLength(0);
+    // No approve/create/update/delete actions
+    expect(stateOp.stock).not.toContain('update');
+    expect(stateOp.withdrawals).not.toContain('approve');
   });
 
   it('every role covers all modules', () => {
@@ -85,6 +108,9 @@ describe('hasPermission', () => {
     integrations: [],
     audit: [],
     admins: [],
+    analytics: [],
+    logs: [],
+    alerts: [],
   };
 
   it('returns true when action is in the module list', () => {

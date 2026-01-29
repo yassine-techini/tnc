@@ -184,9 +184,18 @@ webhooks.post('/payment/cinetpay', async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
-    const body = await c.req.json();
+    const rawBody = await c.req.text();
+    const signature = c.req.header('X-CinetPay-Signature') || c.req.header('X-Token') || '';
 
     const { paymentService, notificationService } = getServices(c.env);
+
+    // Verify CinetPay signature
+    if (!(await paymentService.verifyWebhookSignature('cinetpay', rawBody, signature))) {
+      console.error('Invalid CinetPay webhook signature');
+      return c.json({ success: false, error: 'Invalid signature' }, 401);
+    }
+
+    const body = JSON.parse(rawBody);
 
     // CinetPay sends status in different format
     let status: WebhookPayload['status'] = 'PENDING';
@@ -533,7 +542,8 @@ webhooks.post('/kyc', async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
-    const body = await c.req.json();
+    const rawBody = await c.req.text();
+    const signature = c.req.header('X-SmileIdentity-Signature') || c.req.header('X-Signature') || '';
     const { notificationService } = getServices(c.env);
 
     // Initialize KYC service
@@ -543,6 +553,14 @@ webhooks.post('/kyc', async (c) => {
       environment: c.env.ENVIRONMENT === 'production' ? 'production' : 'sandbox',
       callbackUrl: `https://api.tnc-trading.com/api/v1/webhooks/kyc`,
     });
+
+    // Verify Smile Identity webhook signature
+    if (!(await kycService.verifyWebhookSignature(rawBody, signature))) {
+      console.error('Invalid Smile Identity webhook signature');
+      return c.json({ success: false, error: 'Invalid signature', requestId }, 401);
+    }
+
+    const body = JSON.parse(rawBody);
 
     // Process the callback using KycService
     const result = await kycService.processCallback(body);

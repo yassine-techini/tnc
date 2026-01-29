@@ -22,6 +22,16 @@ export interface Env {
   // Durable Objects
   PRICE_TRACKER: DurableObjectNamespace;
   TRANSACTION_SESSION: DurableObjectNamespace;
+  ANALYTICS_HUB: DurableObjectNamespace;
+
+  // Analytics Engine
+  ANALYTICS: AnalyticsEngineDataset;
+
+  // Logs Storage (R2)
+  LOGS_STORAGE: R2Bucket;
+
+  // Alert Queue
+  ALERT_QUEUE: Queue;
   
   // Secrets
   JWT_SECRET: string;
@@ -53,6 +63,10 @@ export interface Env {
   RESEND_API_KEY: string;
   SENDGRID_API_KEY: string;
   FCM_SERVER_KEY: string;
+
+  // Alert Recipients (comma-separated)
+  ALERT_EMAIL_RECIPIENTS?: string;
+  ALERT_SMS_RECIPIENTS?: string;
 
   // Stripe (International card payments)
   STRIPE_SECRET_KEY: string;

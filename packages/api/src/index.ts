@@ -18,6 +18,7 @@ import type { Env, AppEnv } from './types/env';
 import { authMiddleware } from './middleware/auth';
 import { rateLimiter } from './middleware/rate-limiter';
 import { errorHandler } from './middleware/error-handler';
+import { analyticsMiddleware } from './middleware/analytics';
 
 // Routes
 import { authRoutes } from './routes/auth';
@@ -210,6 +211,9 @@ app.use('*', cors({
 // Rate limiting
 app.use('/api/*', rateLimiter);
 
+// Analytics tracking (fire-and-forget, after response)
+app.use('/api/*', analyticsMiddleware);
+
 // Global error handler
 app.onError(errorHandler);
 
@@ -296,7 +300,13 @@ import { handleScheduled, type ScheduledController } from './scheduled';
 // Import notification service for queue consumer
 import { NotificationService, type NotificationQueueMessage } from './services/notification.service';
 
-// Export as module with fetch, scheduled, and queue handlers
+// Import alert service for queue consumer
+import { AlertService, type AlertQueueMessage } from './services/alert.service';
+
+// Import tail handler for log archival
+import { handleTail, type TraceItem } from './tail-handler';
+
+// Export as module with fetch, scheduled, queue, and tail handlers
 export default {
   fetch: app.fetch,
 
@@ -309,12 +319,13 @@ export default {
     await handleScheduled(controller, env, ctx);
   },
 
-  // Queue consumer for async notifications
+  // Queue consumer for async notifications and alerts
   async queue(
-    batch: MessageBatch<NotificationQueueMessage>,
+    batch: MessageBatch<NotificationQueueMessage | AlertQueueMessage>,
     env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
+    // Initialize services
     const notificationService = new NotificationService(env.DB, {
       resendApiKey: env.RESEND_API_KEY,
       sendgridApiKey: env.SENDGRID_API_KEY,
@@ -324,9 +335,26 @@ export default {
       fcmServerKey: env.FCM_SERVER_KEY,
     });
 
+    const alertService = new AlertService(env.DB, undefined, {
+      resendApiKey: env.RESEND_API_KEY,
+      twilioAccountSid: env.TWILIO_ACCOUNT_SID,
+      twilioAuthToken: env.TWILIO_AUTH_TOKEN,
+      twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
+      alertEmailRecipients: env.ALERT_EMAIL_RECIPIENTS,
+      alertSmsRecipients: env.ALERT_SMS_RECIPIENTS,
+    });
+
     for (const message of batch.messages) {
       try {
-        await notificationService.processNotification(message.body);
+        const body = message.body;
+
+        // Route based on message type
+        if ('type' in body && body.type === 'ALERT_TRIGGER') {
+          await alertService.processQueueMessage(body as AlertQueueMessage);
+        } else {
+          await notificationService.processNotification(body as NotificationQueueMessage);
+        }
+
         message.ack();
       } catch (error) {
         console.error('Queue message processing failed:', error);
@@ -334,8 +362,18 @@ export default {
       }
     }
   },
+
+  // Tail handler for log archival
+  async tail(
+    events: TraceItem[],
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    await handleTail(events, env, ctx);
+  },
 };
 
 // Export Durable Objects
 export { PriceTracker } from './durable-objects/price-tracker';
 export { TransactionSession } from './durable-objects/transaction-session';
+export { AnalyticsHub } from './durable-objects/analytics-hub';

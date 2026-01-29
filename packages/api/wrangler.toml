@@ -29,6 +29,11 @@ id = "beb8b11d293347418c089c5d97b4d9a5"
 binding = "STORAGE"
 bucket_name = "tnc-trading-documents-dev"
 
+# R2 Bucket for logs archival
+[[r2_buckets]]
+binding = "LOGS_STORAGE"
+bucket_name = "tnc-trading-logs-dev"
+
 # Queue for async notifications
 [[queues.producers]]
 binding = "NOTIFICATIONS_QUEUE"
@@ -41,6 +46,17 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "tnc-notifications-dlq-dev"
 
+# Queue for alerts
+[[queues.producers]]
+binding = "ALERT_QUEUE"
+queue = "tnc-alerts-dev"
+
+[[queues.consumers]]
+queue = "tnc-alerts-dev"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+
 # Durable Objects
 [[durable_objects.bindings]]
 name = "PRICE_TRACKER"
@@ -50,10 +66,18 @@ class_name = "PriceTracker"
 name = "TRANSACTION_SESSION"
 class_name = "TransactionSession"
 
+[[durable_objects.bindings]]
+name = "ANALYTICS_HUB"
+class_name = "AnalyticsHub"
+
 # Migrations for Durable Objects
 [[migrations]]
 tag = "v1"
 new_classes = ["PriceTracker", "TransactionSession"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["AnalyticsHub"]
 
 # Scheduled Jobs (Cron Triggers)
 [triggers]
@@ -88,6 +112,10 @@ id = "418b5d6606a2473ab540b91e9b1b05d9"
 binding = "STORAGE"
 bucket_name = "tnc-trading-documents-staging"
 
+[[env.staging.r2_buckets]]
+binding = "LOGS_STORAGE"
+bucket_name = "tnc-trading-logs-staging"
+
 [[env.staging.queues.producers]]
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications-staging"
@@ -99,6 +127,16 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "tnc-notifications-dlq-staging"
 
+[[env.staging.queues.producers]]
+binding = "ALERT_QUEUE"
+queue = "tnc-alerts-staging"
+
+[[env.staging.queues.consumers]]
+queue = "tnc-alerts-staging"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+
 [[env.staging.durable_objects.bindings]]
 name = "PRICE_TRACKER"
 class_name = "PriceTracker"
@@ -106,6 +144,10 @@ class_name = "PriceTracker"
 [[env.staging.durable_objects.bindings]]
 name = "TRANSACTION_SESSION"
 class_name = "TransactionSession"
+
+[[env.staging.durable_objects.bindings]]
+name = "ANALYTICS_HUB"
+class_name = "AnalyticsHub"
 
 [env.staging.triggers]
 crons = [
@@ -115,6 +157,10 @@ crons = [
   "0 3 * * *",
   "0 1 1 * *",
 ]
+
+[[env.staging.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "tnc_trading_events_staging"
 
 # ============================================
 # Production Environment
@@ -143,6 +189,10 @@ id = "54194aac4f444552b47da843c1b28288"
 binding = "STORAGE"
 bucket_name = "tnc-trading-documents"
 
+[[env.production.r2_buckets]]
+binding = "LOGS_STORAGE"
+bucket_name = "tnc-trading-logs"
+
 [[env.production.queues.producers]]
 binding = "NOTIFICATIONS_QUEUE"
 queue = "tnc-notifications"
@@ -154,6 +204,16 @@ max_batch_timeout = 30
 max_retries = 5
 dead_letter_queue = "tnc-notifications-dlq"
 
+[[env.production.queues.producers]]
+binding = "ALERT_QUEUE"
+queue = "tnc-alerts"
+
+[[env.production.queues.consumers]]
+queue = "tnc-alerts"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 5
+
 [[env.production.durable_objects.bindings]]
 name = "PRICE_TRACKER"
 class_name = "PriceTracker"
@@ -161,6 +221,10 @@ class_name = "PriceTracker"
 [[env.production.durable_objects.bindings]]
 name = "TRANSACTION_SESSION"
 class_name = "TransactionSession"
+
+[[env.production.durable_objects.bindings]]
+name = "ANALYTICS_HUB"
+class_name = "AnalyticsHub"
 
 [env.production.triggers]
 crons = [
@@ -170,6 +234,10 @@ crons = [
   "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
   "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
 ]
+
+[[env.production.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "tnc_trading_events"
 
 # ============================================
 # Secrets (set via `wrangler secret put`)

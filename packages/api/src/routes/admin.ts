@@ -8,6 +8,7 @@ import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
+import { analyticsRoutes } from './admin/analytics';
 
 const admin = new Hono<AppEnv>();
 
@@ -2876,5 +2877,10 @@ admin.patch('/config/:key', requirePermission('integrations', 'update'), async (
     return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
   }
 });
+
+// ============================================
+// ANALYTICS ROUTES
+// ============================================
+admin.route('/analytics', analyticsRoutes);
 
 export const adminRoutes = admin;
