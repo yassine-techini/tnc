@@ -125,6 +125,10 @@ app.use('*', async (c, next) => {
             'https://tnc-trading-web.pages.dev',
             'https://tnc-trading-admin.pages.dev',
             'https://tnc-trading-state-portal.pages.dev',
+            // Staging URLs
+            'https://tnc-trading-web-staging.pages.dev',
+            'https://tnc-trading-admin-staging.pages.dev',
+            'https://tnc-trading-state-staging.pages.dev',
           ];
       const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state-portal)(-dev)?\.pages\.dev$/;
       const isAllowed = allowedOrigins.includes(origin)
@@ -137,7 +141,11 @@ app.use('*', async (c, next) => {
         || origin.endsWith('.tnc-trading-state-portal-dev.pages.dev')
         || origin.endsWith('.tnc-trading-web.pages.dev')
         || origin.endsWith('.tnc-trading-admin.pages.dev')
-        || origin.endsWith('.tnc-trading-state-portal.pages.dev');
+        || origin.endsWith('.tnc-trading-state-portal.pages.dev')
+        // Staging preview URLs
+        || origin.endsWith('.tnc-trading-web-staging.pages.dev')
+        || origin.endsWith('.tnc-trading-admin-staging.pages.dev')
+        || origin.endsWith('.tnc-trading-state-staging.pages.dev');
 
       if (!isAllowed) {
         return c.json({
