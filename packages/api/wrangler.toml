@@ -79,6 +79,11 @@ new_classes = ["PriceTracker", "TransactionSession"]
 tag = "v2"
 new_classes = ["AnalyticsHub"]
 
+# v3: No new classes - sync migration state
+[[migrations]]
+tag = "v3"
+new_classes = []
+
 # Scheduled Jobs (Cron Triggers)
 [triggers]
 crons = [
