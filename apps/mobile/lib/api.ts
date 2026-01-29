@@ -2,6 +2,12 @@ import * as Application from 'expo-application';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { useAuthStore } from '../stores/auth';
+import {
+  PINNED_DOMAINS,
+  SSL_PINNING_CONFIG,
+  requiresPinning,
+  reportPinningFailure,
+} from './ssl-pinning';
 
 // API URL must be set via environment variable in production builds
 const API_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
@@ -9,12 +15,8 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
   : (() => { throw new Error('EXPO_PUBLIC_API_URL must be set in production'); })()
 );
 
-// Expected API host for certificate pinning validation
-const ALLOWED_API_HOSTS = [
-  'tnc-trading-api-staging.yassine-techini.workers.dev',
-  'tnc-trading-api-dev.yassine-techini.workers.dev',
-  'bf-api.tnc.trading',
-];
+// Expected API host for certificate pinning validation (now using ssl-pinning module)
+const ALLOWED_API_HOSTS = PINNED_DOMAINS;
 
 interface ApiResponse<T> {
   success: true;
@@ -61,11 +63,15 @@ class MobileApiClient {
   private refreshPromise: RefreshPromise | null = null;
 
   constructor(baseUrl: string) {
-    // Validate API host against allowlist
+    // Validate API host against allowlist (SSL pinning domains)
     try {
       const url = new URL(baseUrl);
       if (!ALLOWED_API_HOSTS.includes(url.host)) {
         console.warn(`API host ${url.host} not in allowlist — possible misconfiguration`);
+      }
+      // In production, require pinning for API host
+      if (!__DEV__ && SSL_PINNING_CONFIG.enabled && requiresPinning(url.host)) {
+        console.log(`[SSL Pinning] Pinning enabled for ${url.host}`);
       }
     } catch {
       throw new Error('Invalid API base URL');
@@ -245,6 +251,32 @@ class MobileApiClient {
         // Convert AbortError to a user-friendly timeout message
         if (lastError.name === 'AbortError') {
           lastError = new Error('Connexion lente. Veuillez réessayer.');
+        }
+
+        // Detect potential SSL pinning failures (certificate validation errors)
+        const sslErrorPatterns = [
+          'SSL',
+          'certificate',
+          'trust',
+          'handshake',
+          'CERT_',
+          'sec_error',
+          'kSecTrustResult',
+        ];
+        const isSslError = sslErrorPatterns.some((pattern) =>
+          lastError.message.toLowerCase().includes(pattern.toLowerCase())
+        );
+
+        if (isSslError && SSL_PINNING_CONFIG.reportFailures) {
+          // Report potential MITM attack
+          const urlObj = new URL(url);
+          reportPinningFailure({
+            success: false,
+            host: urlObj.host,
+            error: lastError.message,
+          });
+          // Don't retry SSL errors - they indicate a security issue
+          throw new Error('Erreur de sécurité de connexion. Vérifiez votre réseau.');
         }
 
         // Don't retry on auth or business logic errors
@@ -530,6 +562,73 @@ class MobileApiClient {
     });
   }
 
+  // Passwordless Authentication
+  async requestPasswordlessCode(identifier: string, method: 'email' | 'sms' = 'email') {
+    return this.request<{
+      message: string;
+      method: string;
+      expiresIn: number;
+    }>('/api/v1/auth/passwordless/request', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, method }),
+    });
+  }
+
+  async verifyPasswordlessCode(identifier: string, code: string, totpCode?: string): Promise<{
+    success: true;
+    data: {
+      accessToken: string;
+      refreshToken: string;
+      expiresIn: number;
+      user: {
+        id: string;
+        email: string;
+        phone: string;
+        country: string;
+        kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
+        kycStatus: string;
+        emailVerified: boolean;
+        phoneVerified: boolean;
+        twoFactorEnabled: boolean;
+      };
+    };
+  } | {
+    success: false;
+    requires2FA: true;
+    error: { code: string; message: string };
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/passwordless/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Version': '1.0',
+        'X-Platform': 'mobile',
+        'X-Device-Id': this.deviceId || 'unknown',
+      },
+      body: JSON.stringify({ identifier, code, totpCode }),
+    });
+
+    const data = await response.json();
+
+    // Handle 2FA required
+    if (data.error?.code === 'AUTH_2FA_REQUIRED') {
+      return {
+        success: false,
+        requires2FA: true,
+        error: data.error,
+      };
+    }
+
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Code invalide');
+    }
+
+    return {
+      success: true,
+      data: data.data,
+    };
+  }
+
   // Certificate
   async getCertificate(token: string) {
     return this.request<{
@@ -540,6 +639,80 @@ class MobileApiClient {
       tokenBalance: number;
       issuedAt: string;
     }>('/api/v1/wallet/certificate', { token });
+  }
+
+  // Price Alerts
+  async getPriceAlerts(token: string, includeTriggered = false) {
+    return this.request<{
+      items: Array<{
+        id: string;
+        alertType: 'ABOVE' | 'BELOW';
+        targetPrice: number;
+        currency: 'XOF' | 'USD';
+        notificationMethod: 'PUSH' | 'EMAIL' | 'SMS' | 'ALL';
+        isActive: boolean;
+        triggered: boolean;
+        triggeredAt: string | null;
+        triggeredPrice: number | null;
+        note: string | null;
+        createdAt: string;
+      }>;
+      total: number;
+      currentPrice: {
+        priceXof: number;
+        priceUsd: number;
+        buyPrice: number;
+        sellPrice: number;
+      };
+    }>(`/api/v1/users/me/price-alerts?includeTriggered=${includeTriggered}`, { token });
+  }
+
+  async createPriceAlert(
+    data: {
+      alertType: 'ABOVE' | 'BELOW';
+      targetPrice: number;
+      currency?: 'XOF' | 'USD';
+      notificationMethod?: 'PUSH' | 'EMAIL' | 'SMS' | 'ALL';
+      note?: string;
+    },
+    token: string
+  ) {
+    return this.request<{
+      id: string;
+      message: string;
+    }>('/api/v1/users/me/price-alerts', {
+      method: 'POST',
+      body: JSON.stringify({
+        alertType: data.alertType,
+        targetPrice: data.targetPrice,
+        currency: data.currency || 'XOF',
+        notificationMethod: data.notificationMethod || 'ALL',
+        note: data.note,
+      }),
+      token,
+    });
+  }
+
+  async updatePriceAlert(
+    alertId: string,
+    data: { isActive?: boolean; note?: string },
+    token: string
+  ) {
+    return this.request<{
+      id: string;
+      message: string;
+    }>(`/api/v1/users/me/price-alerts/${alertId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+      token,
+    });
+  }
+
+  async deletePriceAlert(alertId: string, token: string) {
+    return this.request<{ message: string }>(`/api/v1/users/me/price-alerts/${alertId}`, {
+      method: 'DELETE',
+      token,
+    });
   }
 }
 

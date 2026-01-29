@@ -32,6 +32,8 @@ const DEMO_ACCOUNTS = __DEV__ ? [
 ] : [];
 
 type ScreenMode = 'biometric' | 'credentials';
+type LoginMode = 'password' | 'passwordless';
+type PasswordlessStep = 'request' | 'verify' | '2fa';
 
 export default function LoginScreen() {
   const c = useThemeColors();
@@ -50,6 +52,21 @@ export default function LoginScreen() {
   const [lastUserEmail, setLastUserEmail] = useState('');
   const [biometricType, setBiometricType] = useState<'face' | 'fingerprint'>('fingerprint');
   const [checkingBiometric, setCheckingBiometric] = useState(true);
+
+  // Passwordless state
+  const [loginMode, setLoginMode] = useState<LoginMode>('password');
+  const [passwordlessStep, setPasswordlessStep] = useState<PasswordlessStep>('request');
+  const [passwordlessMethod, setPasswordlessMethod] = useState<'email' | 'sms'>('email');
+  const [otpCode, setOtpCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  // Countdown timer for resend
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   const fillDemoAccount = (account: typeof DEMO_ACCOUNTS[0]) => {
     setFormData({ ...formData, identifier: account.email, password: account.password });
@@ -221,6 +238,106 @@ export default function LoginScreen() {
     }
   }, [login]);
 
+  const handlePasswordlessRequest = async () => {
+    setErrorMsg('');
+    const identifier = formData.identifier.trim();
+
+    if (!identifier) {
+      setErrorMsg('Veuillez entrer votre email ou numéro de téléphone');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      await api.requestPasswordlessCode(identifier, passwordlessMethod);
+      setPasswordlessStep('verify');
+      setCountdown(60);
+      setOtpCode('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erreur lors de l\'envoi du code';
+      setErrorMsg(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasswordlessVerify = async () => {
+    setErrorMsg('');
+
+    if (otpCode.length !== 6) {
+      setErrorMsg('Veuillez entrer le code à 6 chiffres');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const result = await api.verifyPasswordlessCode(
+        formData.identifier,
+        otpCode,
+        passwordlessStep === '2fa' ? formData.totpCode : undefined
+      );
+
+      if (!result.success) {
+        if ('requires2FA' in result && result.requires2FA) {
+          setPasswordlessStep('2fa');
+          setIsLoading(false);
+          return;
+        }
+        return;
+      }
+
+      if (result.success) {
+        const userData = {
+          id: result.data.user.id,
+          email: result.data.user.email,
+          phone: result.data.user.phone,
+          country: result.data.user.country,
+          kycLevel: result.data.user.kycLevel,
+          kycStatus: result.data.user.kycStatus as any,
+          emailVerified: result.data.user.emailVerified,
+          phoneVerified: result.data.user.phoneVerified,
+          twoFactorEnabled: result.data.user.twoFactorEnabled,
+        };
+
+        login(userData, {
+          accessToken: result.data.accessToken,
+          refreshToken: result.data.refreshToken,
+          expiresIn: result.data.expiresIn,
+        });
+
+        // Save refresh token for biometric + remember email
+        const biometricOn = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+        if (biometricOn === 'true') {
+          await SecureStore.setItemAsync(BIOMETRIC_REFRESH_TOKEN_KEY, result.data.refreshToken);
+        }
+        await SecureStore.setItemAsync(LAST_USER_EMAIL_KEY, result.data.user.email);
+
+        router.replace('/(tabs)');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Code invalide';
+      setErrorMsg(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (countdown > 0) return;
+    await handlePasswordlessRequest();
+  };
+
+  const switchLoginMode = (mode: LoginMode) => {
+    setLoginMode(mode);
+    setPasswordlessStep('request');
+    setOtpCode('');
+    setErrorMsg('');
+    setShowTOTP(false);
+    setFormData({ ...formData, totpCode: '' });
+  };
+
   // Loading check
   if (checkingBiometric) {
     return (
@@ -325,92 +442,352 @@ export default function LoginScreen() {
         <View style={styles.form}>
           <Text style={[styles.formTitle, { color: c.text }]}>Connexion</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: c.textSecondary }]}>Email ou telephone</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
-              <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: c.text }]}
-                placeholder="email@example.com"
-                placeholderTextColor={c.textTertiary}
-                value={formData.identifier}
-                onChangeText={(text) => setFormData({ ...formData, identifier: text })}
-                autoCapitalize="none"
-                keyboardType="email-address"
+          {/* Login Mode Toggle */}
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                loginMode === 'password' && styles.modeButtonActive,
+              ]}
+              onPress={() => switchLoginMode('password')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="lock-closed-outline"
+                size={16}
+                color={loginMode === 'password' ? '#0F0F1A' : '#D4AF37'}
               />
-            </View>
+              <Text style={[
+                styles.modeButtonText,
+                loginMode === 'password' && styles.modeButtonTextActive,
+              ]}>Mot de passe</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                loginMode === 'passwordless' && styles.modeButtonActive,
+              ]}
+              onPress={() => switchLoginMode('passwordless')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="mail-outline"
+                size={16}
+                color={loginMode === 'passwordless' ? '#0F0F1A' : '#D4AF37'}
+              />
+              <Text style={[
+                styles.modeButtonText,
+                loginMode === 'passwordless' && styles.modeButtonTextActive,
+              ]}>Code unique</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: c.textSecondary }]}>Mot de passe</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
-              <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: c.text }]}
-                placeholder="Votre mot de passe"
-                placeholderTextColor={c.textTertiary}
-                value={formData.password}
-                onChangeText={(text) => setFormData({ ...formData, password: text })}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeButton}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color={c.textTertiary}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {showTOTP && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: c.textSecondary }]}>Code 2FA</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: c.text }]}
-                  placeholder="123456"
-                  placeholderTextColor={c.textTertiary}
-                  value={formData.totpCode}
-                  onChangeText={(text) => setFormData({ ...formData, totpCode: text })}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
+          {/* PASSWORD MODE */}
+          {loginMode === 'password' && (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: c.textSecondary }]}>Email ou telephone</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                  <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { color: c.text }]}
+                    placeholder="email@example.com"
+                    placeholderTextColor={c.textTertiary}
+                    value={formData.identifier}
+                    onChangeText={(text) => setFormData({ ...formData, identifier: text })}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
               </View>
-            </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: c.textSecondary }]}>Mot de passe</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                  <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { color: c.text }]}
+                    placeholder="Votre mot de passe"
+                    placeholderTextColor={c.textTertiary}
+                    value={formData.password}
+                    onChangeText={(text) => setFormData({ ...formData, password: text })}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeButton}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color={c.textTertiary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {showTOTP && (
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: c.textSecondary }]}>Code 2FA</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, { color: c.text }]}
+                      placeholder="123456"
+                      placeholderTextColor={c.textTertiary}
+                      value={formData.totpCode}
+                      onChangeText={(text) => setFormData({ ...formData, totpCode: text })}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.forgotPassword}>
+                <Text style={styles.forgotPasswordText}>Mot de passe oublie ?</Text>
+              </TouchableOpacity>
+
+              {errorMsg ? (
+                <InlineMessage
+                  type="error"
+                  message={errorMsg}
+                  onDismiss={() => setErrorMsg('')}
+                />
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleLogin}
+                disabled={isLoading}
+                activeOpacity={0.8}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#0F0F1A" />
+                ) : (
+                  <>
+                    <Text style={styles.buttonText}>Se connecter</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#0F0F1A" />
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
           )}
 
-          <TouchableOpacity style={styles.forgotPassword}>
-            <Text style={styles.forgotPasswordText}>Mot de passe oublie ?</Text>
-          </TouchableOpacity>
+          {/* PASSWORDLESS MODE */}
+          {loginMode === 'passwordless' && (
+            <>
+              {/* Step 1: Request Code */}
+              {passwordlessStep === 'request' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: c.textSecondary }]}>Email ou telephone</Text>
+                    <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                      <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, { color: c.text }]}
+                        placeholder="email@example.com"
+                        placeholderTextColor={c.textTertiary}
+                        value={formData.identifier}
+                        onChangeText={(text) => setFormData({ ...formData, identifier: text })}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                      />
+                    </View>
+                  </View>
 
-          {errorMsg ? (
-            <InlineMessage
-              type="error"
-              message={errorMsg}
-              onDismiss={() => setErrorMsg('')}
-            />
-          ) : null}
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: c.textSecondary }]}>Recevoir le code par</Text>
+                    <View style={styles.methodToggle}>
+                      <TouchableOpacity
+                        style={[
+                          styles.methodButton,
+                          passwordlessMethod === 'email' && styles.methodButtonActive,
+                        ]}
+                        onPress={() => setPasswordlessMethod('email')}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name="mail-outline"
+                          size={16}
+                          color={passwordlessMethod === 'email' ? '#0F0F1A' : '#D4AF37'}
+                        />
+                        <Text style={[
+                          styles.methodButtonText,
+                          passwordlessMethod === 'email' && styles.methodButtonTextActive,
+                        ]}>Email</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.methodButton,
+                          passwordlessMethod === 'sms' && styles.methodButtonActive,
+                        ]}
+                        onPress={() => setPasswordlessMethod('sms')}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name="chatbubble-outline"
+                          size={16}
+                          color={passwordlessMethod === 'sms' ? '#0F0F1A' : '#D4AF37'}
+                        />
+                        <Text style={[
+                          styles.methodButtonText,
+                          passwordlessMethod === 'sms' && styles.methodButtonTextActive,
+                        ]}>SMS</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-          <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={isLoading}
-            activeOpacity={0.8}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#0F0F1A" />
-            ) : (
-              <>
-                <Text style={styles.buttonText}>Se connecter</Text>
-                <Ionicons name="arrow-forward" size={20} color="#0F0F1A" />
-              </>
-            )}
-          </TouchableOpacity>
+                  {errorMsg ? (
+                    <InlineMessage
+                      type="error"
+                      message={errorMsg}
+                      onDismiss={() => setErrorMsg('')}
+                    />
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.button, isLoading && styles.buttonDisabled]}
+                    onPress={handlePasswordlessRequest}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#0F0F1A" />
+                    ) : (
+                      <>
+                        <Text style={styles.buttonText}>Envoyer le code</Text>
+                        <Ionicons name="send-outline" size={20} color="#0F0F1A" />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* Step 2: Verify Code */}
+              {passwordlessStep === 'verify' && (
+                <>
+                  <View style={styles.verifyHeader}>
+                    <Ionicons name="mail-open-outline" size={48} color="#D4AF37" />
+                    <Text style={[styles.verifyTitle, { color: c.text }]}>Code envoyé</Text>
+                    <Text style={[styles.verifySubtitle, { color: c.textSecondary }]}>
+                      Entrez le code à 6 chiffres envoyé à {formData.identifier}
+                    </Text>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: c.textSecondary }]}>Code à usage unique</Text>
+                    <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                      <Ionicons name="keypad-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, styles.otpInput, { color: c.text }]}
+                        placeholder="000000"
+                        placeholderTextColor={c.textTertiary}
+                        value={otpCode}
+                        onChangeText={setOtpCode}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        autoFocus
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.resendRow}>
+                    {countdown > 0 ? (
+                      <Text style={[styles.countdownText, { color: c.textSecondary }]}>
+                        Renvoyer dans {countdown}s
+                      </Text>
+                    ) : (
+                      <TouchableOpacity onPress={handleResendCode} disabled={isLoading}>
+                        <Text style={styles.resendText}>Renvoyer le code</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity onPress={() => setPasswordlessStep('request')}>
+                      <Text style={styles.changeIdentifierText}>Changer d'identifiant</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {errorMsg ? (
+                    <InlineMessage
+                      type="error"
+                      message={errorMsg}
+                      onDismiss={() => setErrorMsg('')}
+                    />
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.button, (isLoading || otpCode.length !== 6) && styles.buttonDisabled]}
+                    onPress={handlePasswordlessVerify}
+                    disabled={isLoading || otpCode.length !== 6}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#0F0F1A" />
+                    ) : (
+                      <>
+                        <Text style={styles.buttonText}>Vérifier</Text>
+                        <Ionicons name="checkmark" size={20} color="#0F0F1A" />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* Step 3: 2FA (if enabled) */}
+              {passwordlessStep === '2fa' && (
+                <>
+                  <View style={styles.verifyHeader}>
+                    <Ionicons name="shield-checkmark-outline" size={48} color="#D4AF37" />
+                    <Text style={[styles.verifyTitle, { color: c.text }]}>Vérification 2FA</Text>
+                    <Text style={[styles.verifySubtitle, { color: c.textSecondary }]}>
+                      Entrez le code de votre application d'authentification
+                    </Text>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: c.textSecondary }]}>Code 2FA</Text>
+                    <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
+                      <Ionicons name="shield-checkmark-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, styles.otpInput, { color: c.text }]}
+                        placeholder="000000"
+                        placeholderTextColor={c.textTertiary}
+                        value={formData.totpCode}
+                        onChangeText={(text) => setFormData({ ...formData, totpCode: text })}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        autoFocus
+                      />
+                    </View>
+                  </View>
+
+                  {errorMsg ? (
+                    <InlineMessage
+                      type="error"
+                      message={errorMsg}
+                      onDismiss={() => setErrorMsg('')}
+                    />
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={[styles.button, (isLoading || formData.totpCode.length !== 6) && styles.buttonDisabled]}
+                    onPress={handlePasswordlessVerify}
+                    disabled={isLoading || formData.totpCode.length !== 6}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#0F0F1A" />
+                    ) : (
+                      <>
+                        <Text style={styles.buttonText}>Se connecter</Text>
+                        <Ionicons name="arrow-forward" size={20} color="#0F0F1A" />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
         </View>
 
         {/* Footer */}
@@ -717,5 +1094,103 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  // ── Passwordless styles ──
+  modeToggle: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+    borderRadius: 10,
+  },
+  modeButtonActive: {
+    backgroundColor: '#D4AF37',
+    borderColor: '#D4AF37',
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#D4AF37',
+  },
+  modeButtonTextActive: {
+    color: '#0F0F1A',
+  },
+  methodToggle: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  methodButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+    borderRadius: 10,
+  },
+  methodButtonActive: {
+    backgroundColor: '#D4AF37',
+    borderColor: '#D4AF37',
+  },
+  methodButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#D4AF37',
+  },
+  methodButtonTextActive: {
+    color: '#0F0F1A',
+  },
+  verifyHeader: {
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingVertical: 16,
+  },
+  verifyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginTop: 8,
+  },
+  verifySubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  otpInput: {
+    textAlign: 'center',
+    letterSpacing: 8,
+    fontSize: 24,
+    fontWeight: '600',
+  },
+  resendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  countdownText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+  },
+  resendText: {
+    fontSize: 13,
+    color: '#D4AF37',
+    fontWeight: '500',
+  },
+  changeIdentifierText: {
+    fontSize: 13,
+    color: '#6B7280',
   },
 });

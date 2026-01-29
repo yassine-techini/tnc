@@ -58,7 +58,22 @@
           "cameraPermission": "Autoriser TNC Trading a acceder a la camera"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "./plugins/withSSLPinning",
+        {
+          "domains": {
+            "bf-api.tnc.trading": [
+              "sha256/jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=",
+              "sha256/5VLcahb6x4EvvFrCF2TePj8ZmM2w8h6vXhPvrTbU/qI="
+            ],
+            "tnc-trading-api-staging.yassine-techini.workers.dev": [
+              "sha256/jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=",
+              "sha256/5VLcahb6x4EvvFrCF2TePj8ZmM2w8h6vXhPvrTbU/qI="
+            ]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
