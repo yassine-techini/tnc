@@ -182,8 +182,15 @@ wallet.get('/transactions/:id', async (c) => {
   });
 });
 
+// Amount bounds for deposits/withdrawals (XOF)
+// max: 10,000,000 XOF (10M) - reasonable upper limit per transaction
+// min: validated dynamically from config (default 1000 XOF)
+const WALLET_MAX_AMOUNT = 10_000_000;
+
 const depositSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number()
+    .positive('Montant doit être positif')
+    .max(WALLET_MAX_AMOUNT, `Montant maximum: ${WALLET_MAX_AMOUNT.toLocaleString('fr-FR')} XOF`),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'card', 'bank']),
   phoneNumber: z.string().optional(), // Required for mobile money
 });
@@ -333,7 +340,9 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
 });
 
 const withdrawSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number()
+    .positive('Montant doit être positif')
+    .max(WALLET_MAX_AMOUNT, `Montant maximum: ${WALLET_MAX_AMOUNT.toLocaleString('fr-FR')} XOF`),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'bank']),
   phoneNumber: z.string().optional(), // Required for mobile money
   bankAccount: z.string().optional(), // Required for bank
@@ -561,7 +570,37 @@ wallet.get('/certificate', async (c) => {
 
 // GET /wallet/certificate/:id - Download certificate HTML
 wallet.get('/certificate/:id', async (c) => {
+  const userId = c.get('userId');
   const { id } = c.req.param();
+  const requestId = crypto.randomUUID();
+
+  // SECURITY: Verify certificate belongs to the authenticated user
+  const certificate = await c.env.DB
+    .prepare('SELECT user_id FROM certificates WHERE id = ?')
+    .bind(id)
+    .first<{ user_id: string }>();
+
+  if (!certificate) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'CERTIFICATE_NOT_FOUND',
+        message: 'Certificat non trouvé ou expiré',
+      },
+      requestId,
+    }, 404);
+  }
+
+  if (certificate.user_id !== userId) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'CERTIFICATE_ACCESS_DENIED',
+        message: 'Accès refusé',
+      },
+      requestId,
+    }, 403);
+  }
 
   const certificateService = new CertificateService(c.env.DB, c.env.STORAGE, c.env.CACHE);
   const html = await certificateService.getCertificateHtml(id);
@@ -573,7 +612,7 @@ wallet.get('/certificate/:id', async (c) => {
         code: 'CERTIFICATE_NOT_FOUND',
         message: 'Certificat non trouvé ou expiré',
       },
-      requestId: crypto.randomUUID(),
+      requestId,
     }, 404);
   }
 

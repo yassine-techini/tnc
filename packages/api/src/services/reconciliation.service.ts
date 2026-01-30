@@ -72,16 +72,24 @@ export class ReconciliationService {
     if (!thresholdMinutes && this.configService) {
       thresholdMinutes = await this.configService.getNumber('reconciliation_stuck_transaction_minutes', 60);
     }
-    thresholdMinutes = thresholdMinutes || 60;
+    // SECURITY: Clamp threshold to safe range [1, 10080] (1 minute to 7 days)
+    // This prevents SQL injection and unreasonable values
+    const safeThreshold = Math.max(1, Math.min(Math.floor(thresholdMinutes || 60), 10080));
+
+    // Calculate the cutoff datetime in JavaScript and pass as parameter
+    // This avoids string interpolation in SQL
+    const cutoffDate = new Date(Date.now() - safeThreshold * 60 * 1000).toISOString();
+
     const result = await this.db
       .prepare(`
         SELECT t.*, u.email as user_email
         FROM transactions t
         LEFT JOIN users u ON t.user_id = u.id
         WHERE t.status IN ('PENDING', 'PROCESSING')
-          AND datetime(t.created_at, '+${thresholdMinutes} minutes') < datetime('now')
+          AND t.created_at < ?
         ORDER BY t.created_at ASC
       `)
+      .bind(cutoffDate)
       .all<Transaction & { user_email: string }>();
 
     return result.results || [];
@@ -233,17 +241,18 @@ export class ReconciliationService {
    */
   private async refundTransaction(transaction: Transaction): Promise<void> {
     if (transaction.type === 'BUY') {
-      // Refund cash for cancelled buy
+      // Refund cash for cancelled buy (cash_amount + fees = total paid by user)
+      const totalPaid = transaction.cash_amount + (transaction.fees || 0);
       await this.db
         .prepare(`
           UPDATE wallets
           SET cash_balance = cash_balance + ?, updated_at = datetime('now')
           WHERE id = ?
         `)
-        .bind(transaction.cash_amount, transaction.wallet_id)
+        .bind(totalPaid, transaction.wallet_id)
         .run();
     } else if (transaction.type === 'WITHDRAWAL') {
-      // Refund cash for cancelled withdrawal
+      // Refund cash for cancelled withdrawal (full cash_amount was debited)
       await this.db
         .prepare(`
           UPDATE wallets

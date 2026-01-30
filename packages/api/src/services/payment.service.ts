@@ -54,7 +54,44 @@ export interface WebhookPayload {
   reference: string;
   timestamp: string;
   signature?: string;
-  raw?: any;
+  raw?: Record<string, unknown>;
+}
+
+/** Payment status check result with provider-specific details */
+export interface PaymentStatusResult {
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'ERROR' | string;
+  details?: PaymentStatusDetails;
+}
+
+export interface PaymentStatusDetails {
+  error?: string;
+  transactionId?: string;
+  providerStatus?: string;
+  amount?: number;
+  currency?: string;
+  paidAt?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  [key: string]: unknown; // Allow provider-specific fields
+}
+
+/** Transaction record from database */
+interface TransactionRecord {
+  id: string;
+  user_id: string;
+  wallet_id: string;
+  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  token_amount: number | null;
+  cash_amount: number;
+  price_per_gram: number | null;
+  fees: number;
+  payment_method: string | null;
+  payment_reference: string | null;
+  external_reference: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
 }
 
 import { ConfigService } from './config.service';
@@ -441,7 +478,13 @@ export class PaymentService {
         return this.verifyHmacSignature(payload, signature, this.config.webhookSecret);
 
       case 'moov_money':
-        return this.constantTimeEqual(signature, this.config.moovApiKey || '');
+        // SECURITY: Use proper HMAC verification instead of direct API key comparison
+        // Moov Money should sign webhooks with a shared secret
+        if (!this.config.webhookSecret) {
+          console.warn('Webhook secret not configured for Moov Money');
+          return false;
+        }
+        return this.verifyHmacSignature(payload, signature, this.config.webhookSecret);
 
       case 'cinetpay':
         return this.verifyCinetPaySignature(payload, signature);
@@ -524,23 +567,37 @@ export class PaymentService {
   }
 
   /**
-   * Process webhook payload
+   * Process webhook payload with idempotency
+   * If the transaction is already in a final state, returns success without re-processing
    */
   async processWebhook(webhook: WebhookPayload): Promise<{
     success: boolean;
     transactionId?: string;
     error?: string;
+    alreadyProcessed?: boolean;
   }> {
     try {
       // Find the transaction by reference
       const transaction = await this.db
         .prepare('SELECT * FROM transactions WHERE id = ? OR payment_reference = ?')
         .bind(webhook.reference, webhook.reference)
-        .first<any>();
+        .first<TransactionRecord>();
 
       if (!transaction) {
         console.error('Transaction not found for webhook:', webhook.reference);
         return { success: false, error: 'Transaction not found' };
+      }
+
+      // IDEMPOTENCY CHECK: If transaction is already in a final state, don't process again
+      const finalStates = ['COMPLETED', 'FAILED', 'CANCELLED'];
+      if (finalStates.includes(transaction.status)) {
+        console.log(`Webhook already processed for transaction ${transaction.id}, status: ${transaction.status}`);
+        await this.logWebhook(webhook, `SKIPPED_ALREADY_${transaction.status}`);
+        return {
+          success: true,
+          transactionId: transaction.id,
+          alreadyProcessed: true
+        };
       }
 
       // Verify amount matches
@@ -569,21 +626,34 @@ export class PaymentService {
           newStatus = 'PROCESSING';
       }
 
-      // Update transaction
-      await this.db
+      // Update transaction with idempotent condition (only if not already in final state)
+      const updateResult = await this.db
         .prepare(`
           UPDATE transactions
           SET status = ?,
               payment_reference = ?,
               completed_at = CASE WHEN ? = 'COMPLETED' THEN datetime('now') ELSE completed_at END,
               failure_reason = CASE WHEN ? = 'FAILED' THEN 'Payment failed' ELSE failure_reason END
-          WHERE id = ?
+          WHERE id = ? AND status IN ('PENDING', 'PROCESSING')
         `)
         .bind(newStatus, webhook.transactionId, newStatus, newStatus, transaction.id)
         .run();
 
-      // If payment successful, update wallet balance
+      // Check if the update actually changed a row (idempotency safety)
+      if (updateResult.meta.changes === 0) {
+        // Another request already processed this webhook
+        console.log(`Concurrent webhook processing detected for transaction ${transaction.id}`);
+        return {
+          success: true,
+          transactionId: transaction.id,
+          alreadyProcessed: true
+        };
+      }
+
+      // If payment successful, update wallet balance (with idempotent condition)
       if (newStatus === 'COMPLETED' && transaction.type === 'DEPOSIT') {
+        // Use a unique constraint or check to prevent double-crediting
+        // The transaction status update above already ensures we only credit once
         await this.db
           .prepare(`
             UPDATE wallets
@@ -640,7 +710,7 @@ export class PaymentService {
   async checkPaymentStatus(
     provider: string,
     transactionId: string
-  ): Promise<{ status: string; details?: any }> {
+  ): Promise<PaymentStatusResult> {
     switch (provider) {
       case 'orange_money':
         return this.checkOrangeMoneyStatus(transactionId);
@@ -655,7 +725,7 @@ export class PaymentService {
     }
   }
 
-  private async checkOrangeMoneyStatus(transactionId: string): Promise<{ status: string; details?: any }> {
+  private async checkOrangeMoneyStatus(transactionId: string): Promise<PaymentStatusResult> {
     if (!this.config.orangeMoneyApiKey) {
       return { status: 'ERROR', details: { error: 'Orange Money not configured' } };
     }
@@ -680,7 +750,7 @@ export class PaymentService {
     }
   }
 
-  private async checkMoovMoneyStatus(transactionId: string): Promise<{ status: string; details?: any }> {
+  private async checkMoovMoneyStatus(transactionId: string): Promise<PaymentStatusResult> {
     if (!this.config.moovApiKey) {
       return { status: 'ERROR', details: { error: 'Moov Money not configured' } };
     }
@@ -705,7 +775,7 @@ export class PaymentService {
     }
   }
 
-  private async checkCinetPayStatus(transactionId: string): Promise<{ status: string; details?: any }> {
+  private async checkCinetPayStatus(transactionId: string): Promise<PaymentStatusResult> {
     if (!this.config.cinetpayApiKey || !this.config.cinetpaySiteId) {
       return { status: 'ERROR', details: { error: 'CinetPay not configured' } };
     }
@@ -800,7 +870,7 @@ export class PaymentService {
     }
   }
 
-  private async checkStripeStatus(sessionId: string): Promise<{ status: string; details?: any }> {
+  private async checkStripeStatus(sessionId: string): Promise<PaymentStatusResult> {
     if (!this.config.stripeSecretKey) {
       return { status: 'ERROR', details: { error: 'Stripe not configured' } };
     }

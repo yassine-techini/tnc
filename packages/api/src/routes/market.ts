@@ -1,44 +1,17 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { AppEnv } from '../types/env';
+import type { AppEnv, Env } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { MarketService } from '../services/market.service';
 import { WalletService } from '../services/wallet.service';
-import { UserService } from '../services/user.service';
 import { GoldAPIService } from '../services/goldapi.service';
 import { PriceAlertService } from '../services/price-alert.service';
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
+import { KycService } from '../services/kyc.service';
 
 const market = new Hono<AppEnv>();
-
-/**
- * Load KYC trading limits from config DB
- */
-async function getKycLimits(configService: ConfigService) {
-  const [
-    basicDailyBuy, basicMonthlyBuy, basicCanSell,
-    standardDailyBuy, standardMonthlyBuy, standardCanSell,
-    verifiedDailyBuy, verifiedMonthlyBuy, verifiedCanSell,
-  ] = await Promise.all([
-    configService.getNumber('kyc_basic_daily_buy', 0),
-    configService.getNumber('kyc_basic_monthly_buy', 0),
-    configService.getNumber('kyc_basic_can_sell', 0),
-    configService.getNumber('kyc_standard_daily_buy', 100),
-    configService.getNumber('kyc_standard_monthly_buy', 500),
-    configService.getNumber('kyc_standard_can_sell', 1),
-    configService.getNumber('kyc_verified_daily_buy', 1000),
-    configService.getNumber('kyc_verified_monthly_buy', 5000),
-    configService.getNumber('kyc_verified_can_sell', 1),
-  ]);
-
-  return {
-    BASIC: { dailyBuy: basicDailyBuy, monthlyBuy: basicMonthlyBuy, canSell: basicCanSell === 1 },
-    STANDARD: { dailyBuy: standardDailyBuy, monthlyBuy: standardMonthlyBuy, canSell: standardCanSell === 1 },
-    VERIFIED: { dailyBuy: verifiedDailyBuy, monthlyBuy: verifiedMonthlyBuy, canSell: verifiedCanSell === 1 },
-  };
-}
 
 // GET /market/price - Public
 market.get('/price', async (c) => {
@@ -68,7 +41,12 @@ market.get('/price', async (c) => {
 // GET /market/price/history - Public
 market.get('/price/history', async (c) => {
   const requestId = crypto.randomUUID();
-  const period = (c.req.query('period') || '24h') as '24h' | '7d' | '30d' | '1y';
+  // SECURITY: Whitelist valid period values
+  const validPeriods = ['24h', '7d', '30d', '1y'] as const;
+  const requestedPeriod = c.req.query('period') || '24h';
+  const period = validPeriods.includes(requestedPeriod as typeof validPeriods[number])
+    ? (requestedPeriod as typeof validPeriods[number])
+    : '24h';
 
   const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
   const history = await marketService.getPriceHistory(period);
@@ -126,11 +104,31 @@ market.get('/stock', async (c) => {
 });
 
 // Protected routes
+// Amount bounds:
+// - grams: min 0.001g (smallest tradable unit), max 10,000g (reasonable upper limit)
+// - XOF: min 100 XOF, max 500,000,000 XOF (500M, matches monthly limit for large traders)
+const MAX_GRAMS = 10000;
+const MIN_GRAMS = 0.001;
+const MAX_XOF = 500_000_000;
+const MIN_XOF = 100;
+
 const quoteSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
-  amount: z.number().positive(),
+  amount: z.number().positive().max(MAX_XOF, 'Montant dépasse la limite maximale'),
   amountType: z.enum(['grams', 'xof']),
-});
+}).refine(
+  (data) => {
+    if (data.amountType === 'grams') {
+      return data.amount >= MIN_GRAMS && data.amount <= MAX_GRAMS;
+    }
+    return data.amount >= MIN_XOF && data.amount <= MAX_XOF;
+  },
+  (data) => ({
+    message: data.amountType === 'grams'
+      ? `Quantité doit être entre ${MIN_GRAMS}g et ${MAX_GRAMS}g`
+      : `Montant doit être entre ${MIN_XOF} et ${MAX_XOF} XOF`,
+  })
+);
 
 // POST /market/quote - Protected
 market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c) => {
@@ -142,8 +140,8 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
   const configService = new ConfigService(c.env.DB, c.env.CACHE);
   const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
 
-  // Check KYC level permissions
-  const kycLimits = await getKycLimits(configService);
+  // Check KYC level permissions (centralized in KycService)
+  const kycLimits = await KycService.getKycLimits(configService);
   const limits = kycLimits[kycLevel];
   if (body.type === 'BUY' && limits.dailyBuy === 0) {
     return c.json({
@@ -230,6 +228,12 @@ const executeSchema = z.object({
   idempotencyKey: z.string().max(64).optional(),
 });
 
+// Helper: Get TransactionSession Durable Object stub for a user
+function getTransactionSession(env: Env, userId: string) {
+  const id = env.TRANSACTION_SESSION.idFromName(`user:${userId}`);
+  return env.TRANSACTION_SESSION.get(id);
+}
+
 // POST /market/buy - Protected
 market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c) => {
   const body = c.req.valid('json');
@@ -248,7 +252,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
   const walletService = new WalletService(c.env.DB);
 
-  // Validate quote
+  // Validate quote (must be first - marks quote as USED atomically)
   const quote = await marketService.useQuote(body.quoteId, userId);
   if (!quote) {
     return c.json({
@@ -272,13 +276,51 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     }, 400);
   }
 
+  // Acquire transaction lock via Durable Object (prevents concurrent transactions)
+  const txSession = getTransactionSession(c.env, userId);
+  const lockResponse = await txSession.fetch('https://do/lock', {
+    method: 'POST',
+    body: JSON.stringify({
+      userId,
+      quoteId: body.quoteId,
+      transactionType: 'BUY',
+      tokenAmount: quote.token_amount,
+      requestId,
+    }),
+  });
+
+  if (!lockResponse.ok) {
+    const lockError = await lockResponse.json() as { reason: string; message: string };
+    return c.json({
+      success: false,
+      error: {
+        code: 'TRANSACTION_LOCKED',
+        message: lockError.message || 'Une transaction est déjà en cours',
+      },
+      requestId,
+    }, 409);
+  }
+
+  // Release lock helper (used on success and failure)
+  const releaseLock = async () => {
+    try {
+      await txSession.fetch('https://do/release', {
+        method: 'POST',
+        body: JSON.stringify({ userId, requestId }),
+      });
+    } catch (e) {
+      console.error('[Market] Failed to release transaction lock:', e);
+    }
+  };
+
   // Check KYC limits
-  const kycLimits = await getKycLimits(configService);
+  const kycLimits = await KycService.getKycLimits(configService);
   const limits = kycLimits[kycLevel];
   const dailyVolume = await walletService.getDailyTransactionVolume(userId, 'BUY');
   const monthlyVolume = await walletService.getMonthlyTransactionVolume(userId, 'BUY');
 
   if (dailyVolume + quote.token_amount > limits.dailyBuy) {
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -290,6 +332,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   }
 
   if (monthlyVolume + quote.token_amount > limits.monthlyBuy) {
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -303,6 +346,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   // Step 1: Atomically reserve stock (prevents overselling race condition)
   const stockReserved = await marketService.atomicPurchaseStock(quote.token_amount);
   if (!stockReserved) {
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -343,8 +387,9 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   );
 
   if (!walletDebited) {
-    // Rollback stock reservation
+    // Rollback stock reservation and release lock
     await marketService.atomicSellStock(quote.token_amount);
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -354,6 +399,9 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       requestId,
     }, 400);
   }
+
+  // Transaction successful - release lock
+  await releaseLock();
 
   const buyResponse = {
     success: true,
@@ -401,7 +449,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
   const walletService = new WalletService(c.env.DB);
 
   // Check KYC can sell
-  const kycLimits = await getKycLimits(configService);
+  const kycLimits = await KycService.getKycLimits(configService);
   const limits = kycLimits[kycLevel];
   if (!limits.canSell) {
     return c.json({
@@ -414,7 +462,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     }, 403);
   }
 
-  // Validate quote
+  // Validate quote (must be first - marks quote as USED atomically)
   const quote = await marketService.useQuote(body.quoteId, userId);
   if (!quote) {
     return c.json({
@@ -438,9 +486,47 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     }, 400);
   }
 
+  // Acquire transaction lock via Durable Object (prevents concurrent transactions)
+  const txSession = getTransactionSession(c.env, userId);
+  const lockResponse = await txSession.fetch('https://do/lock', {
+    method: 'POST',
+    body: JSON.stringify({
+      userId,
+      quoteId: body.quoteId,
+      transactionType: 'SELL',
+      tokenAmount: quote.token_amount,
+      requestId,
+    }),
+  });
+
+  if (!lockResponse.ok) {
+    const lockError = await lockResponse.json() as { reason: string; message: string };
+    return c.json({
+      success: false,
+      error: {
+        code: 'TRANSACTION_LOCKED',
+        message: lockError.message || 'Une transaction est déjà en cours',
+      },
+      requestId,
+    }, 409);
+  }
+
+  // Release lock helper (used on success and failure)
+  const releaseLock = async () => {
+    try {
+      await txSession.fetch('https://do/release', {
+        method: 'POST',
+        body: JSON.stringify({ userId, requestId }),
+      });
+    } catch (e) {
+      console.error('[Market] Failed to release transaction lock:', e);
+    }
+  };
+
   // Get wallet
   const wallet = await walletService.findByUserId(userId);
   if (!wallet) {
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -474,6 +560,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
   );
 
   if (!walletDebited) {
+    await releaseLock();
     return c.json({
       success: false,
       error: {
@@ -486,6 +573,9 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
 
   // Step 2: Release stock (tokens returned to available pool)
   await marketService.atomicSellStock(quote.token_amount);
+
+  // Transaction successful - release lock
+  await releaseLock();
 
   const sellResponse = {
     success: true,

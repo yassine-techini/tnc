@@ -5,7 +5,7 @@
 
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types/env';
-import { ROLE_DEFAULTS, type Module, type Action, MODULES, ACTIONS } from '../lib/rbac';
+import { ROLE_DEFAULTS, type Module, type Action } from '../lib/rbac';
 
 /**
  * Middleware factory that checks if the current admin has the required permission.

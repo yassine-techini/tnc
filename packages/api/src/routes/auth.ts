@@ -13,6 +13,39 @@ import { setAuthCookies, clearAuthCookies, getRefreshToken } from '../lib/cookie
 const auth = new Hono<AppEnv>();
 
 // ==========================================
+// SECURITY HELPERS
+// ==========================================
+
+/**
+ * SECURITY: Hash verification code before storing in KV
+ * Uses SHA-256 to prevent plaintext code exposure if KV is compromised
+ */
+async function hashVerificationCode(code: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(code);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * SECURITY: Constant-time string comparison to prevent timing attacks
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Compare against dummy to maintain constant time
+    const dummy = 'x'.repeat(Math.max(a.length, b.length));
+    a = a.padEnd(dummy.length, '\0');
+    b = b.padEnd(dummy.length, '\0');
+  }
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0 && a.length === b.length;
+}
+
+// ==========================================
 // VALIDATION SCHEMAS (Banking-grade)
 // ==========================================
 
@@ -212,11 +245,12 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
     const verificationCode = authService.generateVerificationCode();
     const verificationCodeTtl = await configService.getNumber('verification_code_ttl', 900);
 
-    // Store verification code in KV
+    // SECURITY: Hash verification code before storing in KV
+    const hashedCode = await hashVerificationCode(verificationCode);
     await c.env.CACHE.put(
       `verify:email:${body.email.toLowerCase()}`,
       JSON.stringify({
-        code: verificationCode,
+        code: hashedCode,
         userId,
         attempts: 0,
         createdAt: Date.now(),
@@ -245,10 +279,12 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
 
     // Also store phone verification code and send SMS
     const phoneVerificationCode = authService.generateVerificationCode();
+    // SECURITY: Hash phone verification code before storing
+    const hashedPhoneCode = await hashVerificationCode(phoneVerificationCode);
     await c.env.CACHE.put(
       `verify:phone:${body.phone}`,
       JSON.stringify({
-        code: phoneVerificationCode,
+        code: hashedPhoneCode,
         userId,
         attempts: 0,
         createdAt: Date.now(),
@@ -399,9 +435,9 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       }, 401);
     }
 
-    // Verify password
-    const isValidPassword = await authService.verifyPassword(body.password, user.password_hash);
-    if (!isValidPassword) {
+    // Verify password (with automatic Argon2id upgrade for legacy PBKDF2 hashes)
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(body.password, user.password_hash);
+    if (!passwordResult.valid) {
       const lockResult = await securityService.recordFailedLogin(body.identifier.toLowerCase(), ipAddress);
 
       await securityService.logSecurityEvent({
@@ -435,6 +471,20 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         },
         requestId,
       }, 401);
+    }
+
+    // Upgrade legacy PBKDF2 hash to Argon2id (transparent migration)
+    if (passwordResult.needsRehash) {
+      try {
+        const newHash = await authService.hashPassword(body.password);
+        await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+          .bind(newHash, user.id)
+          .run();
+        console.log(`[Auth] Upgraded password hash for user ${user.id} to Argon2id`);
+      } catch (e) {
+        // Non-blocking: log but don't fail login
+        console.error('[Auth] Failed to upgrade password hash:', e);
+      }
     }
 
     // 2FA is mandatory - check if set up
@@ -573,10 +623,31 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
 auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
+  const ipAddress = getClientIp(c);
 
   const authService = new AuthService(c.env.JWT_SECRET);
 
   try {
+    // SECURITY: Rate limit refresh attempts per IP (max 10 per 5 minutes)
+    const rateLimitKey = `refresh_rate:${ipAddress}`;
+    const attempts = await c.env.CACHE.get(rateLimitKey);
+    if (attempts) {
+      const attemptCount = parseInt(attempts, 10);
+      if (attemptCount >= 10) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'Trop de tentatives de rafraîchissement. Réessayez plus tard.',
+          },
+          requestId,
+        }, 429);
+      }
+      await c.env.CACHE.put(rateLimitKey, String(attemptCount + 1), { expirationTtl: 300 });
+    } else {
+      await c.env.CACHE.put(rateLimitKey, '1', { expirationTtl: 300 });
+    }
+
     // Get refresh token from body or cookie
     const refreshToken = body.refreshToken || getRefreshToken(c);
 
@@ -644,11 +715,17 @@ auth.post('/logout', async (c) => {
       const payload = await authService.verifyToken(token);
 
       if (payload) {
-        // Invalidate all sessions for user
-        await c.env.DB
-          .prepare('DELETE FROM active_sessions WHERE user_id = ?')
-          .bind(payload.sub)
-          .run();
+        // SECURITY: Invalidate ALL sessions and refresh tokens for user
+        await Promise.all([
+          c.env.DB
+            .prepare('DELETE FROM active_sessions WHERE user_id = ?')
+            .bind(payload.sub)
+            .run(),
+          c.env.DB
+            .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+            .bind(payload.sub)
+            .run(),
+        ]);
 
         const securityService = new SecurityService(c.env.DB, c.env.CACHE);
         await securityService.logAuditEvent({
@@ -723,7 +800,9 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
       }, 400);
     }
 
-    if (storedData.code !== body.code) {
+    // SECURITY: Hash user input and use constant-time comparison
+    const hashedInputCode = await hashVerificationCode(body.code);
+    if (!constantTimeEqual(storedData.code, hashedInputCode)) {
       // Increment attempts
       storedData.attempts++;
       await c.env.CACHE.put(
@@ -827,7 +906,9 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
       }, 400);
     }
 
-    if (storedData.code !== body.code) {
+    // SECURITY: Hash user input and use constant-time comparison
+    const hashedInputCode = await hashVerificationCode(body.code);
+    if (!constantTimeEqual(storedData.code, hashedInputCode)) {
       storedData.attempts++;
       await c.env.CACHE.put(
         `verify:phone:${body.phone}`,
@@ -1081,11 +1162,17 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
     // Clear any login attempts
     await securityService.clearLoginAttempts(storedData.email);
 
-    // Invalidate all existing sessions
-    await c.env.DB
-      .prepare('DELETE FROM active_sessions WHERE user_id = ?')
-      .bind(storedData.userId)
-      .run();
+    // SECURITY: Invalidate ALL sessions and refresh tokens after password reset
+    await Promise.all([
+      c.env.DB
+        .prepare('DELETE FROM active_sessions WHERE user_id = ?')
+        .bind(storedData.userId)
+        .run(),
+      c.env.DB
+        .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+        .bind(storedData.userId)
+        .run(),
+    ]);
 
     await securityService.logAuditEvent({
       userId: storedData.userId,
@@ -1160,13 +1247,21 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
       }, 404);
     }
 
-    const isValidPassword = await authService.verifyPassword(body.password, user.password_hash);
-    if (!isValidPassword) {
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(body.password, user.password_hash);
+    if (!passwordResult.valid) {
       return c.json({
         success: false,
         error: { code: 'AUTH_INVALID_PASSWORD', message: 'Mot de passe incorrect' },
         requestId,
       }, 401);
+    }
+
+    // Upgrade legacy PBKDF2 hash to Argon2id (transparent migration)
+    if (passwordResult.needsRehash) {
+      const newHash = await authService.hashPassword(body.password);
+      await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+        .bind(newHash, user.id)
+        .run();
     }
 
     // Check if 2FA is already enabled
@@ -1373,13 +1468,21 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     }
 
     // Verify password
-    const isValidPassword = await authService.verifyPassword(body.password, user.password_hash);
-    if (!isValidPassword) {
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(body.password, user.password_hash);
+    if (!passwordResult.valid) {
       return c.json({
         success: false,
         error: { code: 'AUTH_INVALID_PASSWORD', message: 'Mot de passe incorrect' },
         requestId,
       }, 401);
+    }
+
+    // Upgrade legacy PBKDF2 hash to Argon2id (transparent migration)
+    if (passwordResult.needsRehash) {
+      const newHash = await authService.hashPassword(body.password);
+      await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+        .bind(newHash, user.id)
+        .run();
     }
 
     // Verify 2FA code
@@ -1679,10 +1782,12 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
       ? `verify:email:${body.identifier.toLowerCase()}`
       : `verify:phone:${body.identifier}`;
 
+    // SECURITY: Hash verification code before storing in KV
+    const hashedResendCode = await hashVerificationCode(verificationCode);
     await c.env.CACHE.put(
       cacheKey,
       JSON.stringify({
-        code: verificationCode,
+        code: hashedResendCode,
         userId: user.id,
         attempts: 0,
         createdAt: Date.now(),
@@ -2033,12 +2138,15 @@ auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema)
       await c.env.CACHE.put(rateLimitKey, '1', { expirationTtl: 300 });
     }
 
-    // Generate 6-digit OTP code
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // SECURITY: Generate 6-digit OTP code using cryptographically secure random
+    const randomBytes = new Uint32Array(1);
+    crypto.getRandomValues(randomBytes);
+    const code = String(100000 + (randomBytes[0] % 900000)).padStart(6, '0');
 
-    // Store code in cache with expiration (5 minutes)
+    // SECURITY: Hash code before storing in KV cache
+    const hashedCode = await hashVerificationCode(code);
     const codeData = {
-      code,
+      code: hashedCode,
       userId: user.id,
       method,
       attempts: 0,
@@ -2152,8 +2260,9 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
       }, 400);
     }
 
-    // Verify code
-    if (storedData.code !== body.code) {
+    // SECURITY: Hash user input and use constant-time comparison
+    const hashedInputCode = await hashVerificationCode(body.code);
+    if (!constantTimeEqual(storedData.code, hashedInputCode)) {
       storedData.attempts++;
       await c.env.CACHE.put(
         `passwordless:code:${identifier}`,

@@ -1,4 +1,5 @@
-import { Hono } from 'hono';
+import { Hono, Context, Next } from 'hono';
+import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { PaymentService } from '../services/payment.service';
@@ -9,6 +10,37 @@ import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
 import { analyticsRoutes } from './admin/analytics';
+
+// Zod schemas for admin endpoints
+const AdminLoginSchema = z.object({
+  email: z.string().email('Email invalide'),
+  password: z.string().min(1, 'Mot de passe requis'),
+  totpCode: z.string().length(6).optional(),
+});
+
+const Admin2FASetupSchema = z.object({
+  setupToken: z.string().uuid('Token invalide'),
+});
+
+const Admin2FAVerifySchema = z.object({
+  setupToken: z.string().uuid('Token invalide'),
+  code: z.string().length(6, 'Code doit être 6 chiffres'),
+});
+
+// Type for admin record from DB
+interface AdminRecord {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  password_hash: string;
+  two_factor_secret: string | null;
+  two_factor_enabled: number;
+  active: number;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 const admin = new Hono<AppEnv>();
 
@@ -24,7 +56,7 @@ function parsePagination(
 }
 
 // JWT-based auth middleware for admin
-async function adminJwtMiddleware(c: any, next: any) {
+async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -57,9 +89,9 @@ async function adminJwtMiddleware(c: any, next: any) {
 
     // Check if this is an admin (by email)
     const adminUser = await c.env.DB
-      .prepare('SELECT * FROM admins WHERE email = ? AND active = 1')
+      .prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE email = ? AND active = 1')
       .bind(payload.email)
-      .first();
+      .first<AdminRecord>();
 
     if (!adminUser) {
       return c.json({
@@ -76,7 +108,7 @@ async function adminJwtMiddleware(c: any, next: any) {
     c.set('adminEmail', payload.email);
     c.set('adminRole', adminUser.role);
 
-    await next();
+    return next();
   } catch (error) {
     return c.json({
       success: false,
@@ -93,24 +125,28 @@ async function adminJwtMiddleware(c: any, next: any) {
 admin.post('/login', async (c) => {
   try {
     const body = await c.req.json();
-    const { email, password, totpCode } = body;
 
-    if (!email || !password) {
+    // Validate input with Zod
+    const parseResult = AdminLoginSchema.safeParse(body);
+    if (!parseResult.success) {
       return c.json({
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Email et mot de passe requis',
+          message: parseResult.error.issues[0]?.message || 'Données invalides',
+          details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),
       }, 400);
     }
 
+    const { email, password, totpCode } = parseResult.data;
+
     // Find admin
     const adminUser = await c.env.DB
-      .prepare('SELECT * FROM admins WHERE email = ? AND active = 1')
+      .prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE email = ? AND active = 1')
       .bind(email)
-      .first<any>();
+      .first<AdminRecord>();
 
     if (!adminUser) {
       return c.json({
@@ -123,11 +159,11 @@ admin.post('/login', async (c) => {
       }, 401);
     }
 
-    // Verify password
+    // Verify password (with automatic Argon2id upgrade for legacy hashes)
     const authService = new AuthService(c.env.JWT_SECRET);
-    const isValid = await authService.verifyPassword(password, adminUser.password_hash);
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(password, adminUser.password_hash);
 
-    if (!isValid) {
+    if (!passwordResult.valid) {
       return c.json({
         success: false,
         error: {
@@ -136,6 +172,14 @@ admin.post('/login', async (c) => {
         },
         requestId: crypto.randomUUID(),
       }, 401);
+    }
+
+    // Upgrade legacy PBKDF2 hash to Argon2id (transparent migration)
+    if (passwordResult.needsRehash) {
+      const newHash = await authService.hashPassword(password);
+      await c.env.DB.prepare('UPDATE admins SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+        .bind(newHash, adminUser.id)
+        .run();
     }
 
     // Check if 2FA is set up (mandatory for admins)
@@ -370,7 +414,7 @@ admin.post('/2fa/verify', async (c) => {
 
     // Get admin details and permissions
     const adminUser = await c.env.DB
-      .prepare('SELECT * FROM admins WHERE id = ?')
+      .prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE id = ?')
       .bind(pendingData.adminId)
       .first<any>();
 
@@ -502,7 +546,7 @@ admin.get('/users', requirePermission('users', 'view'), async (c) => {
     const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
     const search = c.req.query('search') || '';
 
-    let query = 'SELECT * FROM users';
+    let query = 'SELECT id, email, phone, email_verified, phone_verified, country, kyc_level, kyc_status, two_factor_enabled, first_name, last_name, suspended, suspended_at, suspended_until, suspension_reason, last_login_at, created_at, updated_at FROM users';
     let countQuery = 'SELECT COUNT(*) as count FROM users';
     const params: any[] = [];
 
@@ -565,10 +609,10 @@ admin.get('/users/:id', requirePermission('users', 'view'), async (c) => {
 
     // D1 batch: run all 4 queries in a single roundtrip
     const [userResult, walletResult, transactionsResult, kycDocsResult] = await c.env.DB.batch([
-      c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id),
-      c.env.DB.prepare('SELECT * FROM wallets WHERE user_id = ?').bind(id),
-      c.env.DB.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20').bind(id),
-      c.env.DB.prepare('SELECT * FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC').bind(id),
+      c.env.DB.prepare('SELECT id, email, phone, email_verified, phone_verified, country, kyc_level, kyc_status, two_factor_enabled, first_name, last_name, suspended, suspended_at, suspended_until, suspension_reason, last_login_at, created_at, updated_at FROM users WHERE id = ?').bind(id),
+      c.env.DB.prepare('SELECT id, user_id, token_balance, cash_balance, total_bought, total_spent, created_at, updated_at FROM wallets WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('SELECT id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference, failure_reason, created_at, completed_at FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 20').bind(id),
+      c.env.DB.prepare('SELECT id, user_id, document_type, document_number, first_name, last_name, date_of_birth, nationality, address, city, front_image_url, back_image_url, selfie_url, status, rejection_reason, reviewed_by, reviewed_at, document_expiry_date, created_at, updated_at FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC').bind(id),
     ]);
 
     const user = userResult.results?.[0] as any;
@@ -760,13 +804,13 @@ admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
   try {
     // Try to find by doc_id first, then by user_id
     let doc = await c.env.DB
-      .prepare('SELECT * FROM kyc_documents WHERE id = ?')
+      .prepare('SELECT id, user_id, document_type, document_number, first_name, last_name, date_of_birth, nationality, address, city, front_image_url, back_image_url, selfie_url, status, rejection_reason, reviewed_by, reviewed_at, document_expiry_date, created_at, updated_at FROM kyc_documents WHERE id = ?')
       .bind(id)
       .first<any>();
 
     if (!doc) {
       doc = await c.env.DB
-        .prepare('SELECT * FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')
+        .prepare('SELECT id, user_id, document_type, document_number, first_name, last_name, date_of_birth, nationality, address, city, front_image_url, back_image_url, selfie_url, status, rejection_reason, reviewed_by, reviewed_at, document_expiry_date, created_at, updated_at FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')
         .bind(id)
         .first<any>();
     }
@@ -846,13 +890,13 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
 
     // Find the KYC document
     let doc = await c.env.DB
-      .prepare('SELECT * FROM kyc_documents WHERE id = ?')
+      .prepare('SELECT id, user_id, document_type, document_number, first_name, last_name, date_of_birth, nationality, address, city, front_image_url, back_image_url, selfie_url, status, rejection_reason, reviewed_by, reviewed_at, document_expiry_date, created_at, updated_at FROM kyc_documents WHERE id = ?')
       .bind(id)
       .first<any>();
 
     if (!doc) {
       doc = await c.env.DB
-        .prepare('SELECT * FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')
+        .prepare('SELECT id, user_id, document_type, document_number, first_name, last_name, date_of_birth, nationality, address, city, front_image_url, back_image_url, selfie_url, status, rejection_reason, reviewed_by, reviewed_at, document_expiry_date, created_at, updated_at FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')
         .bind(id)
         .first<any>();
     }
@@ -936,7 +980,7 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
 
     // Check user exists
     const user = await c.env.DB
-      .prepare('SELECT * FROM users WHERE id = ?')
+      .prepare('SELECT id, email, phone, email_verified, phone_verified, country, kyc_level, kyc_status, two_factor_enabled, first_name, last_name, suspended, suspended_at, suspended_until, suspension_reason, last_login_at, created_at, updated_at FROM users WHERE id = ?')
       .bind(id)
       .first<any>();
 
@@ -1039,7 +1083,7 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
 
     // Check user exists and is suspended
     const user = await c.env.DB
-      .prepare('SELECT * FROM users WHERE id = ?')
+      .prepare('SELECT id, email, phone, email_verified, phone_verified, country, kyc_level, kyc_status, two_factor_enabled, first_name, last_name, suspended, suspended_at, suspended_until, suspension_reason, last_login_at, created_at, updated_at FROM users WHERE id = ?')
       .bind(id)
       .first<any>();
 
@@ -1349,20 +1393,34 @@ admin.get('/suspended-users', requirePermission('users', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
+    // SECURITY: Add pagination to prevent unbounded queries
+    const { page, limit, offset } = parsePagination({ page: c.req.query('page'), limit: c.req.query('limit') });
+
     const suspendedUsers = await c.env.DB
       .prepare(`
         SELECT id, email, phone, suspended_at, suspended_until, suspension_reason, kyc_level
         FROM users
         WHERE suspended = 1
         ORDER BY suspended_at DESC
+        LIMIT ? OFFSET ?
       `)
+      .bind(limit, offset)
       .all<any>();
+
+    const totalResult = await c.env.DB
+      .prepare('SELECT COUNT(*) as count FROM users WHERE suspended = 1')
+      .first<{ count: number }>();
+
+    const total = totalResult?.count || 0;
 
     return c.json({
       success: true,
       data: {
         items: suspendedUsers.results || [],
-        total: suspendedUsers.results?.length || 0,
+        total,
+        page,
+        limit,
+        hasMore: offset + (suspendedUsers.results?.length || 0) < total,
       },
       requestId,
     });
@@ -1440,7 +1498,7 @@ admin.get('/transactions', requirePermission('transactions', 'view'), async (c) 
 admin.get('/stock', requirePermission('stock', 'view'), async (c) => {
   try {
     const stock = await c.env.DB
-      .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
     // Get total tokens in circulation
@@ -1492,7 +1550,7 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
 
     // Get current stock
     let stock = await c.env.DB
-      .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
     const newTotal = (stock?.total_allocated || 0) + amount;
@@ -1807,7 +1865,7 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
   try {
     // Get gold stock
     const stock = await c.env.DB
-      .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
     // Get total tokens in circulation
@@ -1936,7 +1994,8 @@ admin.get('/reconciliation/stuck', requirePermission('reconciliation', 'view'), 
   const requestId = crypto.randomUUID();
 
   try {
-    const thresholdMinutes = parseInt(c.req.query('threshold') || '60');
+    // SECURITY: Validate threshold with bounds (1 minute to 24 hours)
+    const thresholdMinutes = Math.max(1, Math.min(1440, parseInt(c.req.query('threshold') || '60', 10) || 60));
     const reconciliationService = new ReconciliationService(c.env.DB);
 
     const stuckTransactions = await reconciliationService.getStuckTransactions(thresholdMinutes);
@@ -2391,7 +2450,7 @@ admin.patch('/admins/:id', requirePermission('admins', 'update'), async (c) => {
     const body = await c.req.json();
     const { role, active, name } = body;
 
-    const adminUser = await c.env.DB.prepare('SELECT * FROM admins WHERE id = ?').bind(id).first<any>();
+    const adminUser = await c.env.DB.prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE id = ?').bind(id).first<any>();
     if (!adminUser) {
       return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin non trouvé' }, requestId }, 404);
     }
@@ -2539,7 +2598,7 @@ admin.get('/integrations', requirePermission('integrations', 'view'), async (c) 
   const requestId = crypto.randomUUID();
   try {
     const integrations = await c.env.DB
-      .prepare('SELECT * FROM integrations ORDER BY category, display_name')
+      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations ORDER BY category, display_name')
       .all<any>();
 
     const items = (integrations.results || []).map((i: any) => ({
@@ -2568,7 +2627,7 @@ admin.get('/integrations/:provider', requirePermission('integrations', 'view'), 
 
   try {
     const integration = await c.env.DB
-      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
       .bind(provider)
       .first<any>();
 
@@ -2629,7 +2688,7 @@ admin.patch('/integrations/:provider', requirePermission('integrations', 'update
     const { enabled, config } = body;
 
     const integration = await c.env.DB
-      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
       .bind(provider)
       .first<any>();
 
@@ -2685,7 +2744,7 @@ admin.post('/integrations/:provider/test', requirePermission('integrations', 'up
 
   try {
     const integration = await c.env.DB
-      .prepare('SELECT * FROM integrations WHERE provider = ?')
+      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
       .bind(provider)
       .first<any>();
 

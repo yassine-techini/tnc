@@ -207,7 +207,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     c.set('userEmail', payload.email);
     c.set('kycLevel', payload.kycLevel);
 
-    await next();
+    return next();
   } catch (error) {
     return c.json({
       success: false,
@@ -311,7 +311,7 @@ export async function adminAuthMiddleware(c: Context<AppEnv>, next: Next) {
     c.set('adminEmail', cfAccessUser);
     c.set('adminRole', admin.role as string);
 
-    await next();
+    return next();
   } catch (error) {
     logger.error('Admin auth error', { error: String(error) });
     return c.json({
@@ -411,7 +411,7 @@ export async function stateAuthMiddleware(c: Context<AppEnv>, next: Next) {
     c.set('adminEmail', cfAccessUser);
     c.set('adminRole', 'STATE_OPERATOR');
 
-    await next();
+    return next();
   } catch (error) {
     logger.error('State auth error', { error: String(error) });
     return c.json({

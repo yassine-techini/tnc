@@ -81,6 +81,39 @@ export class SecurityService {
   }
 
   /**
+   * Safely parse JSON from cache, returning default value if parsing fails.
+   * Prevents crashes from corrupted cache data.
+   */
+  private safeJsonParse<T>(json: string | null, defaultValue: T): T {
+    if (!json) return defaultValue;
+    try {
+      return JSON.parse(json) as T;
+    } catch {
+      console.warn('[SecurityService] Failed to parse cached JSON, using default');
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Constant-time string comparison to prevent timing attacks.
+   * Used for comparing secrets, signatures, and TOTP codes.
+   */
+  private constantTimeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      // Still do comparison to maintain constant time for equal-length check
+      // but result will be false
+      const dummy = 'x'.repeat(Math.max(a.length, b.length));
+      a = a.padEnd(dummy.length, '\0');
+      b = b.padEnd(dummy.length, '\0');
+    }
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return result === 0 && a.length === b.length;
+  }
+
+  /**
    * Load security config values from DB (cached via ConfigService)
    */
   async getSecurityConfig(): Promise<SecurityConfigValues> {
@@ -241,7 +274,10 @@ export class SecurityService {
       .run();
 
     // Keep only last N entries (configurable)
-    const historyCount = await this.configService.getNumber('password_history_count', 10);
+    // SECURITY: Clamp historyCount to safe integer range [1, 100] to prevent SQL injection
+    // SQLite LIMIT doesn't support bind parameters, so we validate the value strictly
+    const rawHistoryCount = await this.configService.getNumber('password_history_count', 10);
+    const historyCount = Math.max(1, Math.min(Math.floor(rawHistoryCount), 100));
     await this.db
       .prepare(`
         DELETE FROM password_history
@@ -269,9 +305,16 @@ export class SecurityService {
     const now = Date.now();
     const key = `login_attempts:${identifier}`;
 
-    // Get current attempts from cache
+    // Get current attempts from cache (safe parse to handle corrupted data)
+    interface LoginAttempts {
+      count: number;
+      firstAttempt: number;
+      lockoutCount: number;
+      lastAttempt?: number;
+      lockedUntil?: number;
+    }
     const cached = await this.cache.get(key);
-    let attempts = cached ? JSON.parse(cached) : { count: 0, firstAttempt: now, lockoutCount: 0 };
+    let attempts = this.safeJsonParse<LoginAttempts>(cached, { count: 0, firstAttempt: now, lockoutCount: 0 });
 
     // Reset if first attempt was more than lockout duration ago
     if (now - attempts.firstAttempt > cfg.lockoutDurationMinutes * 60 * 1000) {
@@ -338,7 +381,7 @@ export class SecurityService {
       return { locked: false };
     }
 
-    const attempts = JSON.parse(cached);
+    const attempts = this.safeJsonParse(cached, { lockedUntil: null });
     if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
       return {
         locked: true,
@@ -565,7 +608,8 @@ export class SecurityService {
     }
 
     const expectedSignature = await this.generateTransactionSignature(transactionData, secretKey);
-    return signature === expectedSignature;
+    // SECURITY: Use constant-time comparison to prevent timing attacks
+    return this.constantTimeEqual(signature, expectedSignature);
   }
 
   /**
@@ -593,7 +637,7 @@ export class SecurityService {
     const cached = await this.cache.get(key);
 
     const now = Date.now();
-    let data = cached ? JSON.parse(cached) : { count: 0, windowStart: now };
+    let data = this.safeJsonParse(cached, { count: 0, windowStart: now });
 
     // Reset window if expired
     if (now - data.windowStart > windowSeconds * 1000) {
@@ -670,15 +714,18 @@ export class SecurityService {
     const now = Date.now();
 
     // Check current window and adjacent windows
+    // SECURITY: Use constant-time comparison for all checks to prevent timing attacks
+    let valid = false;
     for (let i = -cfg.totpWindow; i <= cfg.totpWindow; i++) {
       const checkTime = now + i * 30000;
       const expectedCode = await this.generateTotpCode(secret, checkTime);
-      if (code === expectedCode) {
-        return true;
+      // Always compare all windows to maintain constant time
+      if (this.constantTimeEqual(code, expectedCode)) {
+        valid = true;
       }
     }
 
-    return false;
+    return valid;
   }
 
   /**

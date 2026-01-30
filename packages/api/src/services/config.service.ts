@@ -13,6 +13,10 @@ interface ConfigRow {
 export class ConfigService {
   private static readonly CACHE_PREFIX = 'config:';
   private static readonly CACHE_TTL = 300; // 5 minutes
+  private static readonly BATCH_CACHE_KEY = 'config:__all__';
+
+  // In-memory cache for the current request (avoids repeated KV reads)
+  private _memoryCache: Record<string, string> | null = null;
 
   constructor(
     private db: D1Database,
@@ -20,32 +24,66 @@ export class ConfigService {
   ) {}
 
   /**
-   * Get a single config value by key (with KV cache)
+   * Load entire config into memory (batch cache).
+   * This dramatically reduces KV operations from 500+/sec to ~1/5min.
    */
-  async get(key: string, fallback?: string): Promise<string | null> {
-    // Try KV cache first
-    const cacheKey = `${ConfigService.CACHE_PREFIX}${key}`;
-    const cached = await this.kv.get(cacheKey);
-    if (cached !== null) return cached;
+  private async loadBatchCache(): Promise<Record<string, string>> {
+    // Return memory cache if available (within same request)
+    if (this._memoryCache) return this._memoryCache;
 
-    // Read from DB
+    // Try KV batch cache
+    const cached = await this.kv.get(ConfigService.BATCH_CACHE_KEY, 'json') as Record<string, string> | null;
+    if (cached) {
+      this._memoryCache = cached;
+      return cached;
+    }
+
+    // Load from DB and cache
     try {
-      const row = await this.db
-        .prepare('SELECT value FROM config WHERE key = ?')
-        .bind(key)
-        .first<{ value: string }>();
+      const result = await this.db
+        .prepare('SELECT key, value FROM config')
+        .all<{ key: string; value: string }>();
 
-      const value = row?.value ?? fallback ?? null;
-
-      // Cache the result (even null as empty string to avoid repeated DB hits)
-      if (value !== null) {
-        await this.kv.put(cacheKey, value, { expirationTtl: ConfigService.CACHE_TTL });
+      const config: Record<string, string> = {};
+      for (const row of result.results || []) {
+        config[row.key] = row.value;
       }
 
-      return value;
+      // Cache for 5 minutes
+      await this.kv.put(ConfigService.BATCH_CACHE_KEY, JSON.stringify(config), {
+        expirationTtl: ConfigService.CACHE_TTL,
+      });
+
+      this._memoryCache = config;
+      return config;
     } catch {
-      return fallback ?? null;
+      return {};
     }
+  }
+
+  /**
+   * Invalidate the batch cache (call after any config update)
+   */
+  private async invalidateBatchCache(): Promise<void> {
+    this._memoryCache = null;
+    await this.kv.delete(ConfigService.BATCH_CACHE_KEY);
+  }
+
+  /**
+   * Get a single config value by key (uses batch cache for efficiency)
+   */
+  async get(key: string, fallback?: string): Promise<string | null> {
+    // Use batch cache - dramatically reduces KV operations
+    const config = await this.loadBatchCache();
+    return config[key] ?? fallback ?? null;
+  }
+
+  /**
+   * Get a required config value with a guaranteed fallback (never returns null)
+   */
+  async getRequired(key: string, fallback: string): Promise<string> {
+    const config = await this.loadBatchCache();
+    return config[key] ?? fallback;
   }
 
   /**
@@ -100,8 +138,9 @@ export class ConfigService {
         .run();
     }
 
-    // Invalidate cache
+    // Invalidate both individual and batch cache
     await this.kv.delete(`${ConfigService.CACHE_PREFIX}${key}`);
+    await this.invalidateBatchCache();
   }
 
   /**

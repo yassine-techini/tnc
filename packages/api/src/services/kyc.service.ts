@@ -46,6 +46,35 @@ export interface VerificationRequest {
   selfieImageBase64: string;
 }
 
+/**
+ * Smile Identity webhook callback data structure
+ * @see https://docs.smileidentity.com/server-to-server/webhooks
+ */
+export interface SmileIdentityWebhookData {
+  job_id: string;
+  job_success: boolean;
+  result_code: string;
+  result_text: string;
+  partner_params?: {
+    job_id?: string;
+    user_id?: string;
+    [key: string]: unknown;
+  };
+  actions?: {
+    Document_Check?: string;
+    Human_Review_Compare?: string;
+    Human_Review_Update_Selfie?: string;
+    Liveness_Check?: string;
+    Register_Selfie?: string;
+    Return_Personal_Info?: string;
+    Selfie_Check?: string;
+    Verify_ID_Number?: string;
+  };
+  confidence?: number;
+  full_data?: Record<string, unknown>;
+  timestamp?: string;
+}
+
 export interface VerificationResult {
   success: boolean;
   jobId?: string;
@@ -90,6 +119,25 @@ const RESULT_CODES = {
 };
 
 import { ConfigService } from './config.service';
+
+/**
+ * KYC Limits type - defines trading limits per KYC level
+ */
+export interface KycLimits {
+  dailyBuy: number;      // Max grams per day
+  monthlyBuy: number;    // Max grams per month
+  canSell: boolean;      // Can user sell tokens
+  dailyWithdraw: number; // Max XOF withdrawal per day
+}
+
+/**
+ * Default KYC limits (used when config is not available)
+ */
+export const DEFAULT_KYC_LIMITS: Record<string, KycLimits> = {
+  BASIC: { dailyBuy: 0, monthlyBuy: 0, canSell: false, dailyWithdraw: 0 },
+  STANDARD: { dailyBuy: 100, monthlyBuy: 500, canSell: true, dailyWithdraw: 500_000 },
+  VERIFIED: { dailyBuy: 1000, monthlyBuy: 5000, canSell: true, dailyWithdraw: 5_000_000 },
+};
 
 export class KycService {
   private baseUrl: string;
@@ -163,14 +211,13 @@ export class KycService {
 
   /**
    * Load KYC limits from config (or use defaults)
+   * Static method to allow usage without full KycService instantiation
+   * @param configService - Optional ConfigService for loading from DB
+   * @returns KYC limits per level (BASIC, STANDARD, VERIFIED)
    */
-  private async getKycLimits(): Promise<Record<string, { dailyBuy: number; monthlyBuy: number; canSell: boolean; dailyWithdraw: number }>> {
-    if (!this.configService) {
-      return {
-        BASIC: { dailyBuy: 0, monthlyBuy: 0, canSell: false, dailyWithdraw: 0 },
-        STANDARD: { dailyBuy: 100, monthlyBuy: 500, canSell: true, dailyWithdraw: 500_000 },
-        VERIFIED: { dailyBuy: 1000, monthlyBuy: 5000, canSell: true, dailyWithdraw: 5_000_000 },
-      };
+  static async getKycLimits(configService?: ConfigService | null): Promise<Record<string, KycLimits>> {
+    if (!configService) {
+      return { ...DEFAULT_KYC_LIMITS };
     }
 
     const [
@@ -178,18 +225,18 @@ export class KycService {
       standardDailyBuy, standardMonthlyBuy, standardCanSell, standardDailyWithdraw,
       verifiedDailyBuy, verifiedMonthlyBuy, verifiedCanSell, verifiedDailyWithdraw,
     ] = await Promise.all([
-      this.configService.getNumber('kyc_basic_daily_buy', 0),
-      this.configService.getNumber('kyc_basic_monthly_buy', 0),
-      this.configService.getNumber('kyc_basic_can_sell', 0),
-      this.configService.getNumber('kyc_basic_daily_withdraw', 0),
-      this.configService.getNumber('kyc_standard_daily_buy', 100),
-      this.configService.getNumber('kyc_standard_monthly_buy', 500),
-      this.configService.getNumber('kyc_standard_can_sell', 1),
-      this.configService.getNumber('kyc_standard_daily_withdraw_xof', 500_000),
-      this.configService.getNumber('kyc_verified_daily_buy', 1000),
-      this.configService.getNumber('kyc_verified_monthly_buy', 5000),
-      this.configService.getNumber('kyc_verified_can_sell', 1),
-      this.configService.getNumber('kyc_verified_daily_withdraw_xof', 5_000_000),
+      configService.getNumber('kyc_basic_daily_buy', 0),
+      configService.getNumber('kyc_basic_monthly_buy', 0),
+      configService.getNumber('kyc_basic_can_sell', 0),
+      configService.getNumber('kyc_basic_daily_withdraw', 0),
+      configService.getNumber('kyc_standard_daily_buy', 100),
+      configService.getNumber('kyc_standard_monthly_buy', 500),
+      configService.getNumber('kyc_standard_can_sell', 1),
+      configService.getNumber('kyc_standard_daily_withdraw_xof', 500_000),
+      configService.getNumber('kyc_verified_daily_buy', 1000),
+      configService.getNumber('kyc_verified_monthly_buy', 5000),
+      configService.getNumber('kyc_verified_can_sell', 1),
+      configService.getNumber('kyc_verified_daily_withdraw_xof', 5_000_000),
     ]);
 
     return {
@@ -197,6 +244,13 @@ export class KycService {
       STANDARD: { dailyBuy: standardDailyBuy, monthlyBuy: standardMonthlyBuy, canSell: standardCanSell === 1, dailyWithdraw: standardDailyWithdraw },
       VERIFIED: { dailyBuy: verifiedDailyBuy, monthlyBuy: verifiedMonthlyBuy, canSell: verifiedCanSell === 1, dailyWithdraw: verifiedDailyWithdraw },
     };
+  }
+
+  /**
+   * Instance method wrapper for getKycLimits (for convenience)
+   */
+  async getKycLimitsForUser(): Promise<Record<string, KycLimits>> {
+    return KycService.getKycLimits(this.configService);
   }
 
   /**
@@ -348,7 +402,7 @@ export class KycService {
   /**
    * Process Smile Identity webhook callback
    */
-  async processCallback(webhookData: any): Promise<{
+  async processCallback(webhookData: SmileIdentityWebhookData): Promise<{
     success: boolean;
     userId?: string;
     newKycLevel?: 'BASIC' | 'STANDARD' | 'VERIFIED';
@@ -707,7 +761,7 @@ export class KycService {
       .all<any>();
 
     // KYC limits from config
-    const limits = await this.getKycLimits();
+    const limits = await KycService.getKycLimits(this.configService);
 
     return {
       level: user.kyc_level as 'BASIC' | 'STANDARD' | 'VERIFIED',
@@ -721,6 +775,106 @@ export class KycService {
         rejectionReason: d.rejection_reason,
       })),
       limits: limits[user.kyc_level] || limits.BASIC,
+    };
+  }
+
+  /**
+   * Check if user's KYC is valid for trading
+   * Returns false if:
+   * - KYC level is BASIC (not verified)
+   * - KYC status is not APPROVED
+   * - KYC document has expired
+   */
+  async isKycValidForTrading(userId: string): Promise<{
+    valid: boolean;
+    reason?: string;
+    kycLevel?: string;
+    expiresAt?: string;
+  }> {
+    // Get user KYC status
+    const user = await this.db
+      .prepare('SELECT kyc_level, kyc_status FROM users WHERE id = ?')
+      .bind(userId)
+      .first<{ kyc_level: string; kyc_status: string }>();
+
+    if (!user) {
+      return { valid: false, reason: 'User not found' };
+    }
+
+    // Check KYC level
+    if (user.kyc_level === 'BASIC') {
+      return { valid: false, reason: 'KYC_LEVEL_BASIC', kycLevel: user.kyc_level };
+    }
+
+    // Check KYC status
+    if (user.kyc_status !== 'APPROVED') {
+      return { valid: false, reason: `KYC_STATUS_${user.kyc_status}`, kycLevel: user.kyc_level };
+    }
+
+    // Check document expiration
+    const latestDoc = await this.db
+      .prepare(`
+        SELECT id, document_type, document_expiry_date, verification_status
+        FROM kyc_documents
+        WHERE user_id = ? AND verification_status = 'VERIFIED'
+        ORDER BY verified_at DESC
+        LIMIT 1
+      `)
+      .bind(userId)
+      .first<{
+        id: string;
+        document_type: string;
+        document_expiry_date: string | null;
+        verification_status: string;
+      }>();
+
+    if (!latestDoc) {
+      return { valid: false, reason: 'NO_VERIFIED_DOCUMENT', kycLevel: user.kyc_level };
+    }
+
+    // Check expiration date if present
+    if (latestDoc.document_expiry_date) {
+      const expiryDate = new Date(latestDoc.document_expiry_date);
+      const now = new Date();
+
+      if (expiryDate < now) {
+        // Document has expired - update user KYC status
+        await this.db
+          .prepare(`
+            UPDATE users
+            SET kyc_status = 'EXPIRED', updated_at = datetime('now')
+            WHERE id = ?
+          `)
+          .bind(userId)
+          .run();
+
+        return {
+          valid: false,
+          reason: 'KYC_DOCUMENT_EXPIRED',
+          kycLevel: user.kyc_level,
+          expiresAt: latestDoc.document_expiry_date
+        };
+      }
+
+      // Warn if document expires within 30 days
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+      if (expiryDate < thirtyDaysFromNow) {
+        // Still valid but expiring soon
+        return {
+          valid: true,
+          reason: 'KYC_EXPIRING_SOON',
+          kycLevel: user.kyc_level,
+          expiresAt: latestDoc.document_expiry_date
+        };
+      }
+    }
+
+    return {
+      valid: true,
+      kycLevel: user.kyc_level,
+      expiresAt: latestDoc.document_expiry_date || undefined
     };
   }
 }

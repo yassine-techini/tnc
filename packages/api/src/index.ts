@@ -64,7 +64,7 @@ app.use('*', async (c, next) => {
     }
   }
 
-  await next();
+  return next();
 });
 
 // Compression is handled by Cloudflare edge — no app-level compress() needed
@@ -83,7 +83,7 @@ app.use('*', async (c, next) => {
   const method = c.req.method;
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const origin = c.req.header('Origin');
-    const referer = c.req.header('Referer');
+    const _referer = c.req.header('Referer');
 
     // Allow webhook routes (authenticated via signature, not origin)
     if (c.req.path.includes('/webhooks/')) {

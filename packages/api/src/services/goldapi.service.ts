@@ -161,7 +161,7 @@ export class GoldAPIService {
     try {
       // Free tier API - limited requests
       const metalsApiUrl = this.configService
-        ? await this.configService.get('metals_api_url', 'https://api.metals.live/v1/spot/gold')
+        ? await this.configService.get('metals_api_url', 'https://api.metals.live/v1/spot/gold') ?? 'https://api.metals.live/v1/spot/gold'
         : 'https://api.metals.live/v1/spot/gold';
       const response = await fetch(metalsApiUrl);
 

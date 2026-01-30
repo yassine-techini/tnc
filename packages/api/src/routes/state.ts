@@ -1,13 +1,45 @@
-import { Hono } from 'hono';
+import { Hono, Context, Next } from 'hono';
+import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { SecurityService } from '../services/security.service';
 import { ConfigService } from '../services/config.service';
 
+// Zod schemas for state endpoints
+const StateLoginSchema = z.object({
+  email: z.string().email('Email invalide'),
+  password: z.string().min(1, 'Mot de passe requis'),
+  totpCode: z.string().length(6).optional(),
+});
+
+const State2FASetupSchema = z.object({
+  setupToken: z.string().uuid('Token invalide'),
+});
+
+const State2FAVerifySchema = z.object({
+  setupToken: z.string().uuid('Token invalide'),
+  code: z.string().length(6, 'Code doit être 6 chiffres'),
+});
+
+// Type for admin record from DB
+interface AdminRecord {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  password_hash: string;
+  two_factor_secret: string | null;
+  two_factor_enabled: number;
+  active: number;
+  last_login_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const state = new Hono<AppEnv>();
 
 // JWT-based auth middleware for state portal
-async function stateJwtMiddleware(c: any, next: any) {
+async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -42,7 +74,7 @@ async function stateJwtMiddleware(c: any, next: any) {
     const stateUser = await c.env.DB
       .prepare('SELECT * FROM admins WHERE email = ? AND role = ? AND active = 1')
       .bind(payload.email, 'STATE_OPERATOR')
-      .first();
+      .first<AdminRecord>();
 
     if (!stateUser) {
       return c.json({
@@ -59,7 +91,7 @@ async function stateJwtMiddleware(c: any, next: any) {
     c.set('adminEmail', payload.email);
     c.set('adminRole', 'STATE_OPERATOR');
 
-    await next();
+    return next();
   } catch (error) {
     return c.json({
       success: false,
@@ -76,24 +108,28 @@ async function stateJwtMiddleware(c: any, next: any) {
 state.post('/login', async (c) => {
   try {
     const body = await c.req.json();
-    const { email, password, totpCode } = body;
 
-    if (!email || !password) {
+    // Validate input with Zod
+    const parseResult = StateLoginSchema.safeParse(body);
+    if (!parseResult.success) {
       return c.json({
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Email et mot de passe requis',
+          message: parseResult.error.issues[0]?.message || 'Données invalides',
+          details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),
       }, 400);
     }
 
+    const { email, password, totpCode } = parseResult.data;
+
     // Find admin with STATE_OPERATOR role
     const stateUser = await c.env.DB
       .prepare('SELECT * FROM admins WHERE email = ? AND role = ? AND active = 1')
       .bind(email, 'STATE_OPERATOR')
-      .first<any>();
+      .first<AdminRecord>();
 
     if (!stateUser) {
       return c.json({
@@ -106,11 +142,11 @@ state.post('/login', async (c) => {
       }, 401);
     }
 
-    // Verify password
+    // Verify password (with automatic Argon2id upgrade for legacy hashes)
     const authService = new AuthService(c.env.JWT_SECRET);
-    const isValid = await authService.verifyPassword(password, stateUser.password_hash);
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(password, stateUser.password_hash);
 
-    if (!isValid) {
+    if (!passwordResult.valid) {
       return c.json({
         success: false,
         error: {
@@ -119,6 +155,14 @@ state.post('/login', async (c) => {
         },
         requestId: crypto.randomUUID(),
       }, 401);
+    }
+
+    // Upgrade legacy PBKDF2 hash to Argon2id (transparent migration)
+    if (passwordResult.needsRehash) {
+      const newHash = await authService.hashPassword(password);
+      await c.env.DB.prepare('UPDATE admins SET password_hash = ?, updated_at = datetime("now") WHERE id = ?')
+        .bind(newHash, stateUser.id)
+        .run();
     }
 
     // Check if 2FA is set up (mandatory for state portal)
@@ -351,7 +395,7 @@ state.post('/2fa/verify', async (c) => {
     const stateUser = await c.env.DB
       .prepare('SELECT * FROM admins WHERE id = ?')
       .bind(pendingData.adminId)
-      .first<any>();
+      .first<AdminRecord>();
 
     return c.json({
       success: true,
@@ -634,7 +678,8 @@ state.get('/reports/monthly', async (c) => {
 // GET /state/price/history - Price history for charts
 state.get('/price/history', async (c) => {
   try {
-    const days = parseInt(c.req.query('days') || '30');
+    // SECURITY: Validate days parameter with bounds (1-365)
+    const days = Math.max(1, Math.min(365, parseInt(c.req.query('days') || '30', 10) || 30));
 
     const prices = await c.env.DB
       .prepare(`
@@ -674,7 +719,12 @@ state.get('/price/history', async (c) => {
 // GET /state/transactions/stats - Transaction stats for charts
 state.get('/transactions/stats', async (c) => {
   try {
-    const period = c.req.query('period') || 'month';
+    // SECURITY: Whitelist valid period values
+    const validPeriods = ['day', 'week', 'month'] as const;
+    const requestedPeriod = c.req.query('period') || 'month';
+    const period = validPeriods.includes(requestedPeriod as typeof validPeriods[number])
+      ? requestedPeriod
+      : 'month';
 
     let dateFilter = "'-30 days'";
     if (period === 'week') dateFilter = "'-7 days'";
@@ -855,7 +905,9 @@ state.get('/reports/data/export', async (c) => {
     }
 
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
-    const exportLimit = await configService.getNumber('export_max_rows', 10000);
+    const rawExportLimit = await configService.getNumber('export_max_rows', 10000);
+    // SECURITY: Clamp exportLimit to safe range [1, 100000] to prevent SQL injection
+    const exportLimit = Math.max(1, Math.min(Math.floor(rawExportLimit), 100000));
     query += ` ORDER BY t.created_at DESC LIMIT ${exportLimit}`;
 
     const result = await c.env.DB.prepare(query).bind(...params).all<any>();

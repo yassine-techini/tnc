@@ -62,14 +62,19 @@ analytics.get('/history', requirePermission('analytics', 'view'), async (c) => {
   const requestId = crypto.randomUUID();
 
   try {
-    const period = c.req.query('period') || '24h';
+    // SECURITY: Whitelist valid period values to prevent URL injection
+    const validPeriods = ['1h', '6h', '24h', '7d', '30d', '1y'] as const;
+    const requestedPeriod = c.req.query('period') || '24h';
+    const period = validPeriods.includes(requestedPeriod as typeof validPeriods[number])
+      ? requestedPeriod
+      : '24h';
 
     // Get AnalyticsHub Durable Object
     const hubId = c.env.ANALYTICS_HUB.idFromName('global');
     const hub = c.env.ANALYTICS_HUB.get(hubId);
 
-    // Request history from Durable Object
-    const response = await hub.fetch(new Request(`https://internal/history?period=${period}`));
+    // Request history from Durable Object (using URLSearchParams for safety)
+    const response = await hub.fetch(new Request(`https://internal/history?${new URLSearchParams({ period }).toString()}`));
 
     if (!response.ok) {
       return c.json({

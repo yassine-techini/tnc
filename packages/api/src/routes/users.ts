@@ -77,12 +77,21 @@ users.get('/me', async (c) => {
   }
 });
 
+// SECURITY: Validation schema for profile updates
+const updateProfileSchema = z.object({
+  phone: z.string().regex(/^\+226\d{8}$/, 'Format de téléphone invalide (+226XXXXXXXX)').optional(),
+  country: z.string().length(2, 'Code pays doit être 2 caractères').optional(),
+}).refine(
+  (data) => data.phone || data.country,
+  { message: 'Au moins un champ requis (phone ou country)' }
+);
+
 // PATCH /users/me
-users.patch('/me', async (c) => {
+users.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
   const userId = c.get('userId');
 
   try {
-    const body = await c.req.json();
+    const body = c.req.valid('json');
     const { phone, country } = body;
 
     const updates: string[] = [];
@@ -95,17 +104,6 @@ users.patch('/me', async (c) => {
     if (country) {
       updates.push('country = ?');
       values.push(country);
-    }
-
-    if (updates.length === 0) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_INPUT',
-          message: 'Aucune donnée à mettre à jour',
-        },
-        requestId: crypto.randomUUID(),
-      }, 400);
     }
 
     updates.push("updated_at = datetime('now')");
@@ -134,12 +132,36 @@ users.patch('/me', async (c) => {
   }
 });
 
+// SECURITY: Comprehensive validation schema for KYC submission
+const kycSubmitSchema = z.object({
+  documentType: z.enum(['CNIB', 'PASSPORT', 'PERMIT', 'CEDEAO'], {
+    errorMap: () => ({ message: 'Type de document invalide' }),
+  }),
+  documentNumber: z.string().min(1).max(30).optional(),
+  firstName: z.string()
+    .min(1, 'Prénom requis')
+    .max(50, 'Prénom trop long')
+    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'Prénom contient des caractères invalides'),
+  lastName: z.string()
+    .min(1, 'Nom requis')
+    .max(50, 'Nom trop long')
+    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'Nom contient des caractères invalides'),
+  dateOfBirth: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide (YYYY-MM-DD)'),
+  nationality: z.string().length(2, 'Code pays doit être 2 caractères'),
+  address: z.string().max(200, 'Adresse trop longue').optional(),
+  city: z.string().max(100, 'Ville trop longue').optional(),
+  documentExpiryDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide')
+    .optional(),
+});
+
 // POST /users/me/kyc - Submit KYC application
-users.post('/me/kyc', async (c) => {
+users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
   const userId = c.get('userId');
 
   try {
-    const body = await c.req.json();
+    const body = c.req.valid('json');
     const {
       documentType,
       documentNumber,
@@ -151,18 +173,6 @@ users.post('/me/kyc', async (c) => {
       city,
       documentExpiryDate,
     } = body;
-
-    // Validate required fields
-    if (!documentType || !firstName || !lastName || !dateOfBirth || !nationality) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_INPUT',
-          message: 'Champs obligatoires manquants',
-        },
-        requestId: crypto.randomUUID(),
-      }, 400);
-    }
 
     // Check if user already has a pending or verified KYC
     const existingKyc = await c.env.DB
@@ -619,8 +629,11 @@ users.get('/me/notifications', async (c) => {
   const userId = c.get('userId');
 
   try {
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '20');
+    // SECURITY: Validate pagination parameters with bounds
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const maxLimit = await configService.getNumber('pagination_max_limit', 100);
+    const page = Math.max(1, parseInt(c.req.query('page') || '1', 10) || 1);
+    const limit = Math.min(Math.max(1, parseInt(c.req.query('limit') || '20', 10) || 20), maxLimit);
     const offset = (page - 1) * limit;
 
     const notifications = await c.env.DB
@@ -638,6 +651,16 @@ users.get('/me/notifications', async (c) => {
       .bind(userId)
       .first<{ count: number }>();
 
+    // SECURITY: Safe JSON parsing for notification data
+    const safeParseJson = (data: string | null): unknown => {
+      if (!data) return null;
+      try {
+        return JSON.parse(data);
+      } catch {
+        return null;
+      }
+    };
+
     return c.json({
       success: true,
       data: {
@@ -646,7 +669,7 @@ users.get('/me/notifications', async (c) => {
           type: n.type,
           title: n.title,
           body: n.body,
-          data: n.data ? JSON.parse(n.data) : null,
+          data: safeParseJson(n.data),
           read: Boolean(n.read),
           createdAt: n.created_at,
         })) || [],
@@ -674,17 +697,30 @@ users.get('/me/notifications', async (c) => {
 users.patch('/me/notifications/:id/read', async (c) => {
   const userId = c.get('userId');
   const { id } = c.req.param();
+  const requestId = crypto.randomUUID();
 
   try {
-    await c.env.DB
+    const result = await c.env.DB
       .prepare("UPDATE notifications SET read = 1, read_at = datetime('now') WHERE id = ? AND user_id = ?")
       .bind(id, userId)
       .run();
 
+    // SECURITY: Check if notification was actually found and updated
+    if (!result.meta.changes || result.meta.changes === 0) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'NOTIFICATION_NOT_FOUND',
+          message: 'Notification non trouvée',
+        },
+        requestId,
+      }, 404);
+    }
+
     return c.json({
       success: true,
       message: 'Notification marquée comme lue',
-      requestId: crypto.randomUUID(),
+      requestId,
     });
   } catch (error) {
     console.error('Mark notification read error:', error);
@@ -694,7 +730,7 @@ users.patch('/me/notifications/:id/read', async (c) => {
         code: 'INTERNAL_ERROR',
         message: 'Erreur lors de la mise à jour',
       },
-      requestId: crypto.randomUUID(),
+      requestId,
     }, 500);
   }
 });
@@ -946,8 +982,8 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
     }
 
     // Verify current password
-    const isValidPassword = await authService.verifyPassword(body.currentPassword, user.password_hash);
-    if (!isValidPassword) {
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(body.currentPassword, user.password_hash);
+    if (!passwordResult.valid) {
       await securityService.logSecurityEvent({
         userId,
         action: 'PASSWORD_CHANGE_FAILED',
@@ -966,6 +1002,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         requestId,
       }, 401);
     }
+    // Note: No need to rehash here - new password will be hashed with Argon2id
 
     // Validate new password strength
     const passwordValidation = securityService.validatePassword(body.newPassword);
@@ -1006,11 +1043,17 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
     // Add to password history
     await securityService.addPasswordToHistory(userId, newPasswordHash);
 
-    // Invalidate all other sessions (optional security measure)
-    await c.env.DB
-      .prepare('DELETE FROM active_sessions WHERE user_id = ?')
-      .bind(userId)
-      .run();
+    // SECURITY: Invalidate ALL sessions and refresh tokens after password change
+    await Promise.all([
+      c.env.DB
+        .prepare('DELETE FROM active_sessions WHERE user_id = ?')
+        .bind(userId)
+        .run(),
+      c.env.DB
+        .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+        .bind(userId)
+        .run(),
+    ]);
 
     // Log the password change
     await securityService.logAuditEvent({
@@ -1351,9 +1394,10 @@ users.delete('/me/price-alerts/:id', async (c) => {
       }, 404);
     }
 
+    // SECURITY: Include user_id in DELETE to prevent TOCTOU race condition
     await c.env.DB
-      .prepare('DELETE FROM price_alerts WHERE id = ?')
-      .bind(id)
+      .prepare('DELETE FROM price_alerts WHERE id = ? AND user_id = ?')
+      .bind(id, userId)
       .run();
 
     return c.json({
@@ -1419,9 +1463,9 @@ users.delete('/me', async (c) => {
 
     // Verify password
     const authService = new AuthService(c.env.JWT_SECRET);
-    const isValidPassword = await authService.verifyPassword(password, user.password_hash);
+    const passwordResult = await authService.verifyPasswordWithRehashCheck(password, user.password_hash);
 
-    if (!isValidPassword) {
+    if (!passwordResult.valid) {
       return c.json({
         success: false,
         error: {
@@ -1431,6 +1475,7 @@ users.delete('/me', async (c) => {
         requestId,
       }, 401);
     }
+    // Note: No rehash needed - account is being deleted
 
     // Check wallet balance
     const wallet = await c.env.DB

@@ -7,7 +7,8 @@ export class EncryptionService {
   private keyMaterial: Uint8Array;
 
   constructor(encryptionKeyHex: string) {
-    // ENCRYPTION_KEY should be a 64-char hex string (32 bytes = 256 bits)
+    // ENCRYPTION_KEY must be a 64-char hex string (32 bytes = 256 bits)
+    validateEncryptionKey(encryptionKeyHex);
     this.keyMaterial = hexToBytes(encryptionKeyHex);
   }
 
@@ -60,6 +61,26 @@ export class EncryptionService {
       { name: 'AES-GCM', iv },
       key,
       ciphertext
+    );
+  }
+}
+
+/**
+ * Validate encryption key format at startup.
+ * Must be exactly 64 hex characters (256 bits / 32 bytes).
+ */
+function validateEncryptionKey(hex: string): void {
+  if (!hex) {
+    throw new Error('ENCRYPTION_KEY is required but not set');
+  }
+  if (hex.length !== 64) {
+    throw new Error(
+      `ENCRYPTION_KEY must be exactly 64 hex characters (256 bits). Got ${hex.length} characters.`
+    );
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error(
+      'ENCRYPTION_KEY must contain only valid hexadecimal characters (0-9, a-f, A-F)'
     );
   }
 }

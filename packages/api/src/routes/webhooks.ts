@@ -13,6 +13,26 @@ import { ConfigService } from '../services/config.service';
 const webhooks = new Hono<AppEnv>();
 
 /**
+ * SECURITY: Sanitize and validate amount from webhook payload
+ * Rejects NaN, Infinity, negative values, and excessive amounts
+ */
+function sanitizeAmount(value: unknown, maxAmount = 100_000_000): number {
+  const num = parseFloat(String(value ?? 0));
+
+  // Reject invalid numbers
+  if (!Number.isFinite(num) || num < 0) {
+    throw new Error(`Invalid webhook amount: ${value}`);
+  }
+
+  // Reject amounts exceeding reasonable limits
+  if (num > maxAmount) {
+    throw new Error(`Webhook amount exceeds maximum: ${num} > ${maxAmount}`);
+  }
+
+  return num;
+}
+
+/**
  * Get payment and notification services
  */
 function getServices(env: Env) {
@@ -73,7 +93,7 @@ webhooks.post('/payment/orange', async (c) => {
       provider: 'orange_money',
       transactionId: body.txnid || body.pay_token,
       status,
-      amount: parseFloat(body.amount),
+      amount: sanitizeAmount(body.amount),
       currency: body.currency || 'XOF',
       reference: body.order_id,
       timestamp: new Date().toISOString(),
@@ -143,7 +163,7 @@ webhooks.post('/payment/moov', async (c) => {
       provider: 'moov_money',
       transactionId: body.transaction_id,
       status,
-      amount: parseFloat(body.amount),
+      amount: sanitizeAmount(body.amount),
       currency: body.currency || 'XOF',
       reference: body.reference,
       timestamp: new Date().toISOString(),
@@ -212,7 +232,7 @@ webhooks.post('/payment/cinetpay', async (c) => {
       provider: 'cinetpay',
       transactionId: body.cpm_trans_id || body.transaction_id,
       status,
-      amount: parseFloat(body.cpm_amount || body.amount),
+      amount: sanitizeAmount(body.cpm_amount || body.amount),
       currency: body.cpm_currency || 'XOF',
       reference: body.cpm_custom || body.transaction_id,
       timestamp: new Date().toISOString(),
@@ -364,7 +384,7 @@ webhooks.post('/payment/bank', async (c) => {
     // SWIFT format: { transaction_ref, amount, status_code, iban }
 
     const reference = body.reference || body.ref_operation || body.transaction_ref || body.order_id;
-    const amount = parseFloat(body.amount || body.montant || 0);
+    const amount = sanitizeAmount(body.amount || body.montant);
     const bankReference = body.bankReference || body.bank_ref || body.numero_operation;
 
     // Map bank status to our status
