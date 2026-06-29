@@ -16,6 +16,18 @@ const webhooks = new Hono<AppEnv>();
  * SECURITY: Sanitize and validate amount from webhook payload
  * Rejects NaN, Infinity, negative values, and excessive amounts
  */
+/**
+ * Constant-time string comparison to avoid leaking the webhook secret via timing.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 function sanitizeAmount(value: unknown, maxAmount = 100_000_000): number {
   const num = parseFloat(String(value ?? 0));
 
@@ -366,14 +378,15 @@ webhooks.post('/payment/bank', async (c) => {
 
     const { paymentService, notificationService } = getServices(c.env);
 
-    // For bank webhooks, we accept a simpler authentication mechanism
-    // In production, this should verify against bank-specific authentication
-    const apiKey = c.req.header('X-API-Key');
-    if (c.env.ENVIRONMENT !== 'development') {
-      if (apiKey !== c.env.WEBHOOK_SECRET && !signature) {
-        console.error('Unauthorized bank webhook attempt');
-        return c.json({ success: false, error: 'Unauthorized' }, 401);
-      }
+    // Authenticate the shared secret with a constant-time comparison.
+    // A merely-present signature header is NOT accepted (it was previously
+    // trusted without any cryptographic verification, allowing forged
+    // confirmations). Outside development the secret is mandatory.
+    const apiKey = c.req.header('X-API-Key') || '';
+    const secretOk = !!c.env.WEBHOOK_SECRET && timingSafeEqual(apiKey, c.env.WEBHOOK_SECRET);
+    if (c.env.ENVIRONMENT !== 'development' && !secretOk) {
+      console.error('Unauthorized bank webhook attempt');
+      return c.json({ success: false, error: 'Unauthorized' }, 401);
     }
 
     const body = JSON.parse(rawBody);
@@ -464,9 +477,27 @@ webhooks.post('/payment/bank', async (c) => {
         .bind(bankReference, existingTransaction.id)
         .run();
 
-      // Credit wallet for deposits
+      // Credit wallet for deposits. Validate the webhook amount against the
+      // amount we expected for this transaction, and credit the DB-derived net
+      // amount (never the attacker-controllable webhook value).
       if (existingTransaction.type === 'DEPOSIT') {
-        const netAmount = amount - (existingTransaction.fees || 0);
+        const expected = Number(existingTransaction.cash_amount) || 0;
+        if (Math.abs(amount - expected) > 1) {
+          await c.env.DB
+            .prepare(`
+              INSERT INTO audit_logs (id, action, entity_type, entity_id, new_value, ip_address, created_at)
+              VALUES (?, 'BANK_WEBHOOK_AMOUNT_MISMATCH', 'transaction', ?, ?, ?, datetime('now'))
+            `)
+            .bind(
+              crypto.randomUUID(),
+              existingTransaction.id,
+              JSON.stringify({ expected, received: amount }),
+              c.req.header('CF-Connecting-IP') || 'unknown'
+            )
+            .run();
+          return c.json({ success: false, error: 'Amount mismatch', requestId }, 400);
+        }
+        const netAmount = expected - (Number(existingTransaction.fees) || 0);
         await c.env.DB
           .prepare(`
             UPDATE wallets

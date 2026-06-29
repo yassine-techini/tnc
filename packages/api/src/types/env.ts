@@ -36,6 +36,12 @@ export interface Env {
   // Secrets
   JWT_SECRET: string;
   ENCRYPTION_KEY: string;
+
+  // Bootstrap / setup routes (must be set to enable /setup/* in any environment)
+  SETUP_SECRET?: string;
+  SETUP_ADMIN_PASSWORD?: string;
+  SETUP_STATE_PASSWORD?: string;
+  SETUP_DEMO_PASSWORD?: string;
   
   // Gold API
   GOLD_API_KEY: string;

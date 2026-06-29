@@ -600,12 +600,20 @@ export class PaymentService {
         };
       }
 
-      // Verify amount matches
-      const storedPayment = await this.kv.get(`payment:${webhook.provider}:${webhook.reference}`, 'json');
-      if (storedPayment) {
-        const stored = storedPayment as { amount: number };
-        if (stored.amount !== webhook.amount) {
+      // Verify amount matches — only for SUCCESS webhooks, since that is the
+      // path that credits the wallet. FAILED/CANCELLED callbacks just record an
+      // outcome and must not be rejected on amount. Prefer the stored payment
+      // intent (KV); fall back to the transaction's own recorded amount so the
+      // check NEVER fails open when the intent is missing/expired. A tolerance
+      // of 1 XOF absorbs floating-point noise.
+      if (webhook.status === 'SUCCESS') {
+        const storedPayment = await this.kv.get(`payment:${webhook.provider}:${webhook.reference}`, 'json');
+        const expectedAmount = storedPayment
+          ? (storedPayment as { amount: number }).amount
+          : Number(transaction.cash_amount) || 0;
+        if (Math.abs(expectedAmount - webhook.amount) > 1) {
           console.error('Amount mismatch in webhook');
+          await this.logWebhook(webhook, 'AMOUNT_MISMATCH');
           return { success: false, error: 'Amount mismatch' };
         }
       }
@@ -650,10 +658,12 @@ export class PaymentService {
         };
       }
 
-      // If payment successful, update wallet balance (with idempotent condition)
+      // If payment successful, credit wallet. Credit the DB-derived NET amount
+      // (cash_amount - fees), matching how reconciliation computes the expected
+      // balance — never the attacker-controllable webhook amount. The status
+      // update above (idempotent WHERE) guarantees we credit exactly once.
       if (newStatus === 'COMPLETED' && transaction.type === 'DEPOSIT') {
-        // Use a unique constraint or check to prevent double-crediting
-        // The transaction status update above already ensures we only credit once
+        const netAmount = (Number(transaction.cash_amount) || 0) - (Number(transaction.fees) || 0);
         await this.db
           .prepare(`
             UPDATE wallets
@@ -661,7 +671,7 @@ export class PaymentService {
                 updated_at = datetime('now')
             WHERE user_id = ?
           `)
-          .bind(webhook.amount, transaction.user_id)
+          .bind(netAmount, transaction.user_id)
           .run();
       }
 

@@ -151,9 +151,16 @@ app.use('*', secureHeaders({
     scriptSrc: ["'self'"],
     styleSrc: ["'self'", "'unsafe-inline'"],
     fontSrc: ["'self'"],
-    imgSrc: ["'self'", 'data:', 'https:'],
+    // Restrict images to self + inline data URIs (was 'https:' = any origin).
+    imgSrc: ["'self'", 'data:'],
     connectSrc: ["'self'", 'https://bf-api.tnc.trading', 'https://tnc-trading-api.yassine-techini.workers.dev'],
+    baseUri: ["'self'"],
+    formAction: ["'self'"],
+    frameAncestors: ["'none'"],
+    objectSrc: ["'none'"],
   },
+  // Enforce HTTPS for 2 years incl. subdomains (CLAUDE.md requires HSTS).
+  strictTransportSecurity: 'max-age=63072000; includeSubDomains; preload',
   xFrameOptions: 'DENY',
   xContentTypeOptions: 'nosniff',
   referrerPolicy: 'strict-origin-when-cross-origin',
@@ -184,7 +191,9 @@ app.use('*', cors({
     }
 
     // Allow Cloudflare Pages preview deployments (e.g., https://abc123.tnc-trading-admin.pages.dev)
-    const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state)(-dev)?\.pages\.dev$/;
+    // Pattern kept consistent with the CSRF origin check above (state-portal,
+    // not the shorter 'state', which never matched the real project name).
+    const pagesDevPattern = /^https:\/\/[a-z0-9]+\.tnc-trading-(web|admin|state-portal)(-dev)?\.pages\.dev$/;
     if (pagesDevPattern.test(origin)) {
       return origin;
     }

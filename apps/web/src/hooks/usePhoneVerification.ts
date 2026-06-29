@@ -66,13 +66,13 @@ export function usePhoneVerification(
           error: null,
         }));
 
-        // API call to send verification code
+        // API call to send verification code (auth via httpOnly cookie)
         const response = await fetch('/api/v1/auth/verify-phone/send', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
           },
+          credentials: 'include',
           body: JSON.stringify({ phone }),
         });
 
@@ -129,13 +129,13 @@ export function usePhoneVerification(
           error: null,
         }));
 
-        // API call to verify code
+        // API call to verify code (auth via httpOnly cookie)
         const response = await fetch('/api/v1/auth/verify-phone/confirm', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
           },
+          credentials: 'include',
           body: JSON.stringify({
             phone: state.phone,
             code,

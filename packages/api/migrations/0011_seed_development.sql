@@ -78,7 +78,7 @@ INSERT OR IGNORE INTO gold_stock (
   id, total_allocated, tokens_issued,
   last_audit_date, last_audit_result, updated_at
 ) VALUES (
-  'gold-stock-main',
+  'main',   -- MUST match GOLD_STOCK_ID / schema default (single canonical row)
   10000.0,  -- 10kg allocated by State
   110.5,    -- Total tokens issued (matches sum of wallet balances)
   datetime('now'),

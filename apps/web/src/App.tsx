@@ -16,16 +16,14 @@ function PageLoader() {
   );
 }
 
-// Smart root: authenticated → dashboard, otherwise → landing page
+// Smart root: authenticated → dashboard, otherwise → login.
+// The public landing page now lives in the standalone `apps/landing` deployment.
 function RootPage() {
   const { isAuthenticated, _hasHydrated } = useAuthStore();
   if (!_hasHydrated) return <PageLoader />;
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
-  return <Landing />;
+  return <Navigate to="/login" replace />;
 }
-
-// Landing page (lazy loaded)
-const Landing = lazy(() => import('./pages/landing/Landing'));
 
 // Public pages (lazy loaded)
 const Login = lazy(() => import('./pages/auth/Login'));

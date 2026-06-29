@@ -9,6 +9,19 @@ import type { ApiError } from '../types/index.js';
 type ErrorCode = keyof typeof ERROR_CODES;
 
 /**
+ * Generate a UUID, tolerating environments where crypto.randomUUID is missing
+ * (older Node without the global, insecure contexts) by falling back to a
+ * non-cryptographic id. Error request-ids only need to be unique, not secret.
+ */
+function safeRequestId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.randomUUID === 'function') {
+    return c.randomUUID();
+  }
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
  * Get error message in French for an error code
  */
 export function getErrorMessage(code: string): string {
@@ -63,7 +76,7 @@ export function createError(
       message: message || getErrorMessage(code),
       details,
     },
-    requestId: crypto.randomUUID(),
+    requestId: safeRequestId(),
   };
 }
 

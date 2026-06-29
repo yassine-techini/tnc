@@ -4,6 +4,14 @@
 
 import { ConfigService } from './config.service';
 
+/**
+ * Canonical primary key of the singleton gold_stock row.
+ * MUST match the schema default ('main' in 0001_initial_schema.sql) and all
+ * seeds (0002 prod, 0012 staging). Using a constant prevents the historical
+ * 'primary'/'main'/'gold-stock-main' divergence that silently broke purchases.
+ */
+export const GOLD_STOCK_ID = 'main';
+
 export interface GoldPriceRow {
   id: string;
   price_usd: number;
@@ -249,9 +257,15 @@ export class MarketService {
     const quoteExpiryMinutes = await this.configService.getNumber('quote_expiry_minutes', 5);
 
     const pricePerGram = type === 'BUY' ? currentPrice.buy_price : currentPrice.sell_price;
-    const cashAmount = tokenAmount * pricePerGram;
-    const fees = cashAmount * txFeePercent;
+
+    // Quantize money to whole XOF (zero-decimal currency) and grams to 0.001
+    // (milligram) precision. Storing/charging fractional XOF accumulates
+    // rounding drift across the ledger; quantizing here keeps amounts exact.
+    const quantizedTokens = Math.round(tokenAmount * 1000) / 1000;
+    const cashAmount = Math.round(quantizedTokens * pricePerGram);
+    const fees = Math.round(cashAmount * txFeePercent);
     const total = type === 'BUY' ? cashAmount + fees : cashAmount - fees;
+    tokenAmount = quantizedTokens;
 
     const id = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + quoteExpiryMinutes * 60 * 1000).toISOString();
@@ -320,7 +334,7 @@ export class MarketService {
   async getGoldStock(): Promise<GoldStockRow | null> {
     const result = await this.db
       .prepare('SELECT * FROM gold_stock WHERE id = ?')
-      .bind('primary')
+      .bind(GOLD_STOCK_ID)
       .first<GoldStockRow>();
     return result || null;
   }
@@ -346,7 +360,7 @@ export class MarketService {
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued + ?,
              updated_at = datetime('now')
-         WHERE id = 'primary'
+         WHERE id = '${GOLD_STOCK_ID}'
            AND (total_allocated - tokens_issued) >= ?`
       )
       .bind(tokenAmount, tokenAmount)
@@ -365,7 +379,7 @@ export class MarketService {
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued - ?,
              updated_at = datetime('now')
-         WHERE id = 'primary'
+         WHERE id = '${GOLD_STOCK_ID}'
            AND tokens_issued >= ?`
       )
       .bind(tokenAmount, tokenAmount)

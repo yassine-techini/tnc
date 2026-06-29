@@ -129,6 +129,9 @@ new_classes = ["PriceTracker", "TransactionSession"]
 # ============================================
 # - JWT_SECRET
 # - ENCRYPTION_KEY
+# - SETUP_SECRET            (required to enable /setup/* routes; >= 16 chars)
+# - SETUP_ADMIN_PASSWORD    (optional; generated and returned once if unset)
+# - SETUP_STATE_PASSWORD    (optional; generated and returned once if unset)
 # - GOLD_API_KEY
 # - SMILE_IDENTITY_API_KEY
 # - SMILE_IDENTITY_PARTNER_ID

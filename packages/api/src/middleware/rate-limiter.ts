@@ -79,7 +79,10 @@ function isSensitivePath(path: string): boolean {
 }
 
 export async function rateLimiter(c: Context<AppEnv>, next: Next) {
-  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
+  // Only trust CF-Connecting-IP (set by Cloudflare's edge). X-Forwarded-For is
+  // fully client-controllable and would let an attacker bypass per-IP limits
+  // and poison the audit/blocklist by rotating the header.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
   const path = c.req.path;
 
   // Determine fail-closed mode early (before potential errors)

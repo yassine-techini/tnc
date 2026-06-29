@@ -5,6 +5,63 @@ import { ConfigService } from '../services/config.service';
 
 const setup = new Hono<AppEnv>();
 
+/**
+ * Constant-time string comparison to avoid leaking the setup secret via timing.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+/**
+ * Generate a cryptographically strong random password (URL-safe, no ambiguous chars).
+ */
+function generatePassword(length = 24): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
+function unauthorized(c: any) {
+  return c.json({
+    success: false,
+    error: { code: 'UNAUTHORIZED', message: 'Accès refusé' },
+    requestId: crypto.randomUUID(),
+  }, 403);
+}
+
+/**
+ * Gate ALL setup routes behind a dedicated bootstrap secret.
+ * - If SETUP_SECRET is not configured, setup is disabled entirely (fail-closed).
+ * - The caller must present the secret via the `x-setup-token` header.
+ * This replaces the previous design where these routes were fully public and
+ * reused JWT_SECRET, allowing anonymous super-admin takeover.
+ */
+setup.use('*', async (c, next) => {
+  const configured = c.env.SETUP_SECRET;
+  if (!configured || configured.length < 16) {
+    return c.json({
+      success: false,
+      error: { code: 'SETUP_DISABLED', message: 'Setup non disponible' },
+      requestId: crypto.randomUUID(),
+    }, 404);
+  }
+  const provided = c.req.header('x-setup-token') ?? '';
+  if (!timingSafeEqual(provided, configured)) {
+    return unauthorized(c);
+  }
+  await next();
+});
+
 // POST /setup/init - Initialize admin users (only works once)
 setup.post('/init', async (c) => {
   try {
@@ -26,9 +83,13 @@ setup.post('/init', async (c) => {
 
     const authService = new AuthService(c.env.JWT_SECRET);
 
-    // Hash default passwords (no special characters for shell compatibility)
-    const adminPasswordHash = await authService.hashPassword('AdminPass2024');
-    const statePasswordHash = await authService.hashPassword('StatePass2024');
+    // Passwords come from secrets when provided, otherwise are generated and
+    // returned exactly once (the response is the only place they ever appear in
+    // plaintext). They are never hardcoded.
+    const adminPassword = c.env.SETUP_ADMIN_PASSWORD || generatePassword();
+    const statePassword = c.env.SETUP_STATE_PASSWORD || generatePassword();
+    const adminPasswordHash = await authService.hashPassword(adminPassword);
+    const statePasswordHash = await authService.hashPassword(statePassword);
 
     // Insert super admin
     await c.env.DB
@@ -60,7 +121,7 @@ setup.post('/init', async (c) => {
       )
       .run();
 
-    // Initialize gold stock if not exists
+    // Initialize gold stock if not exists (canonical singleton id 'main')
     const existingStock = await c.env.DB
       .prepare('SELECT id FROM gold_stock LIMIT 1')
       .first();
@@ -79,11 +140,11 @@ setup.post('/init', async (c) => {
 
     return c.json({
       success: true,
-      message: 'Initialisation réussie',
+      message: 'Initialisation réussie. Conservez ces mots de passe : ils ne seront plus jamais affichés.',
       data: {
         admins: [
-          { email: 'admin@tnc-trading.com', password: 'AdminPass2024', role: 'SUPER_ADMIN' },
-          { email: 'etat@mines.gov.bf', password: 'StatePass2024', role: 'STATE_OPERATOR' },
+          { email: 'admin@tnc-trading.com', password: adminPassword, role: 'SUPER_ADMIN' },
+          { email: 'etat@mines.gov.bf', password: statePassword, role: 'STATE_OPERATOR' },
         ],
         goldStock: {
           totalAllocated: 'configured via initial_gold_stock',
@@ -99,20 +160,27 @@ setup.post('/init', async (c) => {
       error: {
         code: 'SETUP_FAILED',
         message: 'Erreur lors de l\'initialisation',
-        details: error instanceof Error ? error.message : 'Unknown error',
       },
       requestId: crypto.randomUUID(),
     }, 500);
   }
 });
 
-// POST /setup/seed-demo - Seed demo users for testing
+// POST /setup/seed-demo - Seed demo users for testing (non-production only)
 setup.post('/seed-demo', async (c) => {
+  if (c.env.ENVIRONMENT === 'production') {
+    return c.json({
+      success: false,
+      error: { code: 'FORBIDDEN_IN_PRODUCTION', message: 'Seeding interdit en production' },
+      requestId: crypto.randomUUID(),
+    }, 403);
+  }
   try {
     const authService = new AuthService(c.env.JWT_SECRET);
 
-    // Demo password for all demo accounts
-    const demoPasswordHash = await authService.hashPassword('DemoPass2024');
+    // Demo password from secret, or generated once and returned in the response.
+    const demoPassword = c.env.SETUP_DEMO_PASSWORD || generatePassword();
+    const demoPasswordHash = await authService.hashPassword(demoPassword);
 
     // Demo users for web app
     const demoUsers = [
@@ -186,7 +254,7 @@ setup.post('/seed-demo', async (c) => {
           'etat@finances.gov.bf',
           'Ministère des Finances',
           'STATE_OPERATOR',
-          await authService.hashPassword('StatePass2024')
+          demoPasswordHash
         )
         .run();
     }
@@ -197,15 +265,10 @@ setup.post('/seed-demo', async (c) => {
       data: {
         users: createdUsers,
         credentials: {
-          webApp: {
-            password: 'DemoPass2024',
-            users: demoUsers.map(u => ({ email: u.email, kycLevel: u.kycLevel })),
-          },
-          admin: { email: 'admin@tnc-trading.com', password: 'AdminPass2024' },
-          statePortal: [
-            { email: 'etat@mines.gov.bf', password: 'StatePass2024' },
-            { email: 'etat@finances.gov.bf', password: 'StatePass2024' },
-          ],
+          password: demoPassword,
+          note: 'Mot de passe partagé pour tous les comptes demo/état seedés. Affiché une seule fois.',
+          webApp: demoUsers.map(u => ({ email: u.email, kycLevel: u.kycLevel })),
+          statePortal: ['etat@finances.gov.bf'],
         },
       },
       requestId: crypto.randomUUID(),
@@ -217,37 +280,24 @@ setup.post('/seed-demo', async (c) => {
       error: {
         code: 'SEED_FAILED',
         message: 'Erreur lors du seeding',
-        details: error instanceof Error ? error.message : 'Unknown error',
       },
       requestId: crypto.randomUUID(),
     }, 500);
   }
 });
 
-// POST /setup/reset-admin-password - Reset admin password (requires secret key)
+// POST /setup/reset-admin-password - Reset admin password (gated by SETUP_SECRET)
 setup.post('/reset-admin-password', async (c) => {
   try {
     const body = await c.req.json();
-    const { email, newPassword, secretKey } = body;
+    const { email, newPassword } = body;
 
-    // Verify secret key (use JWT_SECRET as the setup key)
-    if (secretKey !== c.env.JWT_SECRET) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: 'Clé secrète invalide',
-        },
-        requestId: crypto.randomUUID(),
-      }, 403);
-    }
-
-    if (!email || !newPassword) {
+    if (!email || !newPassword || typeof newPassword !== 'string' || newPassword.length < 12) {
       return c.json({
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Email et nouveau mot de passe requis',
+          message: 'Email et nouveau mot de passe (≥12 caractères) requis',
         },
         requestId: crypto.randomUUID(),
       }, 400);

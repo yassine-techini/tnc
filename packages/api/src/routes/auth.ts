@@ -662,7 +662,19 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
       }, 400);
     }
 
-    const tokens = await authService.refreshAccessToken(refreshToken);
+    // Load the user's invalidation epoch so refresh tokens issued before a
+    // logout/password-reset are rejected (decode sub without trusting it yet).
+    let invalidBefore: string | null = null;
+    const preCheck = await authService.verifyToken(refreshToken);
+    if (preCheck?.sub) {
+      const userRow = await c.env.DB
+        .prepare('SELECT tokens_invalid_before FROM users WHERE id = ?')
+        .bind(preCheck.sub)
+        .first<{ tokens_invalid_before: string | null }>();
+      invalidBefore = userRow?.tokens_invalid_before ?? null;
+    }
+
+    const tokens = await authService.refreshAccessToken(refreshToken, invalidBefore);
 
     if (!tokens) {
       return c.json({
@@ -715,7 +727,8 @@ auth.post('/logout', async (c) => {
       const payload = await authService.verifyToken(token);
 
       if (payload) {
-        // SECURITY: Invalidate ALL sessions and refresh tokens for user
+        // SECURITY: Invalidate ALL sessions and refresh tokens for user, and
+        // bump the token epoch so any already-issued refresh token is rejected.
         await Promise.all([
           c.env.DB
             .prepare('DELETE FROM active_sessions WHERE user_id = ?')
@@ -723,6 +736,10 @@ auth.post('/logout', async (c) => {
             .run(),
           c.env.DB
             .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+            .bind(payload.sub)
+            .run(),
+          c.env.DB
+            .prepare("UPDATE users SET tokens_invalid_before = datetime('now') WHERE id = ?")
             .bind(payload.sub)
             .run(),
         ]);
@@ -1170,6 +1187,10 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
         .run(),
       c.env.DB
         .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+        .bind(storedData.userId)
+        .run(),
+      c.env.DB
+        .prepare("UPDATE users SET tokens_invalid_before = datetime('now') WHERE id = ?")
         .bind(storedData.userId)
         .run(),
     ]);

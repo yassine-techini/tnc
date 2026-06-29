@@ -343,20 +343,6 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     }, 400);
   }
 
-  // Step 1: Atomically reserve stock (prevents overselling race condition)
-  const stockReserved = await marketService.atomicPurchaseStock(quote.token_amount);
-  if (!stockReserved) {
-    await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_INSUFFICIENT_STOCK',
-        message: 'Stock insuffisant',
-      },
-      requestId,
-    }, 400);
-  }
-
   // Get or create wallet
   let wallet = await walletService.findByUserId(userId);
   if (!wallet) {
@@ -364,40 +350,33 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     wallet = await walletService.create(userId, walletId);
   }
 
-  // Create transaction
+  // Atomic execution: stock reservation + wallet debit + transaction record run
+  // as a single all-or-nothing D1 batch. CHECK constraints guarantee no
+  // overselling and no overdraft even under concurrent requests; a mid-request
+  // failure leaves NO partial state (no orphan stock reservation).
   const transactionId = crypto.randomUUID();
-  await walletService.createTransaction({
-    id: transactionId,
+  const result = await walletService.executeBuyAtomic({
+    transactionId,
     userId,
     walletId: wallet.id,
-    type: 'BUY',
     tokenAmount: quote.token_amount,
     cashAmount: quote.cash_amount,
+    total: quote.total,
     pricePerGram: quote.price_per_gram,
     fees: quote.fees,
     paymentMethod: body.paymentMethod,
   });
 
-  // Step 2: Atomically debit wallet (prevents overdraft race condition)
-  const walletDebited = await walletService.processBuyTransaction(
-    transactionId,
-    wallet.id,
-    quote.token_amount,
-    quote.total
-  );
-
-  if (!walletDebited) {
-    // Rollback stock reservation and release lock
-    await marketService.atomicSellStock(quote.token_amount);
+  if (!result.ok) {
+    const reason = result.reason; // capture before await (await resets narrowing)
     await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_INSUFFICIENT_BALANCE',
-        message: 'Solde insuffisant. Veuillez recharger votre compte.',
-      },
-      requestId,
-    }, 400);
+    const errorMap = {
+      INSUFFICIENT_STOCK: { status: 400, code: 'TRADING_INSUFFICIENT_STOCK', message: 'Stock insuffisant' },
+      INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: 'Solde insuffisant. Veuillez recharger votre compte.' },
+      CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: 'Transaction non aboutie, veuillez réessayer.' },
+    } as const;
+    const e = errorMap[reason];
+    return c.json({ success: false, error: { code: e.code, message: e.message }, requestId }, e.status);
   }
 
   // Transaction successful - release lock
@@ -537,42 +516,31 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     }, 404);
   }
 
-  // Create transaction
+  // Atomic execution: token debit + net-cash credit + stock release + record,
+  // as a single all-or-nothing D1 batch. The token_balance >= 0 CHECK prevents
+  // selling more than held, even under concurrent requests.
   const transactionId = crypto.randomUUID();
-  await walletService.createTransaction({
-    id: transactionId,
+  const result = await walletService.executeSellAtomic({
+    transactionId,
     userId,
     walletId: wallet.id,
-    type: 'SELL',
     tokenAmount: quote.token_amount,
     cashAmount: quote.cash_amount,
+    total: quote.total,
     pricePerGram: quote.price_per_gram,
     fees: quote.fees,
     paymentMethod: body.paymentMethod,
   });
 
-  // Step 1: Atomically debit tokens (prevents overdraft race condition)
-  const walletDebited = await walletService.processSellTransaction(
-    transactionId,
-    wallet.id,
-    quote.token_amount,
-    quote.total
-  );
-
-  if (!walletDebited) {
+  if (!result.ok) {
+    const reason = result.reason; // capture before await (await resets narrowing)
     await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_INSUFFICIENT_BALANCE',
-        message: 'Solde de tokens insuffisant',
-      },
-      requestId,
-    }, 400);
+    const message = reason === 'CONFLICT'
+      ? 'Transaction non aboutie, veuillez réessayer.'
+      : 'Solde de tokens insuffisant';
+    const code = reason === 'CONFLICT' ? 'TRADING_CONFLICT' : 'TRADING_INSUFFICIENT_BALANCE';
+    return c.json({ success: false, error: { code, message }, requestId }, reason === 'CONFLICT' ? 409 : 400);
   }
-
-  // Step 2: Release stock (tokens returned to available pool)
-  await marketService.atomicSellStock(quote.token_amount);
 
   // Transaction successful - release lock
   await releaseLock();

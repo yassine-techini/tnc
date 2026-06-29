@@ -276,9 +276,11 @@ export async function adminAuthMiddleware(c: Context<AppEnv>, next: Next) {
           requestId: crypto.randomUUID(),
         }, 401);
       }
-    } else if (c.env.ENVIRONMENT === 'production') {
-      // In production, CF Access MUST be configured
-      logger.error('CF Access not configured in production — rejecting admin request');
+    } else if (c.env.ENVIRONMENT !== 'development') {
+      // CF Access MUST be configured in EVERY non-local environment. Previously
+      // only 'production' was guarded, so on staging (or any env != production)
+      // forged Cf-Access-Authenticated-User-Email headers were trusted blindly.
+      logger.error('CF Access not configured outside development — rejecting admin request');
       return c.json({
         success: false,
         error: {
@@ -288,7 +290,7 @@ export async function adminAuthMiddleware(c: Context<AppEnv>, next: Next) {
         requestId: crypto.randomUUID(),
       }, 500);
     }
-    // In development, trust the headers if CF Access is not configured
+    // Only in local development do we trust the headers without CF Access.
 
     // Check if user email is in admins table
     const admin = await c.env.DB
@@ -378,8 +380,9 @@ export async function stateAuthMiddleware(c: Context<AppEnv>, next: Next) {
           requestId: crypto.randomUUID(),
         }, 401);
       }
-    } else if (c.env.ENVIRONMENT === 'production') {
-      logger.error('CF Access not configured in production — rejecting state request');
+    } else if (c.env.ENVIRONMENT !== 'development') {
+      // CF Access required in every non-local environment (see admin middleware).
+      logger.error('CF Access not configured outside development — rejecting state request');
       return c.json({
         success: false,
         error: {

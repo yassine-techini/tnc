@@ -8,24 +8,9 @@ import { MarketService } from '../services/market.service';
 import { CertificateService } from '../services/certificate.service';
 import { PaymentService } from '../services/payment.service';
 import { ConfigService } from '../services/config.service';
+import { KycService } from '../services/kyc.service';
 
 const wallet = new Hono<AppEnv>();
-
-// Default withdrawal limits by KYC level (XOF/day) — overridden by config
-const DEFAULT_WITHDRAWAL_LIMITS = {
-  BASIC: 0,
-  STANDARD: 500_000,
-  VERIFIED: 5_000_000,
-};
-
-async function getWithdrawalLimits(configService: ConfigService) {
-  const [basic, standard, verified] = await Promise.all([
-    configService.getNumber('kyc_basic_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.BASIC),
-    configService.getNumber('kyc_standard_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.STANDARD),
-    configService.getNumber('kyc_verified_daily_withdraw', DEFAULT_WITHDRAWAL_LIMITS.VERIFIED),
-  ]);
-  return { BASIC: basic, STANDARD: standard, VERIFIED: verified };
-}
 
 // All routes require authentication
 wallet.use('/*', authMiddleware);
@@ -359,9 +344,10 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   const walletService = new WalletService(c.env.DB);
   const configService = new ConfigService(c.env.DB, c.env.CACHE);
 
-  // Check KYC withdrawal limit (from config)
-  const withdrawalLimits = await getWithdrawalLimits(configService);
-  const dailyLimit = withdrawalLimits[kycLevel];
+  // Check KYC withdrawal limit — single source of truth (KycService) so the
+  // enforced limit always matches what is reported to the user elsewhere.
+  const kycLimits = await KycService.getKycLimits(configService);
+  const dailyLimit = kycLimits[kycLevel].dailyWithdraw;
   if (dailyLimit === 0) {
     return c.json({
       success: false,
@@ -456,41 +442,48 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   const fees = Math.round(body.amount * feeRate);
   const netAmount = body.amount - fees;
 
-  // Create withdrawal transaction
+  // Create the transaction + withdrawal records AND debit the cash balance as a
+  // single atomic D1 batch. The debit is unconditional so the cash_balance >= 0
+  // CHECK constraint rolls the WHOLE batch back on a concurrent double-withdraw
+  // (no partial state, no negative balance), instead of the previous
+  // unconditional best-effort debit that could overdraw under a race.
   const transactionId = crypto.randomUUID();
-  await walletService.createTransaction({
-    id: transactionId,
-    userId,
-    walletId: walletData.id,
-    type: 'WITHDRAWAL',
-    cashAmount: body.amount,
-    fees,
-    paymentMethod: body.paymentMethod,
-    paymentReference: body.phoneNumber || body.bankAccount,
-  });
-
-  // Create withdrawal record
   const withdrawalId = crypto.randomUUID();
-  await c.env.DB
-    .prepare(`
-      INSERT INTO withdrawals (id, transaction_id, method, amount, fees, net_amount, phone_number, bank_account, bank_name, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', datetime('now'))
-    `)
-    .bind(
-      withdrawalId,
-      transactionId,
-      body.paymentMethod,
-      body.amount,
-      fees,
-      netAmount,
-      body.phoneNumber || null,
-      body.bankAccount || null,
-      body.bankName || null
-    )
-    .run();
-
-  // Deduct from cash balance immediately (pending state)
-  await walletService.updateCashBalance(walletData.id, -body.amount);
+  try {
+    await c.env.DB.batch([
+      c.env.DB
+        .prepare(
+          `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference)
+           VALUES (?, ?, ?, 'WITHDRAWAL', 'PENDING', NULL, ?, NULL, ?, ?, ?)`
+        )
+        .bind(transactionId, userId, walletData.id, body.amount, fees, body.paymentMethod, body.phoneNumber || body.bankAccount || null),
+      c.env.DB
+        .prepare(`
+          INSERT INTO withdrawals (id, transaction_id, method, amount, fees, net_amount, phone_number, bank_account, bank_name, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', datetime('now'))
+        `)
+        .bind(
+          withdrawalId,
+          transactionId,
+          body.paymentMethod,
+          body.amount,
+          fees,
+          netAmount,
+          body.phoneNumber || null,
+          body.bankAccount || null,
+          body.bankName || null
+        ),
+      c.env.DB
+        .prepare(`UPDATE wallets SET cash_balance = cash_balance - ?, updated_at = datetime('now') WHERE id = ?`)
+        .bind(body.amount, walletData.id),
+    ]);
+  } catch (e) {
+    return c.json({
+      success: false,
+      error: { code: 'INSUFFICIENT_BALANCE', message: 'Solde insuffisant' },
+      requestId,
+    }, 400);
+  }
 
   return c.json({
     success: true,

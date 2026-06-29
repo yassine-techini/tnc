@@ -241,19 +241,39 @@ export class AuthService {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token.
+   *
+   * @param invalidBefore Optional ISO timestamp; refresh tokens issued before
+   *   this instant are rejected. This is the per-user "token epoch" set on
+   *   logout / password reset, giving immediate revocation of all previously
+   *   issued refresh tokens without per-token storage.
    */
-  async refreshAccessToken(refreshToken: string): Promise<TokenPair | null> {
-    const payload = await this.verifyToken(refreshToken);
-
-    if (!payload || payload.type !== 'refresh') {
+  async refreshAccessToken(refreshToken: string, invalidBefore?: string | null): Promise<TokenPair | null> {
+    let rawPayload: jose.JWTPayload;
+    try {
+      ({ payload: rawPayload } = await jose.jwtVerify(refreshToken, this.jwtSecret));
+    } catch {
       return null;
     }
 
+    const parsed = JwtPayloadSchema.safeParse(rawPayload);
+    if (!parsed.success || parsed.data.type !== 'refresh') {
+      return null;
+    }
+
+    // Reject tokens issued before the user's invalidation epoch.
+    if (invalidBefore && typeof rawPayload.iat === 'number') {
+      const issuedAtMs = rawPayload.iat * 1000;
+      const epochMs = new Date(invalidBefore).getTime();
+      if (!Number.isNaN(epochMs) && issuedAtMs < epochMs) {
+        return null;
+      }
+    }
+
     return this.generateTokens({
-      sub: payload.sub,
-      email: payload.email,
-      kycLevel: payload.kycLevel,
+      sub: parsed.data.sub,
+      email: parsed.data.email,
+      kycLevel: parsed.data.kycLevel,
     });
   }
 

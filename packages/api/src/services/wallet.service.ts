@@ -1,6 +1,30 @@
-/**
+﻿/**
  * Wallet Service - D1 Database operations for wallets and transactions
  */
+
+import { GOLD_STOCK_ID } from './market.service';
+
+export type TradeFailureReason = 'INSUFFICIENT_BALANCE' | 'INSUFFICIENT_STOCK' | 'CONFLICT';
+// `reason` is always present (null on success) rather than a discriminated
+// union, because this package compiles with strictNullChecks:false, under which
+// `{ ok: true } | { ok: false; reason }` does not narrow on `!result.ok`.
+export type TradeResult = { ok: boolean; reason: TradeFailureReason | null };
+
+/**
+ * Map a D1 batch failure to a business reason. CHECK-constraint violations
+ * surface the offending column name in the error message; we use that to give
+ * a precise error. Anything unrecognized is treated as a transient CONFLICT.
+ */
+function classifyTradeError(e: unknown): TradeFailureReason {
+  const msg = String((e as Error)?.message ?? '').toLowerCase();
+  if (msg.includes('cash_balance') || (msg.includes('token_balance') && msg.includes('check'))) {
+    return 'INSUFFICIENT_BALANCE';
+  }
+  if (msg.includes('tokens_issued') || msg.includes('total_allocated')) {
+    return 'INSUFFICIENT_STOCK';
+  }
+  return 'CONFLICT';
+}
 
 export interface WalletRow {
   id: string;
@@ -260,6 +284,114 @@ export class WalletService {
     return true;
   }
 
+  /**
+   * Execute a BUY atomically: reserve stock + debit cash/credit tokens + record
+   * the COMPLETED transaction, all in a single D1 batch (one implicit DB
+   * transaction). If any statement violates a CHECK constraint
+   * (cash_balance >= 0, tokens_issued <= total_allocated) the ENTIRE batch is
+   * rolled back â€” there is no partial state. This replaces the previous
+   * multi-step flow that could leave stock reserved without tokens credited on
+   * a mid-request crash.
+   *
+   * `total` (fees included) is what leaves the cash balance and is recorded in
+   * total_spent; `cashAmount` (fees excluded) + `fees` are stored on the
+   * transaction row so the two are reconcilable.
+   */
+  async executeBuyAtomic(p: {
+    transactionId: string;
+    userId: string;
+    walletId: string;
+    tokenAmount: number;
+    cashAmount: number;
+    total: number;
+    pricePerGram: number;
+    fees: number;
+    paymentMethod?: string;
+  }): Promise<TradeResult> {
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE gold_stock
+             SET tokens_issued = tokens_issued + ?, updated_at = datetime('now')
+             WHERE id = ?`
+          )
+          .bind(p.tokenAmount, GOLD_STOCK_ID),
+        this.db
+          .prepare(
+            `UPDATE wallets
+             SET cash_balance = cash_balance - ?,
+                 token_balance = token_balance + ?,
+                 total_bought = total_bought + ?,
+                 total_spent = total_spent + ?,
+                 updated_at = datetime('now')
+             WHERE id = ?`
+          )
+          .bind(p.total, p.tokenAmount, p.tokenAmount, p.total, p.walletId),
+        this.db
+          .prepare(
+            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at)
+             VALUES (?, ?, ?, 'BUY', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'))`
+          )
+          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null),
+      ]);
+      return { ok: true, reason: null };
+    } catch (e) {
+      return { ok: false, reason: classifyTradeError(e) };
+    }
+  }
+
+  /**
+   * Execute a SELL atomically: debit tokens + credit net cash + release stock +
+   * record the COMPLETED transaction in a single D1 batch. All-or-nothing.
+   * `total` is the net proceeds (cash_amount - fees) credited to the wallet.
+   */
+  async executeSellAtomic(p: {
+    transactionId: string;
+    userId: string;
+    walletId: string;
+    tokenAmount: number;
+    cashAmount: number;
+    total: number;
+    pricePerGram: number;
+    fees: number;
+    paymentMethod?: string;
+  }): Promise<TradeResult> {
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE wallets
+             SET token_balance = token_balance - ?,
+                 cash_balance = cash_balance + ?,
+                 updated_at = datetime('now')
+             WHERE id = ?`
+          )
+          .bind(p.tokenAmount, p.total, p.walletId),
+        // Unconditional so the batch stays all-or-nothing: a conditional WHERE
+        // that silently no-ops would commit the token debit without releasing
+        // stock. token_balance >= 0 (above) already guarantees the user held
+        // the tokens, so tokens_issued cannot legitimately go negative here.
+        this.db
+          .prepare(
+            `UPDATE gold_stock
+             SET tokens_issued = tokens_issued - ?, updated_at = datetime('now')
+             WHERE id = ?`
+          )
+          .bind(p.tokenAmount, GOLD_STOCK_ID),
+        this.db
+          .prepare(
+            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at)
+             VALUES (?, ?, ?, 'SELL', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'))`
+          )
+          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null),
+      ]);
+      return { ok: true, reason: null };
+    } catch (e) {
+      return { ok: false, reason: classifyTradeError(e) };
+    }
+  }
+
   async getDailyTransactionVolume(
     userId: string,
     type: 'BUY' | 'SELL'
@@ -280,12 +412,14 @@ export class WalletService {
 
   /**
    * Get average buy price via SQL aggregate (avoids N+1 fetching all transactions).
+   * Cost basis INCLUDES fees (cash_amount + fees) so it matches what actually
+   * left the cash balance (total_spent) and the avg_buy_price SQL view.
    */
   async getAverageBuyPrice(userId: string): Promise<{ totalTokensBought: number; totalCashSpent: number }> {
     const result = await this.db
       .prepare(
         `SELECT COALESCE(SUM(token_amount), 0) as total_tokens,
-                COALESCE(SUM(cash_amount), 0) as total_cash
+                COALESCE(SUM(cash_amount + fees), 0) as total_cash
          FROM transactions
          WHERE user_id = ? AND type = 'BUY' AND status = 'COMPLETED'`
       )

@@ -9,6 +9,9 @@ build/
 .expo/
 *.tsbuildinfo
 
+# Turborepo (local cache + run logs, must not be committed)
+.turbo/
+
 # Cloudflare
 .wrangler/
 .dev.vars

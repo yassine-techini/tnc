@@ -141,6 +141,24 @@ admin.post('/login', async (c) => {
     }
 
     const { email, password, totpCode } = parseResult.data;
+    const clientIp = c.req.header('CF-Connecting-IP') || 'unknown';
+
+    // Brute-force protection: lockout keyed on the admin identifier (separate
+    // namespace from end users). This is the most sensitive login surface.
+    const lockConfigService = new ConfigService(c.env.DB, c.env.CACHE);
+    const lockSecurityService = new SecurityService(c.env.DB, c.env.CACHE, lockConfigService);
+    const lockIdentifier = `admin:${email.toLowerCase()}`;
+    const lockStatus = await lockSecurityService.isAccountLocked(lockIdentifier);
+    if (lockStatus.locked) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'AUTH_ACCOUNT_LOCKED',
+          message: `Compte temporairement bloqué. Réessayez dans ${Math.ceil((lockStatus.remainingSeconds || 0) / 60)} minute(s).`,
+        },
+        requestId: crypto.randomUUID(),
+      }, 429);
+    }
 
     // Find admin
     const adminUser = await c.env.DB
@@ -149,6 +167,7 @@ admin.post('/login', async (c) => {
       .first<AdminRecord>();
 
     if (!adminUser) {
+      await lockSecurityService.recordFailedLogin(lockIdentifier, clientIp);
       return c.json({
         success: false,
         error: {
@@ -164,6 +183,7 @@ admin.post('/login', async (c) => {
     const passwordResult = await authService.verifyPasswordWithRehashCheck(password, adminUser.password_hash);
 
     if (!passwordResult.valid) {
+      await lockSecurityService.recordFailedLogin(lockIdentifier, clientIp);
       return c.json({
         success: false,
         error: {
@@ -224,6 +244,7 @@ admin.post('/login', async (c) => {
     const isValidTotp = await securityService.verifyTotpCode(adminUser.two_factor_secret, totpCode);
 
     if (!isValidTotp) {
+      await lockSecurityService.recordFailedLogin(lockIdentifier, clientIp);
       return c.json({
         success: false,
         error: {
@@ -233,6 +254,9 @@ admin.post('/login', async (c) => {
         requestId: crypto.randomUUID(),
       }, 401);
     }
+
+    // Successful login — clear failed-attempt counter
+    await lockSecurityService.clearLoginAttempts(lockIdentifier);
 
     // Update last login
     await c.env.DB
