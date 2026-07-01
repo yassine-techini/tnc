@@ -577,11 +577,21 @@ export class PaymentService {
     alreadyProcessed?: boolean;
   }> {
     try {
-      // Find the transaction by reference
-      const transaction = await this.db
-        .prepare('SELECT * FROM transactions WHERE id = ? OR payment_reference = ?')
-        .bind(webhook.reference, webhook.reference)
+      // Find the transaction deterministically: match the external
+      // payment_reference first (the intended key), and only fall back to the
+      // internal id. A single `id = ? OR payment_reference = ?` could otherwise
+      // credit the wrong account if an external reference collided with another
+      // transaction's UUID.
+      let transaction = await this.db
+        .prepare('SELECT * FROM transactions WHERE payment_reference = ?')
+        .bind(webhook.reference)
         .first<TransactionRecord>();
+      if (!transaction) {
+        transaction = await this.db
+          .prepare('SELECT * FROM transactions WHERE id = ?')
+          .bind(webhook.reference)
+          .first<TransactionRecord>();
+      }
 
       if (!transaction) {
         console.error('Transaction not found for webhook:', webhook.reference);

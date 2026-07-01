@@ -707,21 +707,44 @@ export class SecurityService {
   }
 
   /**
-   * Verify TOTP code
+   * Verify TOTP code.
+   *
+   * @param replayGuardId When provided (a user/admin id), a successfully matched
+   *   code is recorded in KV for its 30s window so the SAME code cannot be
+   *   replayed within its validity window. Fails open on KV errors (the code is
+   *   still a valid TOTP) to avoid locking users out on transient cache issues.
    */
-  async verifyTotpCode(secret: string, code: string): Promise<boolean> {
+  async verifyTotpCode(secret: string, code: string, replayGuardId?: string): Promise<boolean> {
     const cfg = await this.getSecurityConfig();
     const now = Date.now();
 
     // Check current window and adjacent windows
     // SECURITY: Use constant-time comparison for all checks to prevent timing attacks
     let valid = false;
+    let matchedCounter = -1;
     for (let i = -cfg.totpWindow; i <= cfg.totpWindow; i++) {
       const checkTime = now + i * 30000;
       const expectedCode = await this.generateTotpCode(secret, checkTime);
       // Always compare all windows to maintain constant time
       if (this.constantTimeEqual(code, expectedCode)) {
         valid = true;
+        matchedCounter = Math.floor(checkTime / 1000 / 30);
+      }
+    }
+
+    if (!valid) return false;
+
+    // Anti-replay: a given TOTP code is single-use within its window.
+    if (replayGuardId && matchedCounter >= 0) {
+      const key = `totp_used:${replayGuardId}:${matchedCounter}`;
+      try {
+        if (await this.cache.get(key)) {
+          return false; // code already consumed → replay
+        }
+        const ttl = (2 * cfg.totpWindow + 1) * 30 + 30; // cover the full accept window
+        await this.cache.put(key, '1', { expirationTtl: Math.max(60, ttl) });
+      } catch (e) {
+        console.warn('[SecurityService] TOTP replay-guard KV error, allowing code:', e);
       }
     }
 

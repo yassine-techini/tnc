@@ -256,7 +256,14 @@ export class MarketService {
     const txFeePercent = await this.configService.getNumber('transaction_fee_percent', 0.005);
     const quoteExpiryMinutes = await this.configService.getNumber('quote_expiry_minutes', 5);
 
-    const pricePerGram = type === 'BUY' ? currentPrice.buy_price : currentPrice.sell_price;
+    // Compute the per-gram price from the current spread config (not the value
+    // frozen on the gold_prices row), so a spread change applies immediately and
+    // stays consistent with what getFormattedPrice displays.
+    const spreadBuy = await this.configService.getNumber('spread_buy', 0.02);
+    const spreadSell = await this.configService.getNumber('spread_sell', 0.02);
+    const pricePerGram = type === 'BUY'
+      ? currentPrice.price_xof * (1 + spreadBuy)
+      : currentPrice.price_xof * (1 - spreadSell);
 
     // Quantize money to whole XOF (zero-decimal currency) and grams to 0.001
     // (milligram) precision. Storing/charging fractional XOF accumulates
@@ -433,8 +440,11 @@ export class MarketService {
     return {
       lbmaUsd: price.price_usd,
       priceXof: price.price_xof,
-      buyPrice: price.buy_price,
-      sellPrice: price.sell_price,
+      // Recompute from the current spread so buy/sell always equals
+      // priceXof × (1 ± spread) — consistent with the quote path, even if the
+      // spread changed since the gold_prices row was written.
+      buyPrice: Math.round(price.price_xof * (1 + spreadBuy)),
+      sellPrice: Math.round(price.price_xof * (1 - spreadSell)),
       spreadBuy,
       spreadSell,
       exchangeRate: price.exchange_rate,

@@ -15,6 +15,9 @@ const JwtPayloadSchema = z.object({
   email: z.string().email(),
   kycLevel: z.enum(['BASIC', 'STANDARD', 'VERIFIED']),
   type: z.enum(['access', 'refresh']),
+  // Stable session id, carried across token refreshes so a session can be
+  // identified deterministically (not by spoofable/NAT-shared IP).
+  sid: z.string().optional(),
 });
 
 // Hash format prefix to identify algorithm version
@@ -34,6 +37,7 @@ export interface JwtPayload {
   email: string;
   kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
   type: 'access' | 'refresh';
+  sid?: string;
 }
 
 export interface TokenPair {
@@ -274,6 +278,7 @@ export class AuthService {
       sub: parsed.data.sub,
       email: parsed.data.email,
       kycLevel: parsed.data.kycLevel,
+      sid: parsed.data.sid, // preserve session id across refresh
     });
   }
 

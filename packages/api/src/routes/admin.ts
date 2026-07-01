@@ -243,7 +243,7 @@ admin.post('/login', async (c) => {
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
     const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
     const adminTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, adminUser.two_factor_secret);
-    const isValidTotp = await securityService.verifyTotpCode(adminTotpSecret, totpCode);
+    const isValidTotp = await securityService.verifyTotpCode(adminTotpSecret, totpCode, adminUser.id);
 
     if (!isValidTotp) {
       await lockSecurityService.recordFailedLogin(lockIdentifier, clientIp);
@@ -407,7 +407,7 @@ admin.post('/2fa/verify', async (c) => {
     // Verify TOTP code
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
     const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
-    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code);
+    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code, pendingData.adminId);
 
     if (!isValidCode) {
       return c.json({

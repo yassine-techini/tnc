@@ -525,7 +525,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
     }
 
     const loginTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
-    const isValidTotp = await securityService.verifyTotpCode(loginTotpSecret, body.totpCode);
+    const isValidTotp = await securityService.verifyTotpCode(loginTotpSecret, body.totpCode, user.id);
     if (!isValidTotp) {
       await securityService.logSecurityEvent({
         action: 'LOGIN_FAILED_INVALID_2FA',
@@ -552,14 +552,16 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
     await userService.updateLastLogin(user.id);
 
     // Generate tokens
+    // Mint the session id first so it can be embedded as the token's `sid`.
+    const sessionId = crypto.randomUUID();
     const tokens = await authService.generateTokens({
       sub: user.id,
       email: user.email,
       kycLevel: user.kyc_level,
+      sid: sessionId,
     });
 
     // Create session record
-    const sessionId = crypto.randomUUID();
     const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
 
     const sessionTimeoutHours = secCfg.absoluteSessionTimeoutHours;
@@ -1384,7 +1386,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     }
 
     // Verify TOTP code
-    const isValidCode = await securityService.verifyTotpCode(body.secret, body.code);
+    const isValidCode = await securityService.verifyTotpCode(body.secret, body.code, payload.sub);
     if (!isValidCode) {
       return c.json({
         success: false,
@@ -1511,7 +1513,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
 
     // Verify 2FA code
     const disableTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
-    const isValidCode = await securityService.verifyTotpCode(disableTotpSecret, body.code);
+    const isValidCode = await securityService.verifyTotpCode(disableTotpSecret, body.code, user.id);
     if (!isValidCode) {
       return c.json({
         success: false,
@@ -1592,7 +1594,8 @@ auth.get('/sessions', async (c) => {
       .bind(payload.sub)
       .all<any>();
 
-    // The most recent session with matching IP is likely the current one
+    // Prefer the stable session id from the token (`sid`); fall back to the
+    // legacy IP heuristic only for older tokens that predate the sid claim.
     const currentIp = getClientIp(c);
     let foundCurrent = false;
 
@@ -1600,8 +1603,9 @@ auth.get('/sessions', async (c) => {
       success: true,
       data: {
         sessions: sessions.results?.map(s => {
-          // Mark the first session matching the current IP as current
-          const isCurrent = !foundCurrent && s.ip_address === currentIp;
+          const isCurrent = payload.sid
+            ? s.id === payload.sid
+            : (!foundCurrent && s.ip_address === currentIp);
           if (isCurrent) foundCurrent = true;
           return {
             id: s.id,
@@ -1713,11 +1717,17 @@ auth.delete('/sessions', async (c) => {
       }, 401);
     }
 
-    // Delete all sessions for the user
-    const result = await c.env.DB
-      .prepare('DELETE FROM active_sessions WHERE user_id = ?')
-      .bind(payload.sub)
-      .run();
+    // Revoke all sessions EXCEPT the current one (identified by the token's sid).
+    // Older tokens without a sid fall back to revoking everything.
+    const result = payload.sid
+      ? await c.env.DB
+          .prepare('DELETE FROM active_sessions WHERE user_id = ? AND id != ?')
+          .bind(payload.sub, payload.sid)
+          .run()
+      : await c.env.DB
+          .prepare('DELETE FROM active_sessions WHERE user_id = ?')
+          .bind(payload.sub)
+          .run();
 
     await securityService.logAuditEvent({
       userId: payload.sub,
@@ -1966,7 +1976,7 @@ auth.post('/2fa/setup-complete', async (c) => {
     // Verify TOTP code
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
     const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
-    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code);
+    const isValidCode = await securityService.verifyTotpCode(pendingData.secret, code, pendingData.userId);
 
     if (!isValidCode) {
       return c.json({
@@ -2009,14 +2019,16 @@ auth.post('/2fa/setup-complete', async (c) => {
 
     // Generate login tokens
     const authService = new AuthService(c.env.JWT_SECRET, configService);
+    // Mint the session id first so it can be embedded as the token's `sid`.
+    const sessionId = crypto.randomUUID();
     const tokens = await authService.generateTokens({
       sub: user.id,
       email: user.email,
       kycLevel: user.kyc_level,
+      sid: sessionId,
     });
 
     // Create session record
-    const sessionId = crypto.randomUUID();
     const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
     const secCfg = await securityService.getSecurityConfig();
 
@@ -2349,7 +2361,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
       }
 
       const txTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
-      const isValid2FA = await securityService.verifyTotpCode(txTotpSecret, body.totpCode);
+      const isValid2FA = await securityService.verifyTotpCode(txTotpSecret, body.totpCode, user.id);
       if (!isValid2FA) {
         return c.json({
           success: false,
@@ -2365,11 +2377,14 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
     // Delete used code
     await c.env.CACHE.delete(`passwordless:code:${identifier}`);
 
+    // Mint the session id first so it can be embedded as the token's `sid`.
+    const sessionId = crypto.randomUUID();
     // Generate tokens
     const tokens = await authService.generateTokens({
       sub: user.id,
       email: user.email,
       kycLevel: user.kyc_level,
+      sid: sessionId,
     });
 
     // Store refresh token
@@ -2382,7 +2397,6 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
       .run();
 
     // Create session
-    const sessionId = crypto.randomUUID();
     const sessionTokenHash = await authService.hashPassword(tokens.accessToken.slice(-32));
     const secCfg = await securityService.getSecurityConfig();
 

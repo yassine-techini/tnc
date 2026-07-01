@@ -423,6 +423,25 @@ describe('SecurityService', () => {
 
       expect(isValid).toBe(true);
     });
+
+    it('rejects a replayed code for the same identifier (anti-replay)', async () => {
+      const secret = securityService.generateTotpSecret();
+      const code = await securityService.generateTotpCode(secret);
+
+      const first = await securityService.verifyTotpCode(secret, code, 'user-1');
+      const second = await securityService.verifyTotpCode(secret, code, 'user-1');
+
+      expect(first).toBe(true);
+      expect(second).toBe(false); // same code cannot be reused within its window
+    });
+
+    it('does not guard against replay when no identifier is given', async () => {
+      const secret = securityService.generateTotpSecret();
+      const code = await securityService.generateTotpCode(secret);
+
+      expect(await securityService.verifyTotpCode(secret, code)).toBe(true);
+      expect(await securityService.verifyTotpCode(secret, code)).toBe(true);
+    });
   });
 
   describe('generateTotpUri', () => {

@@ -477,11 +477,13 @@ describe('MarketService', () => {
 
       const result = await marketService.getFormattedPrice();
 
+      // buy/sell are recomputed from priceXof × current spread and rounded to
+      // whole XOF (spread defaults to 0.02), not the frozen gold_prices values.
       expect(result).toMatchObject({
         lbmaUsd: price.price_usd,
         priceXof: price.price_xof,
-        buyPrice: price.buy_price,
-        sellPrice: price.sell_price,
+        buyPrice: Math.round(price.price_xof * (1 + (result?.spreadBuy ?? 0.02))),
+        sellPrice: Math.round(price.price_xof * (1 - (result?.spreadSell ?? 0.02))),
         exchangeRate: price.exchange_rate,
       });
       expect(result?.spreadBuy).toBeDefined();
