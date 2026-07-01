@@ -4,6 +4,7 @@ import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { SecurityService } from '../services/security.service';
 import { ConfigService } from '../services/config.service';
+import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 
 // Zod schemas for state endpoints
 const StateLoginSchema = z.object({
@@ -204,7 +205,8 @@ state.post('/login', async (c) => {
     // Verify TOTP code
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
     const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
-    const isValidTotp = await securityService.verifyTotpCode(stateUser.two_factor_secret, totpCode);
+    const stateTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, stateUser.two_factor_secret);
+    const isValidTotp = await securityService.verifyTotpCode(stateTotpSecret, totpCode);
 
     if (!isValidTotp) {
       return c.json({
@@ -373,10 +375,11 @@ state.post('/2fa/verify', async (c) => {
       }, 400);
     }
 
-    // Save 2FA secret to admin
+    // Save 2FA secret to admin (encrypted at rest)
+    const encryptedStateSecret = await encryptTotpSecret(c.env.ENCRYPTION_KEY, pendingData.secret);
     await c.env.DB
       .prepare('UPDATE admins SET two_factor_secret = ?, two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
-      .bind(pendingData.secret, pendingData.adminId)
+      .bind(encryptedStateSecret, pendingData.adminId)
       .run();
 
     // Clear setup tokens

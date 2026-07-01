@@ -375,7 +375,9 @@ describe('SecurityService', () => {
 
     it('generates same code for same time window', async () => {
       const secret = securityService.generateTotpSecret();
-      const timestamp = Date.now();
+      // Anchor to 5s into a 30s window so timestamp+1000ms stays in the SAME
+      // window (using raw Date.now() flakes ~1/30 runs when it lands near a boundary).
+      const timestamp = Math.floor(Date.now() / 30000) * 30000 + 5000;
 
       const code1 = await securityService.generateTotpCode(secret, timestamp);
       const code2 = await securityService.generateTotpCode(secret, timestamp + 1000);

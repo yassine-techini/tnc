@@ -9,6 +9,7 @@ import { SecurityService, SECURITY_DEFAULTS } from '../services/security.service
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
 import { setAuthCookies, clearAuthCookies, getRefreshToken } from '../lib/cookies';
+import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 
 const auth = new Hono<AppEnv>();
 
@@ -523,7 +524,8 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       }, 401);
     }
 
-    const isValidTotp = await securityService.verifyTotpCode(user.two_factor_secret, body.totpCode);
+    const loginTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
+    const isValidTotp = await securityService.verifyTotpCode(loginTotpSecret, body.totpCode);
     if (!isValidTotp) {
       await securityService.logSecurityEvent({
         action: 'LOGIN_FAILED_INVALID_2FA',
@@ -1391,10 +1393,11 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
       }, 400);
     }
 
-    // Enable 2FA
+    // Enable 2FA (secret encrypted at rest)
+    const encryptedEnableSecret = await encryptTotpSecret(c.env.ENCRYPTION_KEY, body.secret);
     await c.env.DB
       .prepare('UPDATE users SET two_factor_enabled = 1, two_factor_secret = ?, updated_at = datetime("now") WHERE id = ?')
-      .bind(body.secret, payload.sub)
+      .bind(encryptedEnableSecret, payload.sub)
       .run();
 
     // Generate backup codes (configurable count)
@@ -1507,7 +1510,8 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     }
 
     // Verify 2FA code
-    const isValidCode = await securityService.verifyTotpCode(user.two_factor_secret, body.code);
+    const disableTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
+    const isValidCode = await securityService.verifyTotpCode(disableTotpSecret, body.code);
     if (!isValidCode) {
       return c.json({
         success: false,
@@ -1975,10 +1979,11 @@ auth.post('/2fa/setup-complete', async (c) => {
       }, 400);
     }
 
-    // Save 2FA secret to user
+    // Save 2FA secret to user (encrypted at rest)
+    const encryptedUserSecret = await encryptTotpSecret(c.env.ENCRYPTION_KEY, pendingData.secret);
     await c.env.DB
       .prepare('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
-      .bind(pendingData.secret, pendingData.userId)
+      .bind(encryptedUserSecret, pendingData.userId)
       .run();
 
     // Clear setup tokens
@@ -2343,7 +2348,8 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         }, 403);
       }
 
-      const isValid2FA = await securityService.verifyTotpCode(user.two_factor_secret, body.totpCode);
+      const txTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, user.two_factor_secret);
+      const isValid2FA = await securityService.verifyTotpCode(txTotpSecret, body.totpCode);
       if (!isValid2FA) {
         return c.json({
           success: false,

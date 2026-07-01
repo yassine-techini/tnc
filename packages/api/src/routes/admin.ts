@@ -9,6 +9,7 @@ import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
+import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 
 // Zod schemas for admin endpoints
@@ -241,7 +242,8 @@ admin.post('/login', async (c) => {
     // Verify TOTP code
     const configService = new ConfigService(c.env.DB, c.env.CACHE);
     const securityService = new SecurityService(c.env.DB, c.env.CACHE, configService);
-    const isValidTotp = await securityService.verifyTotpCode(adminUser.two_factor_secret, totpCode);
+    const adminTotpSecret = await decryptTotpSecret(c.env.ENCRYPTION_KEY, adminUser.two_factor_secret);
+    const isValidTotp = await securityService.verifyTotpCode(adminTotpSecret, totpCode);
 
     if (!isValidTotp) {
       await lockSecurityService.recordFailedLogin(lockIdentifier, clientIp);
@@ -418,10 +420,11 @@ admin.post('/2fa/verify', async (c) => {
       }, 400);
     }
 
-    // Save 2FA secret to admin
+    // Save 2FA secret to admin (encrypted at rest)
+    const encryptedAdminSecret = await encryptTotpSecret(c.env.ENCRYPTION_KEY, pendingData.secret);
     await c.env.DB
       .prepare('UPDATE admins SET two_factor_secret = ?, two_factor_enabled = 1, updated_at = datetime("now") WHERE id = ?')
-      .bind(pendingData.secret, pendingData.adminId)
+      .bind(encryptedAdminSecret, pendingData.adminId)
       .run();
 
     // Clear setup tokens
