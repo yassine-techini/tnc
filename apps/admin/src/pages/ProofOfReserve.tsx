@@ -14,6 +14,21 @@ export default function ProofOfReserve() {
 
   const report = data?.data;
 
+  // Client-side export of the loaded report. The backend serves JSON (no PDF
+  // renderer in Workers), so we export JSON honestly rather than mislabel it.
+  const exportJson = () => {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `proof-of-reserve-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A';
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -53,11 +68,11 @@ export default function ProofOfReserve() {
             </svg>
             Actualiser
           </button>
-          <button className="btn-primary flex items-center gap-2">
+          <button onClick={exportJson} disabled={!report} className="btn-primary flex items-center gap-2 disabled:opacity-50">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            Exporter PDF
+            Exporter JSON
           </button>
         </div>
       </div>

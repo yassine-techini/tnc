@@ -185,9 +185,15 @@ app.use('*', cors({
           'https://tnc-trading-state-portal.pages.dev',
         ];
 
+    // No Origin header (same-origin / non-browser): don't emit an ACAO header.
+    // Never return '*' — the API uses credentials:true, for which a wildcard is
+    // invalid and would broaden exposure.
+    if (!origin) {
+      return null;
+    }
     // Allow exact matches
-    if (!origin || allowedOrigins.includes(origin)) {
-      return origin || '*';
+    if (allowedOrigins.includes(origin)) {
+      return origin;
     }
 
     // Allow Cloudflare Pages preview deployments (e.g., https://abc123.tnc-trading-admin.pages.dev)

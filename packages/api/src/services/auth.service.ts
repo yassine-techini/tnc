@@ -59,6 +59,12 @@ export class AuthService {
     if (!jwtSecretString) {
       throw new Error('JWT_SECRET is required — cannot start without a signing key');
     }
+    // Reject weak signing keys: HS256 security depends on the secret's entropy.
+    // Require at least 32 characters (≈256 bits for a random secret). Fail
+    // closed rather than sign tokens with a guessable key.
+    if (jwtSecretString.length < 32) {
+      throw new Error('JWT_SECRET is too weak — it must be at least 32 characters');
+    }
     this.jwtSecret = new TextEncoder().encode(jwtSecretString);
     this.configService = configService || null;
   }

@@ -652,17 +652,8 @@ export default function Profile() {
           isRevokingAll={revokeAllSessionsMutation.isPending}
         />
       </div>
-
-      {/* Account Actions */}
-      <div className="card border-red-500/30">
-        <h2 className="text-sm font-semibold text-red-400 mb-4">Zone de danger</h2>
-        <p className="text-sm text-slate-400 mb-4">
-          La suppression de votre compte est irréversible. Toutes vos données seront perdues.
-        </p>
-        <button className="btn-outline text-red-400 border-red-400 hover:bg-red-500/10" disabled>
-          Supprimer mon compte
-        </button>
-      </div>
+      {/* Account deletion lives in Settings (functional flow); the previous
+          disabled button here was dead UI and has been removed. */}
     </div>
   );
 }

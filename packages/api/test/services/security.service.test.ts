@@ -462,13 +462,18 @@ describe('SecurityService', () => {
 
   // ─── Password History ────────────────────────────────────
   describe('checkPasswordHistory', () => {
+    // verify(plain, storedHash) is provided by the caller (AuthService); here we
+    // simulate it by comparing the plaintext to a hash of form `hash:<plain>`.
+    const fakeVerify = async (plain: string, storedHash: string) => storedHash === `hash:${plain}`;
+
     it('returns true when password not in history', async () => {
       mockDb = createMockD1Database({ all: [] });
       securityService = new SecurityService(mockDb, mockCache);
 
       const result = await securityService.checkPasswordHistory(
         'user-123',
-        'new-password-hash'
+        'new-password',
+        fakeVerify
       );
 
       expect(result).toBe(true);
@@ -476,13 +481,14 @@ describe('SecurityService', () => {
 
     it('returns false when password was used recently', async () => {
       mockDb = createMockD1Database({
-        all: [{ password_hash: 'existing-hash' }],
+        all: [{ password_hash: 'hash:reused-password' }],
       });
       securityService = new SecurityService(mockDb, mockCache);
 
       const result = await securityService.checkPasswordHistory(
         'user-123',
-        'existing-hash'
+        'reused-password',
+        fakeVerify
       );
 
       expect(result).toBe(false);

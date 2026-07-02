@@ -1021,8 +1021,13 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
     // Hash new password
     const newPasswordHash = await authService.hashPassword(body.newPassword);
 
-    // Check password history (cannot reuse last 5 passwords)
-    const isNewPassword = await securityService.checkPasswordHistory(userId, newPasswordHash, 5);
+    // Check password history (verify plaintext against salted stored hashes)
+    const isNewPassword = await securityService.checkPasswordHistory(
+      userId,
+      body.newPassword,
+      (plain, hash) => authService.verifyPassword(plain, hash),
+      5
+    );
     if (!isNewPassword) {
       return c.json({
         success: false,

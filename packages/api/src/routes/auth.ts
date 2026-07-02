@@ -1155,8 +1155,13 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
     // Hash new password
     const passwordHash = await authService.hashPassword(body.password);
 
-    // Check password history
-    const isNewPassword = await securityService.checkPasswordHistory(storedData.userId, passwordHash, 5);
+    // Check password history (verify plaintext against salted stored hashes)
+    const isNewPassword = await securityService.checkPasswordHistory(
+      storedData.userId,
+      body.password,
+      (plain, hash) => authService.verifyPassword(plain, hash),
+      5
+    );
     if (!isNewPassword) {
       return c.json({
         success: false,

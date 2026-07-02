@@ -118,9 +118,12 @@ export class PaymentService {
         .bind(provider)
         .first<{ enabled: number }>();
       return row?.enabled === 1;
-    } catch {
-      // If table doesn't exist or query fails, allow (fail-open for backwards compat)
-      return true;
+    } catch (e) {
+      // Fail CLOSED: a DB error must never auto-enable a payment provider.
+      // The integrations table is created and seeded (disabled) by migration
+      // 0009, so a failure here means misconfiguration, not "allow everything".
+      console.error(`[PaymentService] isProviderEnabled(${provider}) check failed — treating as disabled:`, e);
+      return false;
     }
   }
 

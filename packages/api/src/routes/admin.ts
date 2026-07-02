@@ -977,6 +977,31 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
       )
       .run();
 
+    // Notify the user of the decision (email). Non-blocking: a notification
+    // failure must not fail the review.
+    try {
+      const reviewedUser = await c.env.DB
+        .prepare('SELECT email FROM users WHERE id = ?')
+        .bind(userId)
+        .first<{ email: string }>();
+      if (reviewedUser?.email) {
+        const notificationService = new NotificationService(c.env.DB, {
+          resendApiKey: c.env.RESEND_API_KEY,
+          sendgridApiKey: c.env.SENDGRID_API_KEY,
+          twilioAccountSid: c.env.TWILIO_ACCOUNT_SID,
+          twilioAuthToken: c.env.TWILIO_AUTH_TOKEN,
+          twilioPhoneNumber: c.env.TWILIO_PHONE_NUMBER,
+        });
+        const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ') || 'Client';
+        const notify = action === 'approve'
+          ? notificationService.sendKycApproved(reviewedUser.email, fullName, newLevel || 'VERIFIED')
+          : notificationService.sendKycRejected(reviewedUser.email, fullName, rejectionReason || 'Document non conforme');
+        c.executionCtx.waitUntil(notify.catch((e) => console.error('KYC notification failed:', e)));
+      }
+    } catch (e) {
+      console.error('KYC notification setup failed:', e);
+    }
+
     return c.json({
       success: true,
       data: {

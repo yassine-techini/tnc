@@ -9,7 +9,10 @@ import { dailyReconciliation } from './jobs/daily-reconciliation';
 import { cleanupExpiredSessions } from './jobs/session-cleanup';
 import { cleanupExpiredQuotes } from './jobs/quote-cleanup';
 import { generateMonthlyReport } from './jobs/monthly-report';
-import { checkPriceAlerts } from './jobs/price-alerts';
+// NOTE: price alerts are delivered inline by refreshGoldPrice()
+// (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
+// The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
+// queue the consumer never routed, so it was dead code and has been removed.
 
 export interface ScheduledController {
   scheduledTime: number;

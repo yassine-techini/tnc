@@ -585,7 +585,10 @@ state.get('/reports/por', async (c) => {
         lastAuditResult: stock?.last_audit_result,
         walletDistribution: walletDistribution.results || [],
         transactionSummary: transactionSummary.results || [],
-        certificationStatus: 'CERTIFIED',
+        // Derived from real coverage + audit state, not hardcoded.
+        certificationStatus: (stock?.total_allocated || 0) >= (tokensResult?.total || 0)
+          ? (stock?.last_audit_date ? 'CERTIFIED' : 'PENDING_AUDIT')
+          : 'UNDER_COLLATERALIZED',
       },
       requestId: crypto.randomUUID(),
     });
@@ -802,7 +805,10 @@ state.get('/reports/por/export', async (c) => {
       goldPhysical: stock?.total_allocated || 0,
       tokensIssued: tokensResult?.total || 0,
       coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
-      status: 'CERTIFIED',
+      // Derived from real coverage + audit state, not hardcoded.
+      status: (stock?.total_allocated || 0) >= (tokensResult?.total || 0)
+        ? (stock?.last_audit_date ? 'CERTIFIED' : 'PENDING_AUDIT')
+        : 'UNDER_COLLATERALIZED',
       lastAudit: stock?.last_audit_date,
       walletDistribution: walletDistribution.results,
     };

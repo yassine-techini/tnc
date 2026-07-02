@@ -248,16 +248,28 @@ export class SecurityService {
   }
 
   /**
-   * Check if password has been used recently
+   * Check whether a password has been used recently.
+   *
+   * Takes the PLAINTEXT candidate and a verify function, because stored hashes
+   * are salted Argon2id — comparing hash strings for equality never matches
+   * (each hash uses a fresh random salt), which silently disabled reuse
+   * prevention. We verify the plaintext against each stored hash instead.
+   *
+   * @returns true if the password is new (not in recent history)
    */
-  async checkPasswordHistory(userId: string, newPasswordHash: string, historyCount = 5): Promise<boolean> {
+  async checkPasswordHistory(
+    userId: string,
+    newPassword: string,
+    verify: (plain: string, storedHash: string) => Promise<boolean>,
+    historyCount = 5
+  ): Promise<boolean> {
     const history = await this.db
       .prepare('SELECT password_hash FROM password_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
       .bind(userId, historyCount)
       .all<{ password_hash: string }>();
 
     for (const entry of history.results || []) {
-      if (entry.password_hash === newPasswordHash) {
+      if (await verify(newPassword, entry.password_hash)) {
         return false; // Password was used recently
       }
     }
