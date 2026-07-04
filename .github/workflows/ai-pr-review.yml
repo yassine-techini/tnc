@@ -1,0 +1,63 @@
+name: AI PR Review
+
+# Prompt #10 du playbook docs/AI-PROMPTS.md — revue IA automatique de chaque PR,
+# comme premier passage avant la revue humaine.
+#
+# INACTIF PAR DÉFAUT. Pour l'activer :
+#   1. Repository → Settings → Secrets and variables → Actions
+#      - Variable  AI_PR_REVIEW_ENABLED = true
+#      - Secret    GEMINI_API_KEY       = <clé Google AI Studio>   (ou adapter à un autre fournisseur)
+#   2. Le job ne s'exécute que si la variable vaut 'true' (sinon il est ignoré, aucune erreur).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ai-review:
+    name: AI review (first pass)
+    if: ${{ vars.AI_PR_REVIEW_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect PR diff
+        id: diff
+        run: |
+          git diff --unified=1 "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          # Cap the diff size sent to the model (avoid oversized requests).
+          head -c 120000 pr.diff > pr.diff.capped
+          echo "bytes=$(wc -c < pr.diff.capped)" >> "$GITHUB_OUTPUT"
+
+      - name: Request AI review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          PROMPT='Tu es un agent de revue de code autonome de classe mondiale opérant dans GitHub Actions, sur une PR d une plateforme fintech (Cloudflare Workers/Hono/D1 + React/Expo). Analyse le diff pour: bugs et cas limites, failles de sécurité (auth, secrets, injections, webhooks non vérifiés), exactitude financière (atomicité, invariant de stock, double-dépense), et régressions. Réponds en Markdown, en français, avec des retours priorisés (fichier:ligne + correctif). Laisse l architecture de haut niveau au relecteur humain. Si rien de notable, dis-le brièvement.'
+          # Build the request body safely from the diff file.
+          jq -n --arg p "$PROMPT" --rslurpfile d <(cat pr.diff.capped) \
+            '{contents:[{parts:[{text:($p + "\n\n=== DIFF ===\n" + ($d|join("")))}]}]}' > body.json
+          curl -sS -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            --data @body.json > resp.json
+          jq -r '.candidates[0].content.parts[0].text // "L IA n a pas renvoyé de revue exploitable."' resp.json > review.md
+          echo "----- AI review -----"; cat review.md
+
+      - name: Post review as PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "🤖 **Revue IA (premier passage)** — à confirmer par un relecteur humain."
+            echo
+            cat review.md
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
