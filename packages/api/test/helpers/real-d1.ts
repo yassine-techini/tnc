@@ -1,0 +1,167 @@
+/**
+ * A minimal, REAL D1-compatible database backed by Node's built-in `node:sqlite`.
+ *
+ * The rest of the test suite mocks D1 (batch is a no-op, run() always returns
+ * changes:1, no CHECK constraints), so it cannot validate the atomicity /
+ * rollback / invariant guarantees the financial flows rely on. This adapter runs
+ * the SAME SQL the services emit against a real SQLite engine that enforces the
+ * production CHECK constraints and gives `db.batch()` genuine all-or-nothing
+ * transaction semantics — so tests can prove those guarantees.
+ *
+ * It implements just enough of the D1Database surface used by the services:
+ * prepare().bind().first()/all()/run() and batch() (atomic).
+ */
+import { createRequire } from 'node:module';
+
+// Load node:sqlite via createRequire so Vite/Vitest doesn't try to statically
+// resolve it (it's newer than Vite's built-in module list).
+const nodeRequire = createRequire(import.meta.url);
+const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlite');
+
+class TestPreparedStatement {
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+    private readonly params: unknown[] = []
+  ) {}
+
+  bind(...args: unknown[]): TestPreparedStatement {
+    return new TestPreparedStatement(this.db, this.sql, args);
+  }
+
+  async first<T = unknown>(): Promise<T | null> {
+    const row = this.db.prepare(this.sql).get(...(this.params as never[]));
+    return (row ?? null) as T | null;
+  }
+
+  async all<T = unknown>(): Promise<{ results: T[]; meta: { changes: number }; success: boolean }> {
+    const rows = this.db.prepare(this.sql).all(...(this.params as never[]));
+    return { results: rows as T[], meta: { changes: 0 }, success: true };
+  }
+
+  async run(): Promise<{ meta: { changes: number; last_row_id: number }; success: boolean }> {
+    const info = this.db.prepare(this.sql).run(...(this.params as never[]));
+    return {
+      meta: { changes: Number(info.changes), last_row_id: Number(info.lastInsertRowid) },
+      success: true,
+    };
+  }
+}
+
+export class TestD1 {
+  readonly sqlite: DatabaseSync;
+
+  constructor() {
+    this.sqlite = new DatabaseSync(':memory:');
+  }
+
+  exec(sql: string): void {
+    this.sqlite.exec(sql);
+  }
+
+  prepare(sql: string): TestPreparedStatement {
+    return new TestPreparedStatement(this.sqlite, sql);
+  }
+
+  /** Atomic, all-or-nothing — mirrors D1's implicit transaction. */
+  async batch(stmts: TestPreparedStatement[]): Promise<unknown[]> {
+    this.sqlite.exec('BEGIN');
+    try {
+      const results: unknown[] = [];
+      for (const s of stmts) results.push(await s.run());
+      this.sqlite.exec('COMMIT');
+      return results;
+    } catch (e) {
+      try { this.sqlite.exec('ROLLBACK'); } catch { /* ignore */ }
+      throw e;
+    }
+  }
+}
+
+/**
+ * Schema subset with the SAME columns and CHECK constraints as
+ * migrations/0001_initial_schema.sql for the tables the financial flows touch.
+ * Foreign keys are intentionally omitted (SQLite leaves them off by default),
+ * so rows can be seeded without the full relational graph.
+ */
+const SCHEMA = `
+CREATE TABLE wallets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT UNIQUE NOT NULL,
+  token_balance REAL DEFAULT 0 CHECK (token_balance >= 0),
+  cash_balance REAL DEFAULT 0 CHECK (cash_balance >= 0),
+  total_bought REAL DEFAULT 0,
+  total_spent REAL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE gold_stock (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  total_allocated REAL NOT NULL DEFAULT 0,
+  tokens_issued REAL NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (tokens_issued <= total_allocated)
+);
+CREATE TABLE transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  wallet_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('BUY','SELL','DEPOSIT','WITHDRAWAL','FEE')),
+  status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING','PROCESSING','COMPLETED','FAILED','CANCELLED')),
+  token_amount REAL,
+  cash_amount REAL NOT NULL,
+  price_per_gram REAL,
+  fees REAL DEFAULT 0,
+  payment_method TEXT,
+  payment_reference TEXT,
+  failure_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE withdrawals (
+  id TEXT PRIMARY KEY,
+  transaction_id TEXT UNIQUE NOT NULL,
+  method TEXT NOT NULL CHECK (method IN ('orange_money','moov_money','bank')),
+  amount REAL NOT NULL,
+  fees REAL NOT NULL,
+  net_amount REAL NOT NULL,
+  phone_number TEXT,
+  bank_account TEXT,
+  bank_name TEXT,
+  status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','PROCESSING','COMPLETED','FAILED','REJECTED')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+CREATE TABLE audit_logs (
+  id TEXT PRIMARY KEY,
+  action TEXT,
+  entity_type TEXT,
+  entity_id TEXT,
+  new_value TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`;
+
+export function createTestD1(): TestD1 {
+  const db = new TestD1();
+  db.exec(SCHEMA);
+  return db;
+}
+
+/** Seed a wallet row. */
+export function seedWallet(
+  db: TestD1,
+  p: { id: string; userId: string; cash?: number; tokens?: number }
+): void {
+  db.sqlite.prepare(
+    `INSERT INTO wallets (id, user_id, cash_balance, token_balance) VALUES (?, ?, ?, ?)`
+  ).run(p.id, p.userId, p.cash ?? 0, p.tokens ?? 0);
+}
+
+/** Seed the singleton gold stock row. */
+export function seedStock(db: TestD1, p: { totalAllocated: number; tokensIssued?: number }): void {
+  db.sqlite.prepare(
+    `INSERT INTO gold_stock (id, total_allocated, tokens_issued) VALUES ('main', ?, ?)`
+  ).run(p.totalAllocated, p.tokensIssued ?? 0);
+}

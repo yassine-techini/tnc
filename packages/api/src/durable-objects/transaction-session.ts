@@ -8,7 +8,7 @@
 
 interface LockData {
   quoteId: string;
-  transactionType: 'BUY' | 'SELL';
+  transactionType: 'BUY' | 'SELL' | 'WITHDRAWAL';
   tokenAmount: number;
   timestamp: number;
   requestId: string;
@@ -48,7 +48,7 @@ export class TransactionSession {
     const body = await request.json() as {
       userId: string;
       quoteId: string;
-      transactionType: 'BUY' | 'SELL';
+      transactionType: 'BUY' | 'SELL' | 'WITHDRAWAL';
       tokenAmount: number;
       requestId: string;
     };

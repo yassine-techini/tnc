@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import type { AppEnv } from '../types/env';
+import type { AppEnv, Env } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { WalletService } from '../services/wallet.service';
 import { MarketService } from '../services/market.service';
@@ -11,6 +11,12 @@ import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
 
 const wallet = new Hono<AppEnv>();
+
+// Per-user transaction lock (Durable Object) — the same one used by buy/sell.
+function getTransactionSession(env: Env, userId: string) {
+  const id = env.TRANSACTION_SESSION.idFromName(`user:${userId}`);
+  return env.TRANSACTION_SESSION.get(id);
+}
 
 // All routes require authentication
 wallet.use('/*', authMiddleware);
@@ -359,148 +365,151 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
     }, 403);
   }
 
-  // Check daily withdrawal amount
-  const todayWithdrawals = await c.env.DB
-    .prepare(
-      `SELECT COALESCE(SUM(cash_amount), 0) as total
-       FROM transactions
-       WHERE user_id = ? AND type = 'WITHDRAWAL'
-       AND status IN ('PENDING', 'PROCESSING', 'COMPLETED')
-       AND created_at >= date('now')`
-    )
-    .bind(userId)
-    .first<{ total: number }>();
-
-  const todayTotal = todayWithdrawals?.total || 0;
-  if (todayTotal + body.amount > dailyLimit) {
+  // Serialize withdrawals per user with the same Durable Object lock as buy/sell,
+  // so the daily-limit read + pending check + debit cannot interleave with a
+  // concurrent withdrawal (closes the TOCTOU on the daily cap and the pending check).
+  const txSession = getTransactionSession(c.env, userId);
+  const lockResponse = await txSession.fetch('https://do/lock', {
+    method: 'POST',
+    body: JSON.stringify({
+      userId,
+      quoteId: crypto.randomUUID(),
+      transactionType: 'WITHDRAWAL',
+      tokenAmount: 0,
+      requestId,
+    }),
+  });
+  if (!lockResponse.ok) {
     return c.json({
       success: false,
-      error: {
-        code: 'WITHDRAWAL_LIMIT_EXCEEDED',
-        message: `Limite de retrait journalière dépassée. Max: ${dailyLimit.toLocaleString('fr-FR')} XOF/jour`,
-      },
+      error: { code: 'TRANSACTION_LOCKED', message: 'Une opération est déjà en cours' },
       requestId,
-    }, 400);
+    }, 409);
   }
-
-  // Get wallet and check balance
-  const walletData = await walletService.findByUserId(userId);
-  if (!walletData) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'WALLET_NOT_FOUND',
-        message: 'Portefeuille non trouvé',
-      },
-      requestId,
-    }, 404);
-  }
-
-  if (walletData.cash_balance < body.amount) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'INSUFFICIENT_BALANCE',
-        message: 'Solde insuffisant',
-      },
-      requestId,
-    }, 400);
-  }
-
-  // Check for pending withdrawals
-  const pendingWithdrawal = await c.env.DB
-    .prepare(
-      `SELECT id FROM transactions
-       WHERE user_id = ? AND type = 'WITHDRAWAL' AND status = 'PENDING'
-       LIMIT 1`
-    )
-    .bind(userId)
-    .first();
-
-  if (pendingWithdrawal) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'WITHDRAWAL_PENDING',
-        message: 'Un retrait est déjà en cours de traitement',
-      },
-      requestId,
-    }, 400);
-  }
-
-  // Calculate withdrawal fees based on payment method (configurable)
-  const [feeRateMobile, feeRateBank] = await Promise.all([
-    configService.getNumber('withdrawal_fee_mobile', 0.01),
-    configService.getNumber('withdrawal_fee_bank', 0.005),
-  ]);
-  const feeRates: Record<string, number> = {
-    orange_money: feeRateMobile,
-    moov_money: feeRateMobile,
-    bank: feeRateBank,
+  const releaseLock = async () => {
+    try {
+      await txSession.fetch('https://do/release', { method: 'POST', body: JSON.stringify({ userId, requestId }) });
+    } catch (e) {
+      console.error('[Wallet] Failed to release withdrawal lock:', e);
+    }
   };
-  const feeRate = feeRates[body.paymentMethod] || feeRateMobile;
-  const fees = Math.round(body.amount * feeRate);
-  const netAmount = body.amount - fees;
 
-  // Create the transaction + withdrawal records AND debit the cash balance as a
-  // single atomic D1 batch. The debit is unconditional so the cash_balance >= 0
-  // CHECK constraint rolls the WHOLE batch back on a concurrent double-withdraw
-  // (no partial state, no negative balance), instead of the previous
-  // unconditional best-effort debit that could overdraw under a race.
-  const transactionId = crypto.randomUUID();
-  const withdrawalId = crypto.randomUUID();
   try {
-    await c.env.DB.batch([
-      c.env.DB
-        .prepare(
-          `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference)
-           VALUES (?, ?, ?, 'WITHDRAWAL', 'PENDING', NULL, ?, NULL, ?, ?, ?)`
-        )
-        .bind(transactionId, userId, walletData.id, body.amount, fees, body.paymentMethod, body.phoneNumber || body.bankAccount || null),
-      c.env.DB
-        .prepare(`
-          INSERT INTO withdrawals (id, transaction_id, method, amount, fees, net_amount, phone_number, bank_account, bank_name, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', datetime('now'))
-        `)
-        .bind(
-          withdrawalId,
-          transactionId,
-          body.paymentMethod,
-          body.amount,
-          fees,
-          netAmount,
-          body.phoneNumber || null,
-          body.bankAccount || null,
-          body.bankName || null
-        ),
-      c.env.DB
-        .prepare(`UPDATE wallets SET cash_balance = cash_balance - ?, updated_at = datetime('now') WHERE id = ?`)
-        .bind(body.amount, walletData.id),
-    ]);
-  } catch (e) {
-    return c.json({
-      success: false,
-      error: { code: 'INSUFFICIENT_BALANCE', message: 'Solde insuffisant' },
-      requestId,
-    }, 400);
-  }
+    // Daily withdrawal amount (serialized by the lock above)
+    const todayWithdrawals = await c.env.DB
+      .prepare(
+        `SELECT COALESCE(SUM(cash_amount), 0) as total
+         FROM transactions
+         WHERE user_id = ? AND type = 'WITHDRAWAL'
+         AND status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+         AND created_at >= date('now')`
+      )
+      .bind(userId)
+      .first<{ total: number }>();
 
-  return c.json({
-    success: true,
-    data: {
-      withdrawalId,
+    const todayTotal = todayWithdrawals?.total || 0;
+    if (todayTotal + body.amount > dailyLimit) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'WITHDRAWAL_LIMIT_EXCEEDED',
+          message: `Limite de retrait journalière dépassée. Max: ${dailyLimit.toLocaleString('fr-FR')} XOF/jour`,
+        },
+        requestId,
+      }, 400);
+    }
+
+    const walletData = await walletService.findByUserId(userId);
+    if (!walletData) {
+      return c.json({
+        success: false,
+        error: { code: 'WALLET_NOT_FOUND', message: 'Portefeuille non trouvé' },
+        requestId,
+      }, 404);
+    }
+
+    // One pending withdrawal at a time
+    const pendingWithdrawal = await c.env.DB
+      .prepare(
+        `SELECT id FROM transactions
+         WHERE user_id = ? AND type = 'WITHDRAWAL' AND status = 'PENDING'
+         LIMIT 1`
+      )
+      .bind(userId)
+      .first();
+
+    if (pendingWithdrawal) {
+      return c.json({
+        success: false,
+        error: { code: 'WITHDRAWAL_PENDING', message: 'Un retrait est déjà en cours de traitement' },
+        requestId,
+      }, 400);
+    }
+
+    // Withdrawal fees by payment method (configurable)
+    const [feeRateMobile, feeRateBank] = await Promise.all([
+      configService.getNumber('withdrawal_fee_mobile', 0.01),
+      configService.getNumber('withdrawal_fee_bank', 0.005),
+    ]);
+    const feeRates: Record<string, number> = {
+      orange_money: feeRateMobile,
+      moov_money: feeRateMobile,
+      bank: feeRateBank,
+    };
+    const feeRate = feeRates[body.paymentMethod] || feeRateMobile;
+    const fees = Math.round(body.amount * feeRate);
+    const netAmount = body.amount - fees;
+
+    // Atomic: transaction + withdrawal rows + cash debit in one D1 batch,
+    // guarded by cash_balance >= 0 (all-or-nothing on a lost race).
+    const transactionId = crypto.randomUUID();
+    const withdrawalId = crypto.randomUUID();
+    const result = await walletService.executeWithdrawalAtomic({
       transactionId,
+      withdrawalId,
+      userId,
+      walletId: walletData.id,
       amount: body.amount,
       fees,
       netAmount,
-      paymentMethod: body.paymentMethod,
-      status: 'PENDING',
-      estimatedTime: body.paymentMethod === 'bank'
-        ? await configService.get('withdrawal_time_bank', '2-3 jours ouvrables')
-        : await configService.get('withdrawal_time_mobile', '24-48h'),
-    },
-    requestId,
-  });
+      method: body.paymentMethod,
+      phoneNumber: body.phoneNumber,
+      bankAccount: body.bankAccount,
+      bankName: body.bankName,
+      paymentReference: body.phoneNumber || body.bankAccount || null,
+    });
+
+    if (!result.ok) {
+      const isConflict = result.reason === 'CONFLICT';
+      return c.json({
+        success: false,
+        error: {
+          code: isConflict ? 'TRANSACTION_CONFLICT' : 'INSUFFICIENT_BALANCE',
+          message: isConflict ? 'Opération non aboutie, veuillez réessayer.' : 'Solde insuffisant',
+        },
+        requestId,
+      }, isConflict ? 409 : 400);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        withdrawalId,
+        transactionId,
+        amount: body.amount,
+        fees,
+        netAmount,
+        paymentMethod: body.paymentMethod,
+        status: 'PENDING',
+        estimatedTime: body.paymentMethod === 'bank'
+          ? await configService.get('withdrawal_time_bank', '2-3 jours ouvrables')
+          : await configService.get('withdrawal_time_mobile', '24-48h'),
+      },
+      requestId,
+    });
+  } finally {
+    await releaseLock();
+  }
 });
 
 // GET /wallet/certificate

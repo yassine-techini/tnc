@@ -375,6 +375,9 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: 'Solde insuffisant. Veuillez recharger votre compte.' },
       CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: 'Transaction non aboutie, veuillez réessayer.' },
     } as const;
+    // No transaction happened on a transient conflict — give the quote back so
+    // the user can retry without requesting a new one.
+    if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
     const e = errorMap[reason];
     return c.json({ success: false, error: { code: e.code, message: e.message }, requestId }, e.status);
   }
@@ -535,6 +538,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
   if (!result.ok) {
     const reason = result.reason; // capture before await (await resets narrowing)
     await releaseLock();
+    if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
     const message = reason === 'CONFLICT'
       ? 'Transaction non aboutie, veuillez réessayer.'
       : 'Solde de tokens insuffisant';

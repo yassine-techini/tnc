@@ -93,13 +93,19 @@ Workflow ajouté : [`.github/workflows/ai-pr-review.yml`](../.github/workflows/a
 
 ## Actions recommandées (issues de l'application des prompts)
 
-| Priorité | Action | Prompt |
-|---|---|---|
-| **P0** | Harnais Miniflare D1 réel + les 6 tests d'atomicité/idempotence/epoch | #10, #3 |
-| **Haut** | Verrou DO (ou condition SQL) sur le retrait pour fermer le TOCTOU du plafond (M2) | #5 |
-| **Haut** | Rendre déterministe la classification d'erreur de trade (M1) | #5 |
-| Moyen | Restaurer le devis en `PENDING` sur `CONFLICT` (m1) | #5 |
-| Moyen | Amorcer les tests mobile (0 aujourd'hui) | #2 |
-| Bas | `.bind(GOLD_STOCK_ID)` (N1) ; envisager `strictNullChecks` (N3) | #5 |
+| Priorité | Action | Prompt | Statut |
+|---|---|---|---|
+| **P0** | Harnais D1 réel (`node:sqlite`) + tests d'atomicité/rollback/invariant/idempotence | #10, #3 | ✅ Fait (`test/helpers/real-d1.ts`, `test/integration/atomicity.test.ts` — 10 tests) |
+| **Haut** | Verrou Durable Object sur le retrait pour fermer le TOCTOU du plafond (M2) | #5 | ✅ Fait (`routes/wallet.ts` + `executeWithdrawalAtomic`) |
+| **Haut** | Rendre déterministe la classification d'erreur de trade (M1) | #5 | ✅ Fait (pré-check dans `executeBuy/SellAtomic`) |
+| Moyen | Restaurer le devis en `PENDING` sur `CONFLICT` (m1) | #5 | ✅ Fait (`MarketService.restoreQuote`) |
+| Bas | `.bind(GOLD_STOCK_ID)` (N1) | #5 | ✅ Fait |
+| Moyen | Amorcer les tests mobile (0 aujourd'hui) | #2 | ⏭️ Reporté (installe un framework de test RN — chantier séparé) |
+| Bas | Activer `strictNullChecks` (N3) | #5 | ⏭️ Reporté (migration transverse, nombreuses erreurs à traiter) |
+
+> **Mise à jour (2026-07-04)** : les actions P0/Haut/Moyen ci-dessus ont été implémentées et vérifiées
+> (`tsc` propre ; 275/301 tests exécutables passent, dont les 10 nouveaux tests d'intégration contre un vrai
+> moteur SQLite qui applique les contraintes `CHECK`). Le test d'epoch de révocation reste à écrire une fois
+> le blocage d'environnement `argon2-browser`/Node 24 contourné (il empêche d'importer `AuthService` en test ici).
 
 _Prompts adaptés à partir de l'article Google Cloud « 10 indispensable prompts our team refuses to build without »._

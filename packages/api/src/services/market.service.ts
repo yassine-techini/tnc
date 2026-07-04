@@ -336,6 +336,21 @@ export class MarketService {
   }
 
   /**
+   * Restore a quote to PENDING if it was consumed (USED) but the transaction did
+   * not go through (e.g. a transient CONFLICT). Only restores a still-valid,
+   * non-expired quote so the user can retry without requesting a new one.
+   */
+  async restoreQuote(quoteId: string, userId: string): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE quotes SET status = 'PENDING'
+         WHERE id = ? AND user_id = ? AND status = 'USED' AND expires_at > datetime('now')`
+      )
+      .bind(quoteId, userId)
+      .run();
+  }
+
+  /**
    * Get gold stock status
    */
   async getGoldStock(): Promise<GoldStockRow | null> {
@@ -367,10 +382,10 @@ export class MarketService {
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued + ?,
              updated_at = datetime('now')
-         WHERE id = '${GOLD_STOCK_ID}'
+         WHERE id = ?
            AND (total_allocated - tokens_issued) >= ?`
       )
-      .bind(tokenAmount, tokenAmount)
+      .bind(tokenAmount, GOLD_STOCK_ID, tokenAmount)
       .run();
 
     return result.meta.changes > 0;
@@ -386,10 +401,10 @@ export class MarketService {
         `UPDATE gold_stock
          SET tokens_issued = tokens_issued - ?,
              updated_at = datetime('now')
-         WHERE id = '${GOLD_STOCK_ID}'
+         WHERE id = ?
            AND tokens_issued >= ?`
       )
-      .bind(tokenAmount, tokenAmount)
+      .bind(tokenAmount, GOLD_STOCK_ID, tokenAmount)
       .run();
 
     return result.meta.changes > 0;

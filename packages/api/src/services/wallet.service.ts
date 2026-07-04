@@ -308,6 +308,24 @@ export class WalletService {
     fees: number;
     paymentMethod?: string;
   }): Promise<TradeResult> {
+    // Deterministic reason for the common case. The db.batch below (guarded by
+    // the cash_balance >= 0 and tokens_issued <= total_allocated CHECK
+    // constraints) remains the atomic source of truth; message-based
+    // classification is only a last-resort fallback for a lost race.
+    const wallet = await this.db
+      .prepare('SELECT cash_balance FROM wallets WHERE id = ?')
+      .bind(p.walletId)
+      .first<{ cash_balance: number }>();
+    if (!wallet || wallet.cash_balance < p.total) {
+      return { ok: false, reason: 'INSUFFICIENT_BALANCE' };
+    }
+    const stockRow = await this.db
+      .prepare('SELECT total_allocated, tokens_issued FROM gold_stock WHERE id = ?')
+      .bind(GOLD_STOCK_ID)
+      .first<{ total_allocated: number; tokens_issued: number }>();
+    if (!stockRow || (stockRow.total_allocated - stockRow.tokens_issued) < p.tokenAmount) {
+      return { ok: false, reason: 'INSUFFICIENT_STOCK' };
+    }
     try {
       await this.db.batch([
         this.db
@@ -357,6 +375,15 @@ export class WalletService {
     fees: number;
     paymentMethod?: string;
   }): Promise<TradeResult> {
+    // Deterministic reason for the common case (see executeBuyAtomic). The batch
+    // below, guarded by token_balance >= 0, is the atomic source of truth.
+    const wallet = await this.db
+      .prepare('SELECT token_balance FROM wallets WHERE id = ?')
+      .bind(p.walletId)
+      .first<{ token_balance: number }>();
+    if (!wallet || wallet.token_balance < p.tokenAmount) {
+      return { ok: false, reason: 'INSUFFICIENT_BALANCE' };
+    }
     try {
       await this.db.batch([
         this.db
@@ -385,6 +412,58 @@ export class WalletService {
              VALUES (?, ?, ?, 'SELL', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'))`
           )
           .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null),
+      ]);
+      return { ok: true, reason: null };
+    } catch (e) {
+      return { ok: false, reason: classifyTradeError(e) };
+    }
+  }
+
+  /**
+   * Execute a withdrawal atomically: record the PENDING transaction + withdrawal
+   * rows AND debit the cash balance in a single D1 batch. The cash_balance >= 0
+   * CHECK constraint rolls the whole batch back on a concurrent double-withdraw,
+   * so a lost race can never overdraw. Returns INSUFFICIENT_BALANCE deterministically
+   * for the common case, CONFLICT for a lost race.
+   */
+  async executeWithdrawalAtomic(p: {
+    transactionId: string;
+    withdrawalId: string;
+    userId: string;
+    walletId: string;
+    amount: number;
+    fees: number;
+    netAmount: number;
+    method: string;
+    phoneNumber?: string | null;
+    bankAccount?: string | null;
+    bankName?: string | null;
+    paymentReference?: string | null;
+  }): Promise<TradeResult> {
+    const wallet = await this.db
+      .prepare('SELECT cash_balance FROM wallets WHERE id = ?')
+      .bind(p.walletId)
+      .first<{ cash_balance: number }>();
+    if (!wallet || wallet.cash_balance < p.amount) {
+      return { ok: false, reason: 'INSUFFICIENT_BALANCE' };
+    }
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference)
+             VALUES (?, ?, ?, 'WITHDRAWAL', 'PENDING', NULL, ?, NULL, ?, ?, ?)`
+          )
+          .bind(p.transactionId, p.userId, p.walletId, p.amount, p.fees, p.method, p.paymentReference ?? null),
+        this.db
+          .prepare(
+            `INSERT INTO withdrawals (id, transaction_id, method, amount, fees, net_amount, phone_number, bank_account, bank_name, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', datetime('now'))`
+          )
+          .bind(p.withdrawalId, p.transactionId, p.method, p.amount, p.fees, p.netAmount, p.phoneNumber ?? null, p.bankAccount ?? null, p.bankName ?? null),
+        this.db
+          .prepare(`UPDATE wallets SET cash_balance = cash_balance - ?, updated_at = datetime('now') WHERE id = ?`)
+          .bind(p.amount, p.walletId),
       ]);
       return { ok: true, reason: null };
     } catch (e) {
