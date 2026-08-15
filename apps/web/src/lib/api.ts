@@ -491,6 +491,24 @@ class ApiClient {
     );
   }
 
+  async uploadConsignmentPhoto(file: File): Promise<{ key: string }> {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${this.baseUrl}/api/v1/producer/consignments/photos`, {
+      method: 'POST', body: fd, credentials: 'include',
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error?.message || 'Échec de l\'envoi de la photo');
+    return data.data as { key: string };
+  }
+
+  /** Fetch a consignment photo (authenticated) and return an object URL. */
+  async fetchConsignmentPhoto(id: string, idx: number): Promise<string> {
+    const res = await fetch(`${this.baseUrl}/api/v1/producer/consignments/${id}/photos/${idx}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Photo introuvable');
+    return URL.createObjectURL(await res.blob());
+  }
+
   async updateProfile(data: { phone?: string; country?: string }, token?: string) {
     return this.request<{ message: string }>('/api/v1/users/me', {
       method: 'PATCH',

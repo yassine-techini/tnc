@@ -950,6 +950,13 @@ class AdminApiClient {
     return this.request<{ consignment: Consignment; events: ConsignmentEvent[] }>(`/api/v1/admin/consignments/${id}`);
   }
 
+  /** Fetch a consignment photo (authenticated) and return an object URL. */
+  async fetchConsignmentPhoto(id: string, idx: number): Promise<string> {
+    const res = await fetch(`${this.baseUrl}/api/v1/admin/consignments/${id}/photos/${idx}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Photo introuvable');
+    return URL.createObjectURL(await res.blob());
+  }
+
   private consignmentAction(id: string, action: string, body?: Record<string, unknown>) {
     return this.request<Consignment>(`/api/v1/admin/consignments/${id}/${action}`, {
       method: 'POST',

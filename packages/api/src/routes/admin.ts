@@ -12,6 +12,7 @@ import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
+import { streamConsignmentPhoto } from './producer';
 
 // Zod schemas for admin endpoints
 const AdminLoginSchema = z.object({
@@ -3058,6 +3059,15 @@ admin.get('/consignments/:id', requirePermission('consignments', 'view'), async 
   }
   const events = await service.listEvents(id);
   return c.json({ success: true, data: { consignment, events }, requestId });
+});
+
+// GET /admin/consignments/:id/photos/:idx  (stream a lot photo)
+admin.get('/consignments/:id/photos/:idx', requirePermission('consignments', 'view'), async (c) => {
+  const { id, idx } = c.req.param();
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment) return c.notFound();
+  return streamConsignmentPhoto(c, consignment.photos, idx);
 });
 
 // POST /admin/consignments/:id/forwarder-validate  (transitaire)

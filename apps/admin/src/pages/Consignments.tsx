@@ -1,7 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
+
+function AdminAuthPhoto({ consignmentId, idx }: { consignmentId: string; idx: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let obj: string | null = null;
+    let alive = true;
+    adminApi.fetchConsignmentPhoto(consignmentId, idx).then((u) => { if (alive) { obj = u; setUrl(u); } }).catch(() => {});
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [consignmentId, idx]);
+  return url
+    ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-700" /></a>
+    : <div className="w-20 h-20 rounded-lg bg-slate-800 animate-pulse" />;
+}
+
+function AdminPhotoStrip({ consignmentId, photosJson }: { consignmentId: string; photosJson: string | null }) {
+  let count = 0;
+  try { count = photosJson ? (JSON.parse(photosJson) as string[]).length : 0; } catch { count = 0; }
+  if (count === 0) return null;
+  return (
+    <div>
+      <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">Photos ({count})</h3>
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: count }).map((_, i) => <AdminAuthPhoto key={i} consignmentId={consignmentId} idx={i} />)}
+      </div>
+    </div>
+  );
+}
 
 const statusBadge: Record<string, string> = {
   SUBMITTED: 'badge-warning',
@@ -160,6 +187,8 @@ function ConsignmentDetail({ id, onClose, canUpdate, canApprove, canReject, onCh
               </div>
             )}
             {c.rejection_reason && <div className="text-sm text-red-400">Rejet : {c.rejection_reason}</div>}
+
+            <AdminPhotoStrip consignmentId={c.id} photosJson={c.photos} />
 
             {/* Event timeline */}
             <div>

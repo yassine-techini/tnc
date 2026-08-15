@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { ConsignmentService } from '../services/consignment.service';
+import { ConfigService } from '../services/config.service';
 
 const producer = new Hono<AppEnv>();
 
@@ -87,5 +88,60 @@ producer.get('/consignments/:id', async (c) => {
   const events = await service.listEvents(id);
   return c.json({ success: true, data: { consignment, events }, requestId });
 });
+
+// POST /producer/consignments/photos — upload a lot photo to R2, returns its key
+producer.post('/consignments/photos', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const formData = await c.req.formData();
+  const file = formData.get('file') as unknown as File;
+
+  if (!file) {
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+  }
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.type)) {
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (JPEG, PNG, WebP)' }, requestId }, 400);
+  }
+  const cfg = new ConfigService(c.env.DB, c.env.CACHE);
+  const maxSize = await cfg.getNumber('consignment_max_photo_bytes', 8 * 1024 * 1024);
+  if (file.size > maxSize) {
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+  }
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const key = `consignments/${userId}/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  await c.env.STORAGE.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: file.type },
+    customMetadata: { userId, uploadedAt: new Date().toISOString() },
+  });
+
+  return c.json({ success: true, data: { key }, requestId }, 201);
+});
+
+// GET /producer/consignments/:id/photos/:idx — stream a photo the producer owns
+producer.get('/consignments/:id/photos/:idx', async (c) => {
+  const userId = c.get('userId');
+  const { id, idx } = c.req.param();
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment || consignment.producer_id !== userId) return c.notFound();
+  return streamConsignmentPhoto(c, consignment.photos, idx);
+});
+
+export async function streamConsignmentPhoto(c: any, photosJson: string | null, idx: string): Promise<Response> {
+  let keys: string[] = [];
+  try { keys = photosJson ? JSON.parse(photosJson) : []; } catch { keys = []; }
+  const key = keys[Number(idx)];
+  if (!key) return c.notFound();
+  const obj = await c.env.STORAGE.get(key);
+  if (!obj) return c.notFound();
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
+      'Cache-Control': 'private, max-age=300',
+    },
+  });
+}
 
 export const producerRoutes = producer;

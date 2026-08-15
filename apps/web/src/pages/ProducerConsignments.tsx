@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api, { type ProducerConsignment } from '../lib/api';
 
@@ -76,15 +76,24 @@ function SubmitForm({ onDone }: { onDone: () => void }) {
   const [weight, setWeight] = useState('');
   const [purityKarat, setPurityKarat] = useState('22');
   const [goldType, setGoldType] = useState<'nuggets' | 'powder' | 'bar'>('nuggets');
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const mut = useMutation({
-    mutationFn: () =>
-      api.submitConsignment({
+    mutationFn: async () => {
+      // Upload photos first, collect their R2 keys.
+      const photos: string[] = [];
+      for (const f of files) {
+        const { key } = await api.uploadConsignmentPhoto(f);
+        photos.push(key);
+      }
+      return api.submitConsignment({
         weightGrams: Number(weight),
         purity: Number(purityKarat) / 24, // karats → fraction
         goldType,
-      }),
+        photos: photos.length ? photos : undefined,
+      });
+    },
     onSuccess: onDone,
     onError: (e: Error) => setError(e.message),
   });
@@ -114,12 +123,58 @@ function SubmitForm({ onDone }: { onDone: () => void }) {
           </select>
         </label>
       </div>
+      <label className="block">
+        <span className="text-xs text-slate-400">Photos du lot (JPEG/PNG/WebP)</span>
+        <input
+          className="input mt-1 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-1 file:text-slate-200"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 10))}
+        />
+      </label>
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {files.map((f, i) => (
+            <img key={i} src={URL.createObjectURL(f)} alt="" className="w-16 h-16 object-cover rounded-lg border border-slate-700" />
+          ))}
+        </div>
+      )}
       {error && <p className="text-sm text-red-400">{error}</p>}
       <button className="btn-primary w-full" disabled={mut.isPending || !(Number(weight) > 0)} onClick={() => mut.mutate()}>
         {mut.isPending ? 'Envoi…' : 'Soumettre le lot'}
       </button>
     </div>
   );
+}
+
+function PhotoStrip({ consignmentId, photosJson }: { consignmentId: string; photosJson: string | null }) {
+  let count = 0;
+  try { count = photosJson ? (JSON.parse(photosJson) as string[]).length : 0; } catch { count = 0; }
+  if (count === 0) return null;
+  return (
+    <div>
+      <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">Photos</h3>
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: count }).map((_, i) => (
+          <AuthPhoto key={i} consignmentId={consignmentId} idx={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuthPhoto({ consignmentId, idx }: { consignmentId: string; idx: number }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let obj: string | null = null;
+    let alive = true;
+    api.fetchConsignmentPhoto(consignmentId, idx).then((u) => { if (alive) { obj = u; setUrl(u); } }).catch(() => {});
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
+  }, [consignmentId, idx]);
+  return url
+    ? <img src={url} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-700" />
+    : <div className="w-20 h-20 rounded-lg bg-slate-800 animate-pulse" />;
 }
 
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
@@ -159,6 +214,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             {c.refined_weight_g != null && (
               <div className="text-sm text-emerald-400">Raffiné &amp; alloué : {c.refined_weight_g.toLocaleString('fr-FR')} g</div>
             )}
+
+            <PhotoStrip consignmentId={c.id} photosJson={c.photos} />
 
             <div>
               <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">Historique</h3>
