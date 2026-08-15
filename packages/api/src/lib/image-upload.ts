@@ -50,9 +50,28 @@ export function sniffImageType(buf: ArrayBuffer): AllowedImageType | null {
   return null;
 }
 
+/**
+ * Same as sniffImageType, plus PDF — company records (RCCM extract, mining
+ * authorization, articles of association) are normally PDFs, not photos.
+ */
+export function sniffDocumentType(buf: ArrayBuffer): AllowedImageType | 'application/pdf' | null {
+  const b = new Uint8Array(buf);
+  // PDF: "%PDF-"
+  if (b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d) {
+    return 'application/pdf';
+  }
+  return sniffImageType(buf);
+}
+
 /** File extension matching a sniffed type — never derived from the client filename. */
-export function extensionFor(type: AllowedImageType): string {
-  return type === 'image/jpeg' ? 'jpg' : type === 'image/png' ? 'png' : 'webp';
+export function extensionFor(type: AllowedImageType | 'application/pdf'): string {
+  return type === 'image/jpeg'
+    ? 'jpg'
+    : type === 'image/png'
+      ? 'png'
+      : type === 'application/pdf'
+        ? 'pdf'
+        : 'webp';
 }
 
 /** The R2 key prefix a producer's consignment photos must live under. */
@@ -69,10 +88,21 @@ export function consignmentPhotoPrefix(producerId: string): string {
  * `..` is rejected so a key can never climb out of its own prefix.
  */
 export function isOwnedConsignmentPhotoKey(key: unknown, producerId: string): key is string {
+  return isOwnedKey(key, consignmentPhotoPrefix(producerId));
+}
+
+/** The R2 key prefix a producer's KYB documents must live under. */
+export function producerDocumentPrefix(producerId: string): string {
+  return `producers/${producerId}/`;
+}
+
+/** Whether an R2 key is a KYB document this producer may reference or read. */
+export function isOwnedProducerDocumentKey(key: unknown, producerId: string): key is string {
+  return isOwnedKey(key, producerDocumentPrefix(producerId));
+}
+
+function isOwnedKey(key: unknown, prefix: string): key is string {
   return (
-    typeof key === 'string' &&
-    key.length <= 256 &&
-    key.startsWith(consignmentPhotoPrefix(producerId)) &&
-    !key.includes('..')
+    typeof key === 'string' && key.length <= 256 && key.startsWith(prefix) && !key.includes('..')
   );
 }

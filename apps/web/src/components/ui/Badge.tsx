@@ -96,7 +96,7 @@ export function KycBadge({ level }: KycBadgeProps) {
 
 // Transaction Type Badge
 export interface TransactionTypeBadgeProps {
-  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
+  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE' | 'CONSIGNMENT';
 }
 
 const transactionConfig = {
@@ -105,6 +105,7 @@ const transactionConfig = {
   DEPOSIT: { variant: 'info' as const, label: 'Depot', icon: '↓' },
   WITHDRAWAL: { variant: 'warning' as const, label: 'Retrait', icon: '↑' },
   FEE: { variant: 'default' as const, label: 'Frais', icon: '−' },
+  CONSIGNMENT: { variant: 'success' as const, label: 'Lot consigne', icon: '↓' },
 };
 
 export function TransactionTypeBadge({ type }: TransactionTypeBadgeProps) {

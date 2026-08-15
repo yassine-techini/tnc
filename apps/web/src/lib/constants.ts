@@ -22,6 +22,8 @@ export const TRANSACTION_TYPES = {
   DEPOSIT: { label: 'Depot', icon: '↓', color: 'blue' },
   WITHDRAWAL: { label: 'Retrait', icon: '↑', color: 'yellow' },
   FEE: { label: 'Frais', icon: '−', color: 'gray' },
+  // Producer paid in tokens for a validated consignment (1 token = 1 g).
+  CONSIGNMENT: { label: 'Lot consigne', icon: '↓', color: 'green' },
 } as const;
 
 export type TransactionType = keyof typeof TRANSACTION_TYPES;

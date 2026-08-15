@@ -212,7 +212,21 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             )}
 
             {c.refined_weight_g != null && (
-              <div className="text-sm text-emerald-400">Raffiné &amp; alloué : {c.refined_weight_g.toLocaleString('fr-FR')} g</div>
+              <div className="rounded-lg bg-emerald-500/10 p-3 space-y-1">
+                <div className="text-sm text-emerald-400">
+                  Raffiné : {c.refined_weight_g.toLocaleString('fr-FR')} g
+                </div>
+                {c.producer_tokens_credited != null && (
+                  <>
+                    <div className="text-sm font-medium text-emerald-300">
+                      Crédité sur votre portefeuille : {c.producer_tokens_credited.toLocaleString('fr-FR')} g en tokens
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      1 token = 1 gramme d'or. Vous pouvez les conserver ou les vendre depuis votre portefeuille.
+                    </p>
+                  </>
+                )}
+              </div>
             )}
 
             <PhotoStrip consignmentId={c.id} photosJson={c.photos} />

@@ -141,6 +141,9 @@ describe('Consignment concurrency (real D1)', () => {
       .prepare("SELECT * FROM transactions WHERE user_id = ? AND type = 'CONSIGNMENT'")
       .get(PRODUCER) as { token_amount: number; status: string; payment_reference: string };
     expect(tx).toMatchObject({ token_amount: 900, status: 'COMPLETED', payment_reference: c.reference });
+    // The lot itself records what it earned — the share is configurable, so it
+    // cannot be recomputed from the refined weight after the fact.
+    expect((await svc.getById(c.id))!.producer_tokens_credited).toBe(900);
   });
 
   it('leaves the remainder as free stock when the share is below 100%', async () => {
@@ -153,6 +156,9 @@ describe('Consignment concurrency (real D1)', () => {
     expect(stockIssued(db)).toBe(810);
     // 90 g of the lot remain unissued — sellable free stock.
     expect(stockAllocated(db) - stockIssued(db)).toBe(10 + 90);
+    // The lot records the 810 actually paid, not the 900 refined.
+    const final = await svc.getById(c.id);
+    expect(final).toMatchObject({ refined_weight_g: 900, producer_tokens_credited: 810 });
   });
 
   it('never issues more tokens than the gold backing them, whatever the config says', async () => {

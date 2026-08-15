@@ -36,6 +36,8 @@ export interface ConsignmentRow {
   transit_started_at: string | null;
   arrived_dubai_at: string | null;
   refined_weight_g: number | null;
+  /** Grams credited to the producer at audit validation (see migration 0020). */
+  producer_tokens_credited: number | null;
   refinery_lot: string | null;
   lbma_certificate: string | null;
   audited_by: string | null;
@@ -359,10 +361,11 @@ export class ConsignmentService {
           .prepare(
             `UPDATE gold_consignments
              SET status = 'AUDIT_VALIDATED', refined_weight_g = ?, refinery_lot = ?, lbma_certificate = ?,
-                 audited_by = ?, audited_at = datetime('now'), updated_at = datetime('now')
+                 producer_tokens_credited = ?, audited_by = ?, audited_at = datetime('now'),
+                 updated_at = datetime('now')
              WHERE id = ? AND status = 'ARRIVED_DUBAI'`
           )
-          .bind(p.refinedWeightG, p.refineryLot ?? null, p.lbmaCertificate ?? null, admin.id, id),
+          .bind(p.refinedWeightG, p.refineryLot ?? null, p.lbmaCertificate ?? null, producerTokens, admin.id, id),
       ]);
       // The guarded consignment UPDATE must have changed exactly one row.
       const consignmentUpdate = results[results.length - 1] as { meta: { changes: number } };

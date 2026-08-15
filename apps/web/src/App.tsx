@@ -47,6 +47,7 @@ const Profile = lazy(() => import('./pages/Profile'));
 const KYC = lazy(() => import('./pages/KYC'));
 const Settings = lazy(() => import('./pages/Settings'));
 const ProducerConsignments = lazy(() => import('./pages/ProducerConsignments'));
+const ProducerProfile = lazy(() => import('./pages/ProducerProfile'));
 
 // Route guard component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -120,6 +121,7 @@ function App() {
           <Route path="/profile" element={<ErrorBoundary><Profile /></ErrorBoundary>} />
           <Route path="/kyc" element={<ErrorBoundary><KYC /></ErrorBoundary>} />
           <Route path="/consignments" element={<ProducerRoute><ErrorBoundary><ProducerConsignments /></ErrorBoundary></ProducerRoute>} />
+          <Route path="/producer-profile" element={<ProducerRoute><ErrorBoundary><ProducerProfile /></ErrorBoundary></ProducerRoute>} />
           <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
         </Route>
 

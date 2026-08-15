@@ -160,11 +160,44 @@ CREATE TABLE gold_consignments (
   transit_started_at TEXT,
   arrived_dubai_at TEXT,
   refined_weight_g REAL,
+  producer_tokens_credited REAL,
   refinery_lot TEXT,
   lbma_certificate TEXT,
   audited_by TEXT,
   audited_at TEXT,
   rejection_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  kyc_level TEXT DEFAULT 'BASIC' CHECK (kyc_level IN ('BASIC','STANDARD','VERIFIED')),
+  kyc_status TEXT DEFAULT 'PENDING' CHECK (kyc_status IN ('PENDING','SUBMITTED','APPROVED','REJECTED','EXPIRED')),
+  role TEXT NOT NULL DEFAULT 'investor',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE producer_profiles (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('INDIVIDUAL','COOPERATIVE','COMPANY')),
+  legal_name TEXT NOT NULL,
+  registration_number TEXT,
+  mining_authorization TEXT,
+  tax_id TEXT,
+  address TEXT,
+  city TEXT,
+  region TEXT,
+  country TEXT NOT NULL DEFAULT 'BF',
+  representative_name TEXT NOT NULL,
+  representative_role TEXT,
+  representative_phone TEXT,
+  documents TEXT,
+  status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED','PROCESSING','VERIFIED','REJECTED')),
+  rejection_reason TEXT,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

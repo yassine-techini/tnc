@@ -11,10 +11,15 @@ import { ConsignmentService } from '../services/consignment.service';
 import { ConfigService } from '../services/config.service';
 import {
   sniffImageType,
+  sniffDocumentType,
   extensionFor,
   isOwnedConsignmentPhotoKey,
   consignmentPhotoPrefix,
+  isOwnedProducerDocumentKey,
+  producerDocumentPrefix,
 } from '../lib/image-upload';
+import { ProducerProfileService, kybSchema } from '../services/producer-profile.service';
+import { EncryptionService } from '../services/encryption.service';
 
 const producer = new Hono<AppEnv>();
 
@@ -36,6 +41,116 @@ async function requireProducer(c: Context<AppEnv>, next: Next) {
 }
 producer.use('/*', requireProducer);
 
+// ============================================
+// KYB — identifying the entity behind the account
+// ============================================
+
+// POST /producer/profile — submit or resubmit the KYB
+producer.post('/profile', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const parsed = kybSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      requestId,
+    }, 400);
+  }
+  const body = parsed.data;
+
+  // Document keys travel through the client, so they are untrusted.
+  const badKey = (body.documents ?? []).find((k) => !isOwnedProducerDocumentKey(k, userId));
+  if (badKey !== undefined) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_DOCUMENT_KEY', message: 'Référence de document invalide' },
+      requestId,
+    }, 400);
+  }
+
+  // A legal entity must identify itself by its registration; an individual
+  // producer is covered by the ordinary KYC flow.
+  if (body.entityType !== 'INDIVIDUAL' && !body.registrationNumber) {
+    return c.json({
+      success: false,
+      error: { code: 'REGISTRATION_REQUIRED', message: 'Numéro RCCM requis pour une coopérative ou une société' },
+      requestId,
+    }, 400);
+  }
+
+  const service = new ProducerProfileService(c.env.DB);
+  const profile = await service.submit(userId, body);
+  if (!profile) {
+    return c.json({
+      success: false,
+      error: { code: 'ALREADY_VERIFIED', message: 'Dossier déjà validé — contactez le support pour le modifier' },
+      requestId,
+    }, 409);
+  }
+  return c.json({ success: true, data: profile, requestId }, 201);
+});
+
+// GET /producer/profile — own KYB status
+producer.get('/profile', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const service = new ProducerProfileService(c.env.DB);
+  const profile = await service.getByUserId(userId);
+  if (!profile) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Aucun dossier' }, requestId }, 404);
+  }
+  return c.json({ success: true, data: profile, requestId });
+});
+
+// POST /producer/profile/documents — upload a KYB document to R2, returns its key
+producer.post('/profile/documents', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const formData = await c.req.formData();
+  const file = formData.get('file') as unknown as File;
+
+  if (!file) {
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+  }
+  const cfg = new ConfigService(c.env.DB, c.env.CACHE);
+  const maxSize = await cfg.getNumber('producer_max_document_bytes', 10 * 1024 * 1024);
+  if (file.size > maxSize) {
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+  }
+
+  const bytes = await file.arrayBuffer();
+  const contentType = sniffDocumentType(bytes);
+  if (!contentType) {
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (PDF, JPEG, PNG, WebP)' }, requestId }, 400);
+  }
+
+  // Company records are as sensitive as identity documents — same fail-closed
+  // rule as the KYC upload: refuse rather than store them in the clear.
+  if (!c.env.ENCRYPTION_KEY) {
+    console.error('Producer document upload refused: ENCRYPTION_KEY is not configured');
+    return c.json({
+      success: false,
+      error: { code: 'ENCRYPTION_UNAVAILABLE', message: 'Service temporairement indisponible. Veuillez réessayer plus tard.' },
+      requestId,
+    }, 503);
+  }
+  const encrypted = await new EncryptionService(c.env.ENCRYPTION_KEY).encrypt(bytes);
+
+  const key = `${producerDocumentPrefix(userId)}${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${extensionFor(contentType)}`;
+  await c.env.STORAGE.put(key, encrypted, {
+    httpMetadata: { contentType: 'application/octet-stream' },
+    customMetadata: {
+      userId,
+      uploadedAt: new Date().toISOString(),
+      encrypted: 'aes-256-gcm',
+      originalContentType: contentType,
+    },
+  });
+
+  return c.json({ success: true, data: { key }, requestId }, 201);
+});
+
 const submitSchema = z.object({
   weightGrams: z.number().positive().max(1_000_000),
   purity: z.number().positive().max(1), // fraction 0..1 (e.g. 0.916 for 22K)
@@ -55,6 +170,8 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
   // A validated lot is paid in tokens, and BASIC accounts cannot sell tokens
   // (KYC_LIMITS). Refuse here rather than at the Dubai audit: at that point the
   // gold is already refined, and blocking would strand it with no way out.
+  // An entity reaches STANDARD through the KYB (POST /producer/profile), an
+  // individual through the ordinary KYC flow.
   const kyc = await c.env.DB
     .prepare('SELECT kyc_level FROM users WHERE id = ?')
     .bind(userId)
@@ -64,7 +181,7 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Niveau KYC insuffisant : vérification requise avant de consigner un lot',
+        message: 'Vérification requise avant de consigner un lot : complétez votre dossier producteur',
       },
       requestId,
     }, 403);

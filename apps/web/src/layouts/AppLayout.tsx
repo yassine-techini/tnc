@@ -6,7 +6,10 @@ import { preloadRoute, preloadCriticalRoutes } from '../lib/preload';
 import { ThemeToggle } from '@tnc-trading/ui';
 import api from '../lib/api';
 
-const producerNavItem = { name: 'Mes lots', href: '/consignments', icon: '📦' };
+const producerNavItems = [
+  { name: 'Mes lots', href: '/consignments', icon: '📦' },
+  { name: 'Mon dossier', href: '/producer-profile', icon: '🏭' },
+];
 
 const navigation = [
   { name: 'Tableau de bord', href: '/dashboard', icon: '📊' },
@@ -34,7 +37,7 @@ export default function AppLayout() {
   const { user, logout } = useAuthStore();
   const { data: profile } = useQuery({ queryKey: ['profile-role'], queryFn: () => api.getProfile(), staleTime: 5 * 60 * 1000 });
   const isProducer = profile?.data?.role === 'producer';
-  const mainNav = isProducer ? [...navigation, producerNavItem] : navigation;
+  const mainNav = isProducer ? [...navigation, ...producerNavItems] : navigation;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 

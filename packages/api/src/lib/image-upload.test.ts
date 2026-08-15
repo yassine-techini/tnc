@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   sniffImageType,
+  sniffDocumentType,
   extensionFor,
   isOwnedConsignmentPhotoKey,
   consignmentPhotoPrefix,
+  isOwnedProducerDocumentKey,
+  producerDocumentPrefix,
 } from './image-upload';
 
 function bytes(...values: number[]): ArrayBuffer {
@@ -42,6 +45,43 @@ describe('sniffImageType', () => {
     expect(extensionFor('image/jpeg')).toBe('jpg');
     expect(extensionFor('image/png')).toBe('png');
     expect(extensionFor('image/webp')).toBe('webp');
+  });
+});
+
+describe('sniffDocumentType', () => {
+  it('accepts a PDF, which sniffImageType rejects', () => {
+    const pdf = bytes(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37);
+    expect(sniffImageType(pdf)).toBeNull();
+    expect(sniffDocumentType(pdf)).toBe('application/pdf');
+    expect(extensionFor('application/pdf')).toBe('pdf');
+  });
+
+  it('still accepts the image formats', () => {
+    expect(sniffDocumentType(bytes(0xff, 0xd8, 0xff, 0xe0))).toBe('image/jpeg');
+  });
+
+  it('rejects anything else', () => {
+    const doc = new TextEncoder().encode('PK fake docx payload here');
+    expect(sniffDocumentType(doc.buffer as ArrayBuffer)).toBeNull();
+  });
+});
+
+describe('isOwnedProducerDocumentKey', () => {
+  const OWNER = 'user-1';
+
+  it('accepts a key under the producer own prefix', () => {
+    expect(isOwnedProducerDocumentKey(`${producerDocumentPrefix(OWNER)}1699_ab12cd34.pdf`, OWNER)).toBe(true);
+  });
+
+  it('keeps KYB documents and consignment photos in separate namespaces', () => {
+    // A consignment photo key must not pass as a KYB document, and vice versa.
+    expect(isOwnedProducerDocumentKey(`consignments/${OWNER}/x.jpg`, OWNER)).toBe(false);
+    expect(isOwnedConsignmentPhotoKey(`producers/${OWNER}/x.pdf`, OWNER)).toBe(false);
+  });
+
+  it('rejects another producer documents and traversal', () => {
+    expect(isOwnedProducerDocumentKey('producers/user-2/rccm.pdf', OWNER)).toBe(false);
+    expect(isOwnedProducerDocumentKey(`producers/${OWNER}/../../kyc/user-2/front.jpg`, OWNER)).toBe(false);
   });
 });
 

@@ -10,6 +10,7 @@ const typeLabels: Record<string, string> = {
   DEPOSIT: 'Dépôt',
   WITHDRAWAL: 'Retrait',
   FEE: 'Frais',
+  CONSIGNMENT: 'Lot consigné',
 };
 
 const statusLabels: Record<string, string> = {
@@ -30,7 +31,7 @@ const statusBadges: Record<string, string> = {
 
 interface Transaction {
   id: string;
-  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
+  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE' | 'CONSIGNMENT';
   status: string;
   tokenAmount: number | null;
   cashAmount: number;
@@ -163,6 +164,7 @@ export default function Transactions() {
               <option value="SELL">Ventes</option>
               <option value="DEPOSIT">Dépôts</option>
               <option value="WITHDRAWAL">Retraits</option>
+              <option value="CONSIGNMENT">Lots consignés</option>
             </select>
           </div>
 

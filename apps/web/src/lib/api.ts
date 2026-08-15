@@ -509,6 +509,42 @@ class ApiClient {
     return URL.createObjectURL(await res.blob());
   }
 
+  // ── Producer KYB (the entity behind the account) ──
+  async getProducerProfile() {
+    return this.request<ProducerProfile>('/api/v1/producer/profile');
+  }
+
+  async submitProducerProfile(data: {
+    entityType: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+    legalName: string;
+    registrationNumber?: string;
+    miningAuthorization?: string;
+    taxId?: string;
+    address?: string;
+    city?: string;
+    region?: string;
+    representativeName: string;
+    representativeRole?: string;
+    representativePhone?: string;
+    documents?: string[];
+  }) {
+    return this.request<ProducerProfile>('/api/v1/producer/profile', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async uploadProducerDocument(file: File): Promise<{ key: string }> {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${this.baseUrl}/api/v1/producer/profile/documents`, {
+      method: 'POST', body: fd, credentials: 'include',
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error?.message || 'Échec de l\'envoi du document');
+    return data.data as { key: string };
+  }
+
   async updateProfile(data: { phone?: string; country?: string }, token?: string) {
     return this.request<{ message: string }>('/api/v1/users/me', {
       method: 'PATCH',
@@ -838,6 +874,7 @@ export interface ProducerConsignment {
   estimated_value_xof: number | null;
   status: ConsignmentStatus;
   refined_weight_g: number | null;
+  producer_tokens_credited: number | null;
   refinery_lot: string | null;
   rejection_reason: string | null;
   created_at: string;
@@ -851,6 +888,30 @@ export interface ProducerConsignmentEvent {
   actor_role: string | null;
   note: string | null;
   created_at: string;
+}
+
+export type KybStatus = 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
+
+export interface ProducerProfile {
+  id: string;
+  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  legal_name: string;
+  registration_number: string | null;
+  mining_authorization: string | null;
+  tax_id: string | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string;
+  representative_name: string;
+  representative_role: string | null;
+  representative_phone: string | null;
+  documents: string | null;
+  status: KybStatus;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export const api = new ApiClient(API_URL);

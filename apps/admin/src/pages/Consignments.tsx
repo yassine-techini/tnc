@@ -182,8 +182,20 @@ function ConsignmentDetail({ id, onClose, canUpdate, canApprove, canReject, onCh
             </div>
 
             {c.refined_weight_g != null && (
-              <div className="text-sm text-emerald-400">
-                Raffiné : {c.refined_weight_g.toLocaleString('fr-FR')} g alloué au stock{c.refinery_lot ? ` · lot ${c.refinery_lot}` : ''}
+              <div className="text-sm text-emerald-400 space-y-0.5">
+                <div>
+                  Raffiné : {c.refined_weight_g.toLocaleString('fr-FR')} g alloué au stock{c.refinery_lot ? ` · lot ${c.refinery_lot}` : ''}
+                </div>
+                {c.producer_tokens_credited != null && (
+                  <div>
+                    Payé au producteur : {c.producer_tokens_credited.toLocaleString('fr-FR')} g en tokens
+                    {c.producer_tokens_credited < c.refined_weight_g && (
+                      <span className="text-slate-400">
+                        {' '}· {(c.refined_weight_g - c.producer_tokens_credited).toLocaleString('fr-FR')} g conservés en stock libre
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {c.rejection_reason && <div className="text-sm text-red-400">Rejet : {c.rejection_reason}</div>}

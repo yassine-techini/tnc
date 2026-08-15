@@ -17,6 +17,7 @@ const navigation: NavItem[] = [
   { name: 'Vérification KYC', href: '/kyc', icon: '🪪', permission: { module: 'kyc', action: 'view' } },
   { name: 'Transactions', href: '/transactions', icon: '💳', permission: { module: 'transactions', action: 'view' } },
   { name: 'Stock Or', href: '/stock', icon: '🪙', permission: { module: 'stock', action: 'view' } },
+  { name: 'Dossiers producteurs', href: '/producers', icon: '🏭', permission: { module: 'kyc', action: 'view' } },
   { name: 'Lots (Export)', href: '/consignments', icon: '📦', permission: { module: 'consignments', action: 'view' } },
   { name: 'Proof of Reserve', href: '/proof-of-reserve', icon: '🔒', permission: { module: 'stock', action: 'view' } },
   { name: 'Reconciliation', href: '/reconciliation', icon: '⚖️', permission: { module: 'reconciliation', action: 'view' } },

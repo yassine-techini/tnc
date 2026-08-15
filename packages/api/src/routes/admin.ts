@@ -13,6 +13,7 @@ import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
+import { ProducerProfileService } from '../services/producer-profile.service';
 import { streamConsignmentPhoto } from './producer';
 
 /**
@@ -3044,6 +3045,69 @@ admin.patch('/users/:id/role', requirePermission('users', 'update'), async (c) =
     .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ role }))
     .run();
   return c.json({ success: true, data: { id, role }, requestId });
+});
+
+// ============================================
+// PRODUCER KYB (entity behind a producer account)
+// Gated by the `kyc` module: a KYB is identity verification for a legal entity,
+// which is exactly the KYC_REVIEWER's job.
+// ============================================
+
+// GET /admin/producers?status=&page=&limit=
+admin.get('/producers', requirePermission('kyc', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { page, limit, offset } = parsePagination(c.req.query());
+  const status = c.req.query('status');
+  const service = new ProducerProfileService(c.env.DB);
+  const { items, total } = await service.list({ status, limit, offset });
+  return c.json({ success: true, data: { items, meta: { page, limit, total } }, requestId });
+});
+
+// GET /admin/producers/:id
+admin.get('/producers/:id', requirePermission('kyc', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const service = new ProducerProfileService(c.env.DB);
+  const profile = await service.getById(c.req.param('id'));
+  if (!profile) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Dossier non trouvé' }, requestId }, 404);
+  }
+  return c.json({ success: true, data: profile, requestId });
+});
+
+function kybError(c: Context<AppEnv>, r: { ok?: boolean; error?: string; from?: string }) {
+  const requestId = crypto.randomUUID();
+  if (r.error === 'NOT_FOUND') {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Dossier non trouvé' }, requestId }, 404);
+  }
+  if (r.error === 'INVALID_TRANSITION') {
+    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: `Dossier déjà traité (${r.from})` }, requestId }, 409);
+  }
+  return c.json({ success: false, error: { code: 'CONFLICT', message: 'Opération non aboutie, veuillez réessayer.' }, requestId }, 409);
+}
+
+// POST /admin/producers/:id/approve — grants the configured KYC level
+admin.post('/producers/:id/approve', requirePermission('kyc', 'approve'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const cfg = new ConfigService(c.env.DB, c.env.CACHE);
+  const configured = await cfg.get('producer_kyb_granted_level', 'STANDARD');
+  // Only a level that can actually sell is meaningful here — a consignment is
+  // paid in tokens, and BASIC cannot sell them.
+  const grantedLevel = configured === 'VERIFIED' ? 'VERIFIED' : 'STANDARD';
+  const service = new ProducerProfileService(c.env.DB);
+  const r = await service.approve(c.req.param('id'), { id: c.get('adminId') as string }, grantedLevel);
+  if (!r.ok) return kybError(c, r);
+  return c.json({ success: true, data: r.profile, requestId });
+});
+
+// POST /admin/producers/:id/reject
+admin.post('/producers/:id/reject', requirePermission('kyc', 'reject'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const body = await c.req.json().catch(() => ({}));
+  const reason = typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Dossier incomplet';
+  const service = new ProducerProfileService(c.env.DB);
+  const r = await service.reject(c.req.param('id'), { id: c.get('adminId') as string }, reason);
+  if (!r.ok) return kybError(c, r);
+  return c.json({ success: true, data: r.profile, requestId });
 });
 
 // ============================================

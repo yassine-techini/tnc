@@ -937,6 +937,33 @@ class AdminApiClient {
     });
   }
 
+  // ── Producer KYB ──
+  async getProducerProfiles(status?: string, page = 1, limit = 20) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set('status', status);
+    return this.request<{ items: ProducerProfile[]; meta: { page: number; limit: number; total: number } }>(
+      `/api/v1/admin/producers?${params}`
+    );
+  }
+
+  async getProducerProfile(id: string) {
+    return this.request<ProducerProfile>(`/api/v1/admin/producers/${id}`);
+  }
+
+  approveProducerProfile(id: string) {
+    return this.request<ProducerProfile>(`/api/v1/admin/producers/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  rejectProducerProfile(id: string, reason: string) {
+    return this.request<ProducerProfile>(`/api/v1/admin/producers/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
   // ── Gold consignments (export workflow) ──
   async getConsignments(status?: string, page = 1, limit = 20) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -973,6 +1000,30 @@ class AdminApiClient {
   }
 }
 
+export interface ProducerProfile {
+  id: string;
+  user_id: string;
+  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  legal_name: string;
+  registration_number: string | null;
+  mining_authorization: string | null;
+  tax_id: string | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string;
+  representative_name: string;
+  representative_role: string | null;
+  representative_phone: string | null;
+  documents: string | null;
+  status: 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
+  rejection_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Consignment {
   id: string;
   reference: string;
@@ -989,6 +1040,7 @@ export interface Consignment {
   transit_started_at: string | null;
   arrived_dubai_at: string | null;
   refined_weight_g: number | null;
+  producer_tokens_credited: number | null;
   refinery_lot: string | null;
   lbma_certificate: string | null;
   audited_by: string | null;
