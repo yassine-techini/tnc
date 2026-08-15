@@ -9,6 +9,7 @@ import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
 import { EncryptionService } from '../services/encryption.service';
 import { ConfigService } from '../services/config.service';
+import { sniffImageType, extensionFor } from '../lib/image-upload';
 
 const users = new Hono<AppEnv>();
 
@@ -503,20 +504,7 @@ users.post('/me/kyc/documents', async (c) => {
       }, 400);
     }
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_FILE_TYPE',
-          message: 'Format de fichier non supporté (JPEG, PNG, WebP uniquement)',
-        },
-        requestId: crypto.randomUUID(),
-      }, 400);
-    }
-
-    // Validate file size (configurable, default 5MB)
+    // Validate file size (configurable, default 5MB) before reading the body.
     const kycConfigService = new ConfigService(c.env.DB, c.env.CACHE);
     const maxFileSize = await kycConfigService.getNumber('kyc_max_file_size_bytes', 5 * 1024 * 1024);
     if (file.size > maxFileSize) {
@@ -531,31 +519,48 @@ users.post('/me/kyc/documents', async (c) => {
       }, 400);
     }
 
-    // Generate unique filename
-    const ext = file.name.split('.').pop() || 'jpg';
-    const filename = `kyc/${userId}/${documentType}_${Date.now()}.${ext}`;
-
-    // Encrypt and upload to R2
+    // The declared MIME type is a client-supplied header — trust the bytes instead.
     const arrayBuffer = await file.arrayBuffer();
-    let uploadData: ArrayBuffer = arrayBuffer;
-    let isEncrypted = false;
-
-    if (c.env.ENCRYPTION_KEY) {
-      const encryptionService = new EncryptionService(c.env.ENCRYPTION_KEY);
-      uploadData = await encryptionService.encrypt(arrayBuffer);
-      isEncrypted = true;
+    const contentType = sniffImageType(arrayBuffer);
+    if (!contentType) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_FILE_TYPE',
+          message: 'Format de fichier non supporté (JPEG, PNG, WebP uniquement)',
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
     }
+
+    // Fail closed: an identity document must never land in R2 in the clear
+    // because a secret happens to be missing.
+    if (!c.env.ENCRYPTION_KEY) {
+      console.error('KYC upload refused: ENCRYPTION_KEY is not configured');
+      return c.json({
+        success: false,
+        error: {
+          code: 'ENCRYPTION_UNAVAILABLE',
+          message: 'Service temporairement indisponible. Veuillez réessayer plus tard.',
+        },
+        requestId: crypto.randomUUID(),
+      }, 503);
+    }
+
+    const filename = `kyc/${userId}/${documentType}_${Date.now()}.${extensionFor(contentType)}`;
+    const encryptionService = new EncryptionService(c.env.ENCRYPTION_KEY);
+    const uploadData = await encryptionService.encrypt(arrayBuffer);
 
     await c.env.STORAGE.put(filename, uploadData, {
       httpMetadata: {
-        contentType: isEncrypted ? 'application/octet-stream' : file.type,
+        contentType: 'application/octet-stream',
       },
       customMetadata: {
         userId,
         documentType,
         uploadedAt: new Date().toISOString(),
-        encrypted: isEncrypted ? 'aes-256-gcm' : 'none',
-        originalContentType: file.type,
+        encrypted: 'aes-256-gcm',
+        originalContentType: contentType,
       },
     });
 
@@ -564,8 +569,6 @@ users.post('/me/kyc/documents', async (c) => {
       .prepare("SELECT id FROM kyc_documents WHERE user_id = ? AND status = 'SUBMITTED' ORDER BY created_at DESC LIMIT 1")
       .bind(userId)
       .first<{ id: string }>();
-
-    const r2Url = `kyc/${userId}/${documentType}_${Date.now()}.${ext}`;
 
     if (!kycDoc) {
       // Create new KYC document record

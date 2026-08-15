@@ -9,6 +9,12 @@ import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { ConsignmentService } from '../services/consignment.service';
 import { ConfigService } from '../services/config.service';
+import {
+  sniffImageType,
+  extensionFor,
+  isOwnedConsignmentPhotoKey,
+  consignmentPhotoPrefix,
+} from '../lib/image-upload';
 
 const producer = new Hono<AppEnv>();
 
@@ -45,6 +51,17 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
+
+  // Photo keys come back from the client, so they are untrusted: only keys under
+  // this producer's own prefix may be referenced.
+  const badKey = (body.photos ?? []).find((k) => !isOwnedConsignmentPhotoKey(k, userId));
+  if (badKey !== undefined) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_PHOTO_KEY', message: 'Référence de photo invalide' },
+      requestId,
+    }, 400);
+  }
 
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.create({
@@ -99,20 +116,23 @@ producer.post('/consignments/photos', async (c) => {
   if (!file) {
     return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
   }
-  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!allowed.includes(file.type)) {
-    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (JPEG, PNG, WebP)' }, requestId }, 400);
-  }
+  // Size is checked before reading the body into memory.
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);
   const maxSize = await cfg.getNumber('consignment_max_photo_bytes', 8 * 1024 * 1024);
   if (file.size > maxSize) {
     return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
   }
 
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-  const key = `consignments/${userId}/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
-  await c.env.STORAGE.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type },
+  // The declared MIME type is a client-supplied header — trust the bytes instead.
+  const bytes = await file.arrayBuffer();
+  const contentType = sniffImageType(bytes);
+  if (!contentType) {
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (JPEG, PNG, WebP)' }, requestId }, 400);
+  }
+
+  const key = `${consignmentPhotoPrefix(userId)}${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${extensionFor(contentType)}`;
+  await c.env.STORAGE.put(key, bytes, {
+    httpMetadata: { contentType },
     customMetadata: { userId, uploadedAt: new Date().toISOString() },
   });
 
@@ -126,14 +146,29 @@ producer.get('/consignments/:id/photos/:idx', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment || consignment.producer_id !== userId) return c.notFound();
-  return streamConsignmentPhoto(c, consignment.photos, idx);
+  return streamConsignmentPhoto(c, consignment, idx);
 });
 
-export async function streamConsignmentPhoto(c: any, photosJson: string | null, idx: string): Promise<Response> {
-  let keys: string[] = [];
-  try { keys = photosJson ? JSON.parse(photosJson) : []; } catch { keys = []; }
+/**
+ * Stream one photo of a consignment. Shared with the admin routes.
+ *
+ * The key is re-checked against the consignment's own producer prefix on every
+ * read: rows predating the submission-time validation may still hold a foreign
+ * key, and this endpoint must never become a way to read the rest of the bucket
+ * (KYC documents live in the same one).
+ */
+export async function streamConsignmentPhoto(
+  c: any,
+  consignment: { producer_id: string; photos: string | null },
+  idx: string
+): Promise<Response> {
+  let keys: unknown[] = [];
+  try {
+    const parsed = consignment.photos ? JSON.parse(consignment.photos) : [];
+    keys = Array.isArray(parsed) ? parsed : [];
+  } catch { keys = []; }
   const key = keys[Number(idx)];
-  if (!key) return c.notFound();
+  if (!isOwnedConsignmentPhotoKey(key, consignment.producer_id)) return c.notFound();
   const obj = await c.env.STORAGE.get(key);
   if (!obj) return c.notFound();
   return new Response(obj.body, {

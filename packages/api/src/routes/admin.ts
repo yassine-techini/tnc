@@ -7,12 +7,21 @@ import { NotificationService } from '../services/notification.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
-import { resolvePermissions } from '../lib/rbac';
+import { resolvePermissions, ROLE_DEFAULTS } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
 import { streamConsignmentPhoto } from './producer';
+
+/**
+ * Roles that may be assigned to an admin account. Derived from ROLE_DEFAULTS so
+ * a new role cannot be defined in the RBAC map, accepted by the `admins.role`
+ * CHECK constraint, and still be unassignable through the API — which is what
+ * happened to TRANSITAIRE and DUBAI_VALIDATOR when the consignment workflow
+ * shipped against a hardcoded list.
+ */
+const ASSIGNABLE_ADMIN_ROLES = Object.keys(ROLE_DEFAULTS);
 
 // Zod schemas for admin endpoints
 const AdminLoginSchema = z.object({
@@ -2458,9 +2467,8 @@ admin.post('/admins', requirePermission('admins', 'create'), async (c) => {
       return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Email, mot de passe et rôle requis' }, requestId }, 400);
     }
 
-    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT'];
-    if (!validRoles.includes(role)) {
-      return c.json({ success: false, error: { code: 'INVALID_ROLE', message: `Rôle invalide. Valeurs: ${validRoles.join(', ')}` }, requestId }, 400);
+    if (!ASSIGNABLE_ADMIN_ROLES.includes(role)) {
+      return c.json({ success: false, error: { code: 'INVALID_ROLE', message: `Rôle invalide. Valeurs: ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` }, requestId }, 400);
     }
 
     // Check duplicate
@@ -2513,8 +2521,7 @@ admin.patch('/admins/:id', requirePermission('admins', 'update'), async (c) => {
     const params: any[] = [];
 
     if (role !== undefined) {
-      const validRoles = ['SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT'];
-      if (!validRoles.includes(role)) {
+      if (!ASSIGNABLE_ADMIN_ROLES.includes(role)) {
         return c.json({ success: false, error: { code: 'INVALID_ROLE', message: 'Rôle invalide' }, requestId }, 400);
       }
       updates.push('role = ?');
@@ -3067,7 +3074,7 @@ admin.get('/consignments/:id/photos/:idx', requirePermission('consignments', 'vi
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment) return c.notFound();
-  return streamConsignmentPhoto(c, consignment.photos, idx);
+  return streamConsignmentPhoto(c, consignment, idx);
 });
 
 // POST /admin/consignments/:id/forwarder-validate  (transitaire)

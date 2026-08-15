@@ -125,6 +125,31 @@ export class ConsignmentService {
       .bind(crypto.randomUUID(), consignmentId, from, to, actorId, actorRole, note);
   }
 
+  /**
+   * Same as eventStmt, but the row is only written if the consignment is STILL
+   * in `expectedStatus`. See the concurrency contract on `transition()`.
+   */
+  private guardedEventStmt(
+    consignmentId: string,
+    from: string | null,
+    to: string,
+    actorId: string | null,
+    actorRole: string | null,
+    note: string | null,
+    expectedStatus: ConsignmentStatus
+  ) {
+    return this.db
+      .prepare(
+        `INSERT INTO consignment_events (id, consignment_id, from_status, to_status, actor_id, actor_role, note)
+         SELECT ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = ?)`
+      )
+      .bind(
+        crypto.randomUUID(), consignmentId, from, to, actorId, actorRole, note,
+        consignmentId, expectedStatus
+      );
+  }
+
   async getById(id: string): Promise<ConsignmentRow | null> {
     const row = await this.db.prepare('SELECT * FROM gold_consignments WHERE id = ?').bind(id).first<ConsignmentRow>();
     return row || null;
@@ -163,7 +188,22 @@ export class ConsignmentService {
     return rows.results || [];
   }
 
-  /** Generic guarded transition that sets extra columns and records an event. */
+  /**
+   * Generic guarded transition that sets extra columns and records an event.
+   *
+   * CONCURRENCY CONTRACT — read before adding a statement to any batch here.
+   * A D1/SQLite UPDATE that matches zero rows is NOT an error: it does not abort
+   * the surrounding batch. So a guard on ONE statement protects only that
+   * statement; every other write in the batch would still commit if a concurrent
+   * request won the race. The rule is therefore:
+   *
+   *   1. EVERY statement in the batch carries the same `status = <observed>` guard.
+   *   2. The statement that flips `status` goes LAST, so the earlier ones still
+   *      observe the pre-transition status.
+   *   3. The caller decides on `meta.changes` of that last statement.
+   *
+   * A lost race then degrades to a batch of no-ops, and the caller gets CONFLICT.
+   */
   private async transition(
     id: string,
     to: ConsignmentStatus,
@@ -177,16 +217,18 @@ export class ConsignmentService {
     if (!ALLOWED[current.status].includes(to)) {
       return { ok: false, error: 'INVALID_TRANSITION', from: current.status };
     }
-    // Guard the UPDATE on the observed status so a concurrent transition loses.
-    const res = await this.db
-      .prepare(
-        `UPDATE gold_consignments SET status = ?${extraSql ? ', ' + extraSql : ''}, updated_at = datetime('now')
-         WHERE id = ? AND status = ?`
-      )
-      .bind(to, ...extraBinds, id, current.status)
-      .run();
-    if (res.meta.changes === 0) return { ok: false, error: 'CONFLICT', from: current.status };
-    await this.eventStmt(id, current.status, to, actor.id, actor.role, note).run();
+    const results = await this.db.batch([
+      this.guardedEventStmt(id, current.status, to, actor.id, actor.role, note, current.status),
+      // Status flip last — the guarded event above must still see the old status.
+      this.db
+        .prepare(
+          `UPDATE gold_consignments SET status = ?${extraSql ? ', ' + extraSql : ''}, updated_at = datetime('now')
+           WHERE id = ? AND status = ?`
+        )
+        .bind(to, ...extraBinds, id, current.status),
+    ]);
+    const flip = results[results.length - 1] as { meta: { changes: number } };
+    if (flip.meta.changes === 0) return { ok: false, error: 'CONFLICT', from: current.status };
     const updated = await this.getById(id);
     return { ok: true, consignment: updated! };
   }
@@ -227,7 +269,28 @@ export class ConsignmentService {
       return { ok: false, error: 'INVALID_TRANSITION', from: current.status };
     }
     try {
+      // Every statement is guarded on status = 'ARRIVED_DUBAI', and the status
+      // flip comes LAST — see the concurrency contract on `transition()`. Without
+      // this, a lost race still committed the gold_stock allocation while the
+      // caller was told CONFLICT, inflating the tokenizable backing with no
+      // physical gold behind it.
       const results = await this.db.batch([
+        // Allocate refined weight to the tokenizable stock.
+        this.db
+          .prepare(
+            `UPDATE gold_stock SET total_allocated = total_allocated + ?, updated_at = datetime('now')
+             WHERE id = ?
+               AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
+          )
+          .bind(p.refinedWeightG, GOLD_STOCK_ID, id),
+        this.guardedEventStmt(id, current.status, 'AUDIT_VALIDATED', admin.id, admin.role, `Audit validé à Dubaï — ${p.refinedWeightG} g raffinés alloués`, 'ARRIVED_DUBAI'),
+        this.db
+          .prepare(
+            `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+             SELECT ?, ?, 'CONSIGNMENT_AUDIT_VALIDATED', 'consignment', ?, ?, datetime('now')
+             WHERE EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
+          )
+          .bind(crypto.randomUUID(), admin.id, id, JSON.stringify({ refinedWeightG: p.refinedWeightG, refineryLot: p.refineryLot, allocatedTo: GOLD_STOCK_ID }), id),
         this.db
           .prepare(
             `UPDATE gold_consignments
@@ -236,20 +299,9 @@ export class ConsignmentService {
              WHERE id = ? AND status = 'ARRIVED_DUBAI'`
           )
           .bind(p.refinedWeightG, p.refineryLot ?? null, p.lbmaCertificate ?? null, admin.id, id),
-        this.eventStmt(id, current.status, 'AUDIT_VALIDATED', admin.id, admin.role, `Audit validé à Dubaï — ${p.refinedWeightG} g raffinés alloués`),
-        // Allocate refined weight to the tokenizable stock.
-        this.db
-          .prepare(`UPDATE gold_stock SET total_allocated = total_allocated + ?, updated_at = datetime('now') WHERE id = ?`)
-          .bind(p.refinedWeightG, GOLD_STOCK_ID),
-        this.db
-          .prepare(
-            `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-             VALUES (?, ?, 'CONSIGNMENT_AUDIT_VALIDATED', 'consignment', ?, ?, datetime('now'))`
-          )
-          .bind(crypto.randomUUID(), admin.id, id, JSON.stringify({ refinedWeightG: p.refinedWeightG, refineryLot: p.refineryLot, allocatedTo: GOLD_STOCK_ID })),
       ]);
       // The guarded consignment UPDATE must have changed exactly one row.
-      const consignmentUpdate = results[0] as { meta: { changes: number } };
+      const consignmentUpdate = results[results.length - 1] as { meta: { changes: number } };
       if (consignmentUpdate.meta.changes === 0) {
         return { ok: false, error: 'CONFLICT', from: current.status };
       }
