@@ -13,8 +13,8 @@ import {
 // ─── Constants ─────────────────────────────────────────
 
 describe('RBAC constants', () => {
-  it('defines 13 modules', () => {
-    expect(MODULES).toHaveLength(13);
+  it('defines 14 modules', () => {
+    expect(MODULES).toHaveLength(14);
     expect(MODULES).toContain('dashboard');
     expect(MODULES).toContain('admins');
     expect(MODULES).toContain('integrations');
@@ -22,6 +22,7 @@ describe('RBAC constants', () => {
     expect(MODULES).toContain('analytics');
     expect(MODULES).toContain('logs');
     expect(MODULES).toContain('alerts');
+    expect(MODULES).toContain('consignments');
   });
 
   it('defines 7 actions', () => {
@@ -31,11 +32,12 @@ describe('RBAC constants', () => {
     expect(ACTIONS).toContain('export');
   });
 
-  it('defines 6 roles', () => {
+  it('defines 8 roles', () => {
     const roles = Object.keys(ROLE_DEFAULTS);
-    expect(roles).toHaveLength(6);
+    expect(roles).toHaveLength(8);
     expect(roles).toEqual(expect.arrayContaining([
       'SUPER_ADMIN', 'ADMIN', 'KYC_REVIEWER', 'FINANCE', 'SUPPORT', 'STATE_OPERATOR',
+      'TRANSITAIRE', 'DUBAI_VALIDATOR',
     ]));
   });
 
@@ -111,6 +113,7 @@ describe('hasPermission', () => {
     analytics: [],
     logs: [],
     alerts: [],
+    consignments: [],
   };
 
   it('returns true when action is in the module list', () => {

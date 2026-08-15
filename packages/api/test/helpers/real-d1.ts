@@ -135,10 +135,49 @@ CREATE TABLE withdrawals (
 );
 CREATE TABLE audit_logs (
   id TEXT PRIMARY KEY,
+  admin_id TEXT,
   action TEXT,
   entity_type TEXT,
   entity_id TEXT,
   new_value TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE gold_consignments (
+  id TEXT PRIMARY KEY,
+  reference TEXT UNIQUE NOT NULL,
+  producer_id TEXT NOT NULL,
+  weight_declared_g REAL NOT NULL CHECK (weight_declared_g > 0),
+  purity_declared REAL NOT NULL CHECK (purity_declared > 0 AND purity_declared <= 1),
+  gold_type TEXT NOT NULL CHECK (gold_type IN ('nuggets','powder','bar')),
+  origin_country TEXT DEFAULT 'BF',
+  origin_gps_lat REAL,
+  origin_gps_lng REAL,
+  photos TEXT,
+  estimated_value_xof REAL,
+  status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED','FORWARDER_VALIDATED','IN_TRANSIT','ARRIVED_DUBAI','AUDIT_VALIDATED','REJECTED')),
+  forwarder_id TEXT,
+  forwarder_validated_at TEXT,
+  transit_started_at TEXT,
+  arrived_dubai_at TEXT,
+  refined_weight_g REAL,
+  refinery_lot TEXT,
+  lbma_certificate TEXT,
+  audited_by TEXT,
+  audited_at TEXT,
+  rejection_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE consignment_events (
+  id TEXT PRIMARY KEY,
+  consignment_id TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  actor_id TEXT,
+  actor_role TEXT,
+  note TEXT,
+  gps_lat REAL,
+  gps_lng REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `;

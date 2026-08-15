@@ -25,6 +25,7 @@ import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/users';
 import { marketRoutes } from './routes/market';
 import { walletRoutes } from './routes/wallet';
+import { producerRoutes } from './routes/producer';
 import { adminRoutes } from './routes/admin';
 import { stateRoutes } from './routes/state';
 import { webhookRoutes } from './routes/webhooks';
@@ -258,6 +259,7 @@ api.use('/wallet/*', authMiddleware);
 api.route('/users', userRoutes);
 api.route('/market', marketRoutes);  // Market has mixed public/protected routes
 api.route('/wallet', walletRoutes);
+api.route('/producer', producerRoutes);
 
 // Admin routes (Cloudflare Access auth)
 api.route('/admin', adminRoutes);

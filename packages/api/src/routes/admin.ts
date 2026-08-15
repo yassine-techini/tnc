@@ -11,6 +11,7 @@ import { resolvePermissions } from '../lib/rbac';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
+import { ConsignmentService } from '../services/consignment.service';
 
 // Zod schemas for admin endpoints
 const AdminLoginSchema = z.object({
@@ -2993,5 +2994,108 @@ admin.patch('/config/:key', requirePermission('integrations', 'update'), async (
 // ANALYTICS ROUTES
 // ============================================
 admin.route('/analytics', analyticsRoutes);
+
+// ============================================
+// GOLD CONSIGNMENTS (export workflow)
+// ============================================
+
+function consignmentError(c: Context<AppEnv>, r: { ok?: boolean; error?: string; from?: string }) {
+  const requestId = crypto.randomUUID();
+  if (r.error === 'NOT_FOUND') {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+  }
+  if (r.error === 'INVALID_TRANSITION') {
+    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: `Transition invalide depuis ${r.from}` }, requestId }, 409);
+  }
+  return c.json({ success: false, error: { code: 'CONFLICT', message: 'Opération non aboutie, veuillez réessayer' }, requestId }, 409);
+}
+
+function currentAdmin(c: Context<AppEnv>) {
+  return { id: c.get('adminId') as string, role: c.get('adminRole') as string };
+}
+
+// GET /admin/consignments?status=&page=&limit=
+admin.get('/consignments', requirePermission('consignments', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { page, limit, offset } = parsePagination(c.req.query());
+  const status = c.req.query('status');
+  const service = new ConsignmentService(c.env.DB);
+  const { items, total } = await service.listAll({ status, limit, offset });
+  return c.json({ success: true, data: { items, meta: { page, limit, total } }, requestId });
+});
+
+// GET /admin/consignments/:id  (detail + event timeline)
+admin.get('/consignments/:id', requirePermission('consignments', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const { id } = c.req.param();
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+  }
+  const events = await service.listEvents(id);
+  return c.json({ success: true, data: { consignment, events }, requestId });
+});
+
+// POST /admin/consignments/:id/forwarder-validate  (transitaire)
+admin.post('/consignments/:id/forwarder-validate', requirePermission('consignments', 'update'), async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const service = new ConsignmentService(c.env.DB);
+  const r = await service.forwarderValidate(id, currentAdmin(c), body?.note);
+  if (!r.ok) return consignmentError(c, r);
+  return c.json({ success: true, data: r.consignment, requestId: crypto.randomUUID() });
+});
+
+// POST /admin/consignments/:id/transit  (transport started)
+admin.post('/consignments/:id/transit', requirePermission('consignments', 'update'), async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const service = new ConsignmentService(c.env.DB);
+  const r = await service.startTransit(id, currentAdmin(c), body?.note);
+  if (!r.ok) return consignmentError(c, r);
+  return c.json({ success: true, data: r.consignment, requestId: crypto.randomUUID() });
+});
+
+// POST /admin/consignments/:id/arrive-dubai
+admin.post('/consignments/:id/arrive-dubai', requirePermission('consignments', 'update'), async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const service = new ConsignmentService(c.env.DB);
+  const r = await service.arriveDubai(id, currentAdmin(c), body?.note);
+  if (!r.ok) return consignmentError(c, r);
+  return c.json({ success: true, data: r.consignment, requestId: crypto.randomUUID() });
+});
+
+// POST /admin/consignments/:id/audit-validate  (Dubai audit → allocate stock)
+const auditValidateSchema = z.object({
+  refinedWeightG: z.number().positive().max(1_000_000),
+  refineryLot: z.string().max(128).optional(),
+  lbmaCertificate: z.string().max(256).optional(),
+});
+admin.post('/consignments/:id/audit-validate', requirePermission('consignments', 'approve'), async (c) => {
+  const { id } = c.req.param();
+  const requestId = crypto.randomUUID();
+  const parsed = auditValidateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' }, requestId }, 400);
+  }
+  const service = new ConsignmentService(c.env.DB);
+  const r = await service.auditValidate(id, currentAdmin(c), parsed.data);
+  if (!r.ok) return consignmentError(c, r);
+  return c.json({ success: true, data: r.consignment, requestId });
+});
+
+// POST /admin/consignments/:id/reject
+admin.post('/consignments/:id/reject', requirePermission('consignments', 'reject'), async (c) => {
+  const { id } = c.req.param();
+  const requestId = crypto.randomUUID();
+  const body = await c.req.json().catch(() => ({}));
+  const reason = typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Rejeté';
+  const service = new ConsignmentService(c.env.DB);
+  const r = await service.reject(id, currentAdmin(c), reason);
+  if (!r.ok) return consignmentError(c, r);
+  return c.json({ success: true, data: r.consignment, requestId });
+});
 
 export const adminRoutes = admin;

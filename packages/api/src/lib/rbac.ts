@@ -6,7 +6,7 @@
 export const MODULES = [
   'dashboard', 'users', 'kyc', 'transactions', 'stock',
   'withdrawals', 'reconciliation', 'integrations', 'audit', 'admins',
-  'analytics', 'logs', 'alerts',
+  'analytics', 'logs', 'alerts', 'consignments',
 ] as const;
 
 export const ACTIONS = [
@@ -37,6 +37,7 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: ['view', 'export'],
     logs: ['view', 'export'],
     alerts: ['view', 'create', 'update', 'delete'],
+    consignments: ['view', 'update', 'approve', 'reject', 'export'],
   },
   ADMIN: {
     dashboard: ['view'],
@@ -52,6 +53,7 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: ['view'],
     logs: ['view'],
     alerts: ['view', 'update'],
+    consignments: ['view', 'update', 'approve', 'reject', 'export'],
   },
   KYC_REVIEWER: {
     dashboard: ['view'],
@@ -67,6 +69,7 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: [],
     logs: [],
     alerts: [],
+    consignments: [],
   },
   FINANCE: {
     dashboard: ['view'],
@@ -82,6 +85,7 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: ['view'],
     logs: [],
     alerts: ['view'],
+    consignments: ['view', 'export'],
   },
   SUPPORT: {
     dashboard: ['view'],
@@ -97,6 +101,7 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: [],
     logs: [],
     alerts: ['view'],
+    consignments: ['view'],
   },
   STATE_OPERATOR: {
     // Read-only access for government monitoring
@@ -113,6 +118,41 @@ export const ROLE_DEFAULTS: Record<string, PermissionMap> = {
     analytics: ['view', 'export'], // Full analytics access
     logs: ['view'], // Can view system logs
     alerts: ['view'], // Can view alerts
+    consignments: ['view', 'export'], // Government oversight of gold sourcing
+  },
+  // Freight forwarder: validates the operation and drives transport status.
+  TRANSITAIRE: {
+    dashboard: ['view'],
+    users: [],
+    kyc: [],
+    transactions: [],
+    stock: [],
+    withdrawals: [],
+    reconciliation: [],
+    integrations: [],
+    audit: [],
+    admins: [],
+    analytics: [],
+    logs: [],
+    alerts: [],
+    consignments: ['view', 'update'],
+  },
+  // Dubai-side auditor: runs the final audit validation that allocates stock.
+  DUBAI_VALIDATOR: {
+    dashboard: ['view'],
+    users: [],
+    kyc: [],
+    transactions: [],
+    stock: ['view'],
+    withdrawals: [],
+    reconciliation: [],
+    integrations: [],
+    audit: ['view'],
+    admins: [],
+    analytics: [],
+    logs: [],
+    alerts: [],
+    consignments: ['view', 'approve', 'reject'],
   },
 };
 
