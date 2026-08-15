@@ -250,15 +250,29 @@ export class ConsignmentService {
   }
 
   /**
-   * Final audit validation at Dubai. Atomically: mark AUDIT_VALIDATED with the
-   * refined weight + LBMA data, record the event, ALLOCATE the refined weight to
-   * gold_stock.total_allocated (increasing tokenizable backing), and write an
-   * audit log — all in one D1 batch (all-or-nothing).
+   * Final audit validation at Dubai. Atomically, in one D1 batch:
+   *   - mark AUDIT_VALIDATED with the refined weight + LBMA data,
+   *   - ALLOCATE the refined weight to gold_stock.total_allocated (backing in),
+   *   - PAY THE PRODUCER in tokens (1 token = 1 g of refined gold) and count
+   *     those tokens as issued,
+   *   - record the event and an audit log.
+   *
+   * The producer is paid in grams, not XOF, so no gold price or valuation date
+   * has to be fixed for a lot. `producerShare` (0..1) is the fraction of the
+   * refined weight credited to him; the remainder stays as free sellable stock.
+   *
+   * gold_stock is updated in a SINGLE statement so the
+   * `tokens_issued <= total_allocated` CHECK is never transiently violated.
    */
   async auditValidate(
     id: string,
     admin: { id: string; role: string },
-    p: { refinedWeightG?: number; refineryLot?: string; lbmaCertificate?: string }
+    p: {
+      refinedWeightG?: number;
+      refineryLot?: string;
+      lbmaCertificate?: string;
+      producerShare?: number;
+    }
   ): Promise<TransitionResult> {
     if (!(typeof p.refinedWeightG === 'number' && p.refinedWeightG > 0)) {
       return { ok: false, error: 'INVALID_TRANSITION' };
@@ -268,6 +282,32 @@ export class ConsignmentService {
     if (!ALLOWED[current.status].includes('AUDIT_VALIDATED')) {
       return { ok: false, error: 'INVALID_TRANSITION', from: current.status };
     }
+
+    // Clamp defensively: a bad config value must never issue more tokens than
+    // the gold that backs them.
+    const share = Math.min(1, Math.max(0, typeof p.producerShare === 'number' ? p.producerShare : 1));
+    // Token balances are grams at 0.001 precision.
+    const producerTokens = Math.round(p.refinedWeightG * share * 1000) / 1000;
+
+    // The producer may never have transacted, so his wallet may not exist yet.
+    // Idempotent, and outside the batch: a spare empty wallet is harmless, while
+    // a failed payout is not.
+    let producerWalletId: string | null = null;
+    if (producerTokens > 0) {
+      await this.db
+        .prepare(
+          `INSERT OR IGNORE INTO wallets (id, user_id, token_balance, cash_balance) VALUES (?, ?, 0, 0)`
+        )
+        .bind(crypto.randomUUID(), current.producer_id)
+        .run();
+      const wallet = await this.db
+        .prepare('SELECT id FROM wallets WHERE user_id = ?')
+        .bind(current.producer_id)
+        .first<{ id: string }>();
+      if (!wallet) return { ok: false, error: 'CONFLICT', from: current.status };
+      producerWalletId = wallet.id;
+    }
+
     try {
       // Every statement is guarded on status = 'ARRIVED_DUBAI', and the status
       // flip comes LAST — see the concurrency contract on `transition()`. Without
@@ -275,22 +315,46 @@ export class ConsignmentService {
       // caller was told CONFLICT, inflating the tokenizable backing with no
       // physical gold behind it.
       const results = await this.db.batch([
-        // Allocate refined weight to the tokenizable stock.
+        // Allocate the refined weight to the tokenizable stock, and count the
+        // producer's tokens as issued — one statement, so the invariant holds.
         this.db
           .prepare(
-            `UPDATE gold_stock SET total_allocated = total_allocated + ?, updated_at = datetime('now')
+            `UPDATE gold_stock
+             SET total_allocated = total_allocated + ?,
+                 tokens_issued = tokens_issued + ?,
+                 updated_at = datetime('now')
              WHERE id = ?
                AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
           )
-          .bind(p.refinedWeightG, GOLD_STOCK_ID, id),
-        this.guardedEventStmt(id, current.status, 'AUDIT_VALIDATED', admin.id, admin.role, `Audit validé à Dubaï — ${p.refinedWeightG} g raffinés alloués`, 'ARRIVED_DUBAI'),
+          .bind(p.refinedWeightG, producerTokens, GOLD_STOCK_ID, id),
+        // Pay the producer in tokens.
+        ...(producerTokens > 0
+          ? [
+              this.db
+                .prepare(
+                  `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now')
+                   WHERE id = ?
+                     AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
+                )
+                .bind(producerTokens, producerWalletId, id),
+              this.db
+                .prepare(
+                  `INSERT INTO transactions
+                     (id, user_id, wallet_id, type, status, token_amount, cash_amount, fees, payment_reference, completed_at)
+                   SELECT ?, ?, ?, 'CONSIGNMENT', 'COMPLETED', ?, 0, 0, ?, datetime('now')
+                   WHERE EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
+                )
+                .bind(crypto.randomUUID(), current.producer_id, producerWalletId, producerTokens, current.reference, id),
+            ]
+          : []),
+        this.guardedEventStmt(id, current.status, 'AUDIT_VALIDATED', admin.id, admin.role, `Audit validé à Dubaï — ${p.refinedWeightG} g raffinés, ${producerTokens} g crédités au producteur`, 'ARRIVED_DUBAI'),
         this.db
           .prepare(
             `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
              SELECT ?, ?, 'CONSIGNMENT_AUDIT_VALIDATED', 'consignment', ?, ?, datetime('now')
              WHERE EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
           )
-          .bind(crypto.randomUUID(), admin.id, id, JSON.stringify({ refinedWeightG: p.refinedWeightG, refineryLot: p.refineryLot, allocatedTo: GOLD_STOCK_ID }), id),
+          .bind(crypto.randomUUID(), admin.id, id, JSON.stringify({ refinedWeightG: p.refinedWeightG, refineryLot: p.refineryLot, allocatedTo: GOLD_STOCK_ID, producerShare: share, producerTokens, producerId: current.producer_id }), id),
         this.db
           .prepare(
             `UPDATE gold_consignments

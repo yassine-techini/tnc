@@ -23,6 +23,20 @@ function stockAllocated(db: TestD1): number {
   return r.total_allocated;
 }
 
+function stockIssued(db: TestD1): number {
+  const r = db.sqlite.prepare("SELECT tokens_issued FROM gold_stock WHERE id='main'").get() as {
+    tokens_issued: number;
+  };
+  return r.tokens_issued;
+}
+
+function producerTokens(db: TestD1, userId: string): number {
+  const r = db.sqlite
+    .prepare('SELECT token_balance FROM wallets WHERE user_id = ?')
+    .get(userId) as { token_balance: number } | undefined;
+  return r?.token_balance ?? 0;
+}
+
 function countEvents(db: TestD1, consignmentId: string): number {
   const r = db.sqlite
     .prepare('SELECT COUNT(*) AS c FROM consignment_events WHERE consignment_id = ?')
@@ -108,6 +122,65 @@ describe('Consignment concurrency (real D1)', () => {
       )
       .get(c.id) as { c: number };
     expect(log.c).toBe(1);
+  });
+
+  it('pays the producer in tokens and counts them as issued', async () => {
+    const c = await arrived();
+
+    const r = await svc.auditValidate(c.id, AUDITOR, { refinedWeightG: 900, producerShare: 1 });
+
+    expect(r.ok).toBe(true);
+    // 900 g of backing in, 900 g credited to the producer, 900 g issued.
+    expect(stockAllocated(db)).toBe(10 + 900);
+    expect(producerTokens(db, PRODUCER)).toBe(900);
+    expect(stockIssued(db)).toBe(900);
+    // The invariant still holds: issued never exceeds allocated.
+    expect(stockIssued(db)).toBeLessThanOrEqual(stockAllocated(db));
+
+    const tx = db.sqlite
+      .prepare("SELECT * FROM transactions WHERE user_id = ? AND type = 'CONSIGNMENT'")
+      .get(PRODUCER) as { token_amount: number; status: string; payment_reference: string };
+    expect(tx).toMatchObject({ token_amount: 900, status: 'COMPLETED', payment_reference: c.reference });
+  });
+
+  it('leaves the remainder as free stock when the share is below 100%', async () => {
+    const c = await arrived();
+
+    const r = await svc.auditValidate(c.id, AUDITOR, { refinedWeightG: 900, producerShare: 0.9 });
+
+    expect(r.ok).toBe(true);
+    expect(producerTokens(db, PRODUCER)).toBe(810);
+    expect(stockIssued(db)).toBe(810);
+    // 90 g of the lot remain unissued — sellable free stock.
+    expect(stockAllocated(db) - stockIssued(db)).toBe(10 + 90);
+  });
+
+  it('never issues more tokens than the gold backing them, whatever the config says', async () => {
+    const c = await arrived();
+
+    // A bad config value must not mint unbacked tokens.
+    const r = await svc.auditValidate(c.id, AUDITOR, { refinedWeightG: 900, producerShare: 5 });
+
+    expect(r.ok).toBe(true);
+    expect(producerTokens(db, PRODUCER)).toBe(900);
+    expect(stockIssued(db)).toBeLessThanOrEqual(stockAllocated(db));
+  });
+
+  it('pays nothing on a lost race', async () => {
+    const c = await arrived();
+    loseRaceAfterRead(svc, db, 'AUDIT_VALIDATED');
+
+    const r = await svc.auditValidate(c.id, AUDITOR, { refinedWeightG: 900, producerShare: 1 });
+
+    expect(r).toMatchObject({ ok: false, error: 'CONFLICT' });
+    // No allocation, no payout, no issuance, no transaction.
+    expect(stockAllocated(db)).toBe(10);
+    expect(producerTokens(db, PRODUCER)).toBe(0);
+    expect(stockIssued(db)).toBe(0);
+    const count = db.sqlite
+      .prepare("SELECT COUNT(*) AS c FROM transactions WHERE type = 'CONSIGNMENT'")
+      .get() as { c: number };
+    expect(count.c).toBe(0);
   });
 
   it('transition: a lost race records no event and leaves the winner status', async () => {

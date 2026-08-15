@@ -3140,8 +3140,11 @@ admin.post('/consignments/:id/audit-validate', requirePermission('consignments',
   if (!parsed.success) {
     return c.json({ success: false, error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' }, requestId }, 400);
   }
+  // Share of the refined weight paid to the producer in tokens (see 0018).
+  const cfg = new ConfigService(c.env.DB, c.env.CACHE);
+  const producerShare = await cfg.getNumber('consignment_producer_share', 1);
   const service = new ConsignmentService(c.env.DB);
-  const r = await service.auditValidate(id, currentAdmin(c), parsed.data);
+  const r = await service.auditValidate(id, currentAdmin(c), { ...parsed.data, producerShare });
   if (!r.ok) return consignmentError(c, r);
   return c.json({ success: true, data: r.consignment, requestId });
 });

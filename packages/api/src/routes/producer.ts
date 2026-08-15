@@ -52,6 +52,24 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
 
+  // A validated lot is paid in tokens, and BASIC accounts cannot sell tokens
+  // (KYC_LIMITS). Refuse here rather than at the Dubai audit: at that point the
+  // gold is already refined, and blocking would strand it with no way out.
+  const kyc = await c.env.DB
+    .prepare('SELECT kyc_level FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ kyc_level: string }>();
+  if (!kyc || kyc.kyc_level === 'BASIC') {
+    return c.json({
+      success: false,
+      error: {
+        code: 'KYC_LEVEL_INSUFFICIENT',
+        message: 'Niveau KYC insuffisant : vérification requise avant de consigner un lot',
+      },
+      requestId,
+    }, 403);
+  }
+
   // Photo keys come back from the client, so they are untrusted: only keys under
   // this producer's own prefix may be referenced.
   const badKey = (body.photos ?? []).find((k) => !isOwnedConsignmentPhotoKey(k, userId));
