@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense, lazy, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, startInactivityMonitor } from './stores/auth';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import api from './lib/api';
 
 // Layouts (loaded eagerly as they're needed immediately)
 import PublicLayout from './layouts/PublicLayout';
@@ -66,6 +68,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Producer-only guard, nested inside ProtectedRoute (so the user is already
+ * authenticated here). The API is the real boundary — /producer/* answers 403
+ * NOT_A_PRODUCER regardless — this just stops an investor landing on a screen
+ * that can only fail for them.
+ */
+function ProducerRoute({ children }: { children: React.ReactNode }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['profile-role'],
+    queryFn: () => api.getProfile(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (isLoading) return <PageLoader />;
+  if (data?.data?.role !== 'producer') return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function App() {
   useEffect(() => { startInactivityMonitor(); }, []);
   return (
@@ -99,7 +119,7 @@ function App() {
           <Route path="/analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
           <Route path="/profile" element={<ErrorBoundary><Profile /></ErrorBoundary>} />
           <Route path="/kyc" element={<ErrorBoundary><KYC /></ErrorBoundary>} />
-          <Route path="/consignments" element={<ErrorBoundary><ProducerConsignments /></ErrorBoundary>} />
+          <Route path="/consignments" element={<ProducerRoute><ErrorBoundary><ProducerConsignments /></ErrorBoundary></ProducerRoute>} />
           <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
         </Route>
 

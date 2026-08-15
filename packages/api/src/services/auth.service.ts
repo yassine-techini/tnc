@@ -18,6 +18,9 @@ const JwtPayloadSchema = z.object({
   // Stable session id, carried across token refreshes so a session can be
   // identified deterministically (not by spoofable/NAT-shared IP).
   sid: z.string().optional(),
+  // Portal that minted the token. Absent on customer tokens; required by the
+  // admin and state middlewares so tokens cannot cross portals (see lib/portal).
+  portal: z.enum(['admin', 'state']).optional(),
 });
 
 // Hash format prefix to identify algorithm version
@@ -38,6 +41,7 @@ export interface JwtPayload {
   kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
   type: 'access' | 'refresh';
   sid?: string;
+  portal?: 'admin' | 'state';
 }
 
 export interface TokenPair {

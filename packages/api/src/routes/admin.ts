@@ -8,6 +8,7 @@ import { ReconciliationService } from '../services/reconciliation.service';
 import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { resolvePermissions, ROLE_DEFAULTS } from '../lib/rbac';
+import { isPortalToken, canAccessAdminPortal } from '../lib/portal';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
@@ -99,13 +100,30 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
       }, 401);
     }
 
+    // The token must have been minted by the admin portal. Customer and state
+    // tokens are signed with the same secret and carry an email, so without this
+    // check any access token whose email matched an active `admins` row granted
+    // back-office access — bypassing the mandatory TOTP of the admin login.
+    if (!isPortalToken(payload, 'admin')) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'ADMIN_ACCESS_DENIED',
+          message: 'Accès administrateur non autorisé',
+        },
+        requestId: crypto.randomUUID(),
+      }, 403);
+    }
+
     // Check if this is an admin (by email)
     const adminUser = await c.env.DB
       .prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE email = ? AND active = 1')
       .bind(payload.email)
       .first<AdminRecord>();
 
-    if (!adminUser) {
+    // A government operator has its own read-only portal and must not reach the
+    // back-office, where the same view permissions expose individual records.
+    if (!adminUser || !canAccessAdminPortal(adminUser.role)) {
       return c.json({
         success: false,
         error: {
@@ -282,6 +300,7 @@ admin.post('/login', async (c) => {
       sub: adminUser.id,
       email: adminUser.email,
       kycLevel: 'VERIFIED', // Admins are always verified
+      portal: 'admin',
     });
 
     // Resolve effective permissions (role defaults + overrides)
@@ -448,6 +467,7 @@ admin.post('/2fa/verify', async (c) => {
       sub: pendingData.adminId,
       email: pendingData.email,
       kycLevel: 'VERIFIED',
+      portal: 'admin',
     });
 
     // Get admin details and permissions

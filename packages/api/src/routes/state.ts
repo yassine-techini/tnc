@@ -5,6 +5,7 @@ import { AuthService } from '../services/auth.service';
 import { SecurityService } from '../services/security.service';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
+import { isPortalToken } from '../lib/portal';
 
 // Zod schemas for state endpoints
 const StateLoginSchema = z.object({
@@ -69,6 +70,19 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
         },
         requestId: crypto.randomUUID(),
       }, 401);
+    }
+
+    // Same portal binding as the back-office: a customer or admin token must not
+    // be usable here just because its email matches (see lib/portal).
+    if (!isPortalToken(payload, 'state')) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'STATE_ACCESS_DENIED',
+          message: 'Accès portail État non autorisé',
+        },
+        requestId: crypto.randomUUID(),
+      }, 403);
     }
 
     // Check if user has state operator role
@@ -230,6 +244,7 @@ state.post('/login', async (c) => {
       sub: stateUser.id,
       email: stateUser.email,
       kycLevel: 'VERIFIED',
+      portal: 'state',
     });
 
     return c.json({
@@ -392,6 +407,7 @@ state.post('/2fa/verify', async (c) => {
       sub: pendingData.adminId,
       email: pendingData.email,
       kycLevel: 'VERIFIED',
+      portal: 'state',
     });
 
     // Get admin details
