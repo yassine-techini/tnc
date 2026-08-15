@@ -2995,6 +2995,29 @@ admin.patch('/config/:key', requirePermission('integrations', 'update'), async (
 // ============================================
 admin.route('/analytics', analyticsRoutes);
 
+// PATCH /admin/users/:id/role — designate a user as producer (or back to investor)
+admin.patch('/users/:id/role', requirePermission('users', 'update'), async (c) => {
+  const { id } = c.req.param();
+  const requestId = crypto.randomUUID();
+  const body = await c.req.json().catch(() => ({}));
+  const role = body?.role;
+  if (role !== 'producer' && role !== 'investor') {
+    return c.json({ success: false, error: { code: 'INVALID_ROLE', message: "Rôle invalide (producer|investor)" }, requestId }, 400);
+  }
+  const res = await c.env.DB
+    .prepare("UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(role, id)
+    .run();
+  if (res.meta.changes === 0) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Utilisateur non trouvé' }, requestId }, 404);
+  }
+  await c.env.DB
+    .prepare(`INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, 'USER_ROLE_UPDATED', 'user', ?, ?, datetime('now'))`)
+    .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ role }))
+    .run();
+  return c.json({ success: true, data: { id, role }, requestId });
+});
+
 // ============================================
 // GOLD CONSIGNMENTS (export workflow)
 // ============================================

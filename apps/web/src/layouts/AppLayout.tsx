@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth';
 import { preloadRoute, preloadCriticalRoutes } from '../lib/preload';
 import { ThemeToggle } from '@tnc-trading/ui';
+import api from '../lib/api';
+
+const producerNavItem = { name: 'Mes lots', href: '/consignments', icon: '📦' };
 
 const navigation = [
   { name: 'Tableau de bord', href: '/dashboard', icon: '📊' },
@@ -28,6 +32,9 @@ export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const { data: profile } = useQuery({ queryKey: ['profile-role'], queryFn: () => api.getProfile(), staleTime: 5 * 60 * 1000 });
+  const isProducer = profile?.data?.role === 'producer';
+  const mainNav = isProducer ? [...navigation, producerNavItem] : navigation;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -145,7 +152,7 @@ export default function AppLayout() {
 
           {/* Main navigation */}
           <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-1">
-            {navigation.map((item) => (
+            {mainNav.map((item) => (
               <Link
                 key={item.href}
                 to={item.href}

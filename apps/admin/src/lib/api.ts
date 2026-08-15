@@ -929,6 +929,77 @@ class AdminApiClient {
       };
     }>('/api/v1/admin/reports/por', { token });
   }
+
+  async setUserRole(userId: string, role: 'producer' | 'investor') {
+    return this.request<{ id: string; role: string }>(`/api/v1/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  // ── Gold consignments (export workflow) ──
+  async getConsignments(status?: string, page = 1, limit = 20) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set('status', status);
+    return this.request<{ items: Consignment[]; meta: { page: number; limit: number; total: number } }>(
+      `/api/v1/admin/consignments?${params}`
+    );
+  }
+
+  async getConsignment(id: string) {
+    return this.request<{ consignment: Consignment; events: ConsignmentEvent[] }>(`/api/v1/admin/consignments/${id}`);
+  }
+
+  private consignmentAction(id: string, action: string, body?: Record<string, unknown>) {
+    return this.request<Consignment>(`/api/v1/admin/consignments/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    });
+  }
+
+  forwarderValidateConsignment(id: string, note?: string) { return this.consignmentAction(id, 'forwarder-validate', { note }); }
+  startConsignmentTransit(id: string, note?: string) { return this.consignmentAction(id, 'transit', { note }); }
+  arriveConsignmentDubai(id: string, note?: string) { return this.consignmentAction(id, 'arrive-dubai', { note }); }
+  rejectConsignment(id: string, reason: string) { return this.consignmentAction(id, 'reject', { reason }); }
+  auditValidateConsignment(id: string, data: { refinedWeightG: number; refineryLot?: string; lbmaCertificate?: string }) {
+    return this.consignmentAction(id, 'audit-validate', data);
+  }
+}
+
+export interface Consignment {
+  id: string;
+  reference: string;
+  producer_id: string;
+  weight_declared_g: number;
+  purity_declared: number;
+  gold_type: 'nuggets' | 'powder' | 'bar';
+  origin_country: string | null;
+  photos: string | null;
+  estimated_value_xof: number | null;
+  status: 'SUBMITTED' | 'FORWARDER_VALIDATED' | 'IN_TRANSIT' | 'ARRIVED_DUBAI' | 'AUDIT_VALIDATED' | 'REJECTED';
+  forwarder_id: string | null;
+  forwarder_validated_at: string | null;
+  transit_started_at: string | null;
+  arrived_dubai_at: string | null;
+  refined_weight_g: number | null;
+  refinery_lot: string | null;
+  lbma_certificate: string | null;
+  audited_by: string | null;
+  audited_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsignmentEvent {
+  id: string;
+  consignment_id: string;
+  from_status: string | null;
+  to_status: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 export const adminApi = new AdminApiClient(API_URL);

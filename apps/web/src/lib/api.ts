@@ -459,7 +459,36 @@ class ApiClient {
       phone: string;
       kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
       kycStatus: string;
+      role: string;
     }>('/api/v1/users/me', { token });
+  }
+
+  // ── Producer consignments (export workflow) ──
+  async submitConsignment(data: {
+    weightGrams: number;
+    purity: number;
+    goldType: 'nuggets' | 'powder' | 'bar';
+    originCountry?: string;
+    gps?: { lat: number; lng: number };
+    photos?: string[];
+    estimatedValueXof?: number;
+  }) {
+    return this.request<ProducerConsignment>('/api/v1/producer/consignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyConsignments(page = 1, limit = 20) {
+    return this.request<{ items: ProducerConsignment[]; meta: { page: number; limit: number; total: number } }>(
+      `/api/v1/producer/consignments?page=${page}&limit=${limit}`
+    );
+  }
+
+  async getMyConsignment(id: string) {
+    return this.request<{ consignment: ProducerConsignment; events: ProducerConsignmentEvent[] }>(
+      `/api/v1/producer/consignments/${id}`
+    );
   }
 
   async updateProfile(data: { phone?: string; country?: string }, token?: string) {
@@ -775,6 +804,35 @@ class ApiClient {
       token: authToken,
     });
   }
+}
+
+export type ConsignmentStatus =
+  | 'SUBMITTED' | 'FORWARDER_VALIDATED' | 'IN_TRANSIT' | 'ARRIVED_DUBAI' | 'AUDIT_VALIDATED' | 'REJECTED';
+
+export interface ProducerConsignment {
+  id: string;
+  reference: string;
+  weight_declared_g: number;
+  purity_declared: number;
+  gold_type: 'nuggets' | 'powder' | 'bar';
+  origin_country: string | null;
+  photos: string | null;
+  estimated_value_xof: number | null;
+  status: ConsignmentStatus;
+  refined_weight_g: number | null;
+  refinery_lot: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProducerConsignmentEvent {
+  id: string;
+  from_status: string | null;
+  to_status: string;
+  actor_role: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 export const api = new ApiClient(API_URL);

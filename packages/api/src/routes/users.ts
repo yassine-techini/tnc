@@ -51,6 +51,7 @@ users.get('/me', async (c) => {
         country: user.country,
         kycLevel: user.kyc_level,
         kycStatus: user.kyc_status,
+        role: user.role || 'investor',
         emailVerified: Boolean(user.email_verified),
         phoneVerified: Boolean(user.phone_verified),
         twoFactorEnabled: Boolean(user.two_factor_enabled),
