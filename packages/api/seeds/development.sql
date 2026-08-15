@@ -187,11 +187,15 @@ INSERT OR IGNORE INTO transactions (
 -- SEED SYSTEM CONFIG
 -- ============================================
 
-INSERT OR IGNORE INTO system_config (key, value, updated_at, updated_by)
+-- The table is `config` (0001), not `system_config`: this INSERT aborted the
+-- migration chain, so nothing from 0011 onwards could ever be applied to a fresh
+-- database. `updated_by` references admins(id) and stays NULL — 'system' is not
+-- an admin id and would fail the foreign key.
+INSERT OR IGNORE INTO config (key, value, updated_at, updated_by)
 VALUES
-  ('spread_buy', '0.02', datetime('now'), 'system'),
-  ('spread_sell', '0.02', datetime('now'), 'system'),
-  ('min_buy_grams', '1', datetime('now'), 'system'),
-  ('min_sell_grams', '1', datetime('now'), 'system'),
-  ('quote_validity_seconds', '60', datetime('now'), 'system'),
-  ('maintenance_mode', 'false', datetime('now'), 'system');
+  ('spread_buy', '0.02', datetime('now'), NULL),
+  ('spread_sell', '0.02', datetime('now'), NULL),
+  ('min_buy_grams', '1', datetime('now'), NULL),
+  ('min_sell_grams', '1', datetime('now'), NULL),
+  ('quote_validity_seconds', '60', datetime('now'), NULL),
+  ('maintenance_mode', 'false', datetime('now'), NULL);

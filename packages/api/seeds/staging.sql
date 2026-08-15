@@ -8,7 +8,7 @@
 -- ============================================
 
 -- Demo user - Standard level (can trade)
-INSERT OR REPLACE INTO users (
+INSERT OR IGNORE INTO users (
   id, email, phone, password_hash, kyc_level, kyc_status,
   country, email_verified, phone_verified, first_name, last_name,
   two_factor_secret, created_at, updated_at
@@ -30,7 +30,7 @@ INSERT OR REPLACE INTO users (
 );
 
 -- Demo user - Verified level (full access)
-INSERT OR REPLACE INTO users (
+INSERT OR IGNORE INTO users (
   id, email, phone, password_hash, kyc_level, kyc_status,
   country, email_verified, phone_verified, first_name, last_name,
   two_factor_secret, created_at, updated_at
@@ -55,7 +55,7 @@ INSERT OR REPLACE INTO users (
 -- DEMO WALLETS
 -- ============================================
 
-INSERT OR REPLACE INTO wallets (id, user_id, token_balance, cash_balance, created_at, updated_at)
+INSERT OR IGNORE INTO wallets (id, user_id, token_balance, cash_balance, created_at, updated_at)
 VALUES
   ('wallet-demo-standard', 'demo-user-standard-001', 25.5, 750000, datetime('now'), datetime('now')),
   ('wallet-demo-verified', 'demo-user-verified-001', 150.0, 3500000, datetime('now'), datetime('now'));
@@ -64,7 +64,7 @@ VALUES
 -- DEMO ADMIN (Password: AdminDemo2024!)
 -- ============================================
 
-INSERT OR REPLACE INTO admins (
+INSERT OR IGNORE INTO admins (
   id, email, password_hash, name, role, active,
   two_factor_secret, created_at, updated_at
 ) VALUES (
@@ -84,7 +84,7 @@ INSERT OR REPLACE INTO admins (
 -- Role: STATE_OPERATOR (stored in admins table)
 -- ============================================
 
-INSERT OR REPLACE INTO admins (
+INSERT OR IGNORE INTO admins (
   id, email, password_hash, name, role, active,
   two_factor_secret, created_at, updated_at
 ) VALUES (
@@ -99,7 +99,7 @@ INSERT OR REPLACE INTO admins (
   datetime('now')
 );
 
-INSERT OR REPLACE INTO admins (
+INSERT OR IGNORE INTO admins (
   id, email, password_hash, name, role, active,
   two_factor_secret, created_at, updated_at
 ) VALUES (
@@ -118,7 +118,7 @@ INSERT OR REPLACE INTO admins (
 -- GOLD STOCK (Initial allocation)
 -- ============================================
 
-INSERT OR REPLACE INTO gold_stock (
+INSERT OR IGNORE INTO gold_stock (
   id, total_allocated, tokens_issued,
   last_audit_date, last_audit_result, updated_at
 ) VALUES (
@@ -134,7 +134,7 @@ INSERT OR REPLACE INTO gold_stock (
 -- GOLD PRICES (Recent history)
 -- ============================================
 
-INSERT OR REPLACE INTO gold_prices (id, price_usd, price_xof, exchange_rate, buy_price, sell_price, source, timestamp)
+INSERT OR IGNORE INTO gold_prices (id, price_usd, price_xof, exchange_rate, buy_price, sell_price, source, timestamp)
 VALUES
   ('price-staging-001', 85.00, 52275, 615, 53320, 51229, 'staging-demo', datetime('now', '-7 days')),
   ('price-staging-002', 85.25, 52429, 615, 53477, 51380, 'staging-demo', datetime('now', '-6 days')),
@@ -149,7 +149,7 @@ VALUES
 -- SAMPLE TRANSACTIONS
 -- ============================================
 
-INSERT OR REPLACE INTO transactions (
+INSERT OR IGNORE INTO transactions (
   id, user_id, wallet_id, type, status, token_amount, cash_amount,
   price_per_gram, fees, payment_method, created_at, completed_at, updated_at
 ) VALUES
@@ -162,11 +162,13 @@ INSERT OR REPLACE INTO transactions (
 -- CONFIG (Platform settings)
 -- ============================================
 
-INSERT OR REPLACE INTO config (key, value, updated_at, updated_by)
+-- `updated_by` references admins(id): 'staging-setup' is not an admin id and
+-- failed the foreign key, aborting the chain here.
+INSERT OR IGNORE INTO config (key, value, updated_at, updated_by)
 VALUES
-  ('spread_buy', '0.02', datetime('now'), 'staging-setup'),
-  ('spread_sell', '0.02', datetime('now'), 'staging-setup'),
-  ('min_buy_grams', '1', datetime('now'), 'staging-setup'),
-  ('min_sell_grams', '1', datetime('now'), 'staging-setup'),
-  ('quote_validity_seconds', '60', datetime('now'), 'staging-setup'),
-  ('maintenance_mode', 'false', datetime('now'), 'staging-setup');
+  ('spread_buy', '0.02', datetime('now'), NULL),
+  ('spread_sell', '0.02', datetime('now'), NULL),
+  ('min_buy_grams', '1', datetime('now'), NULL),
+  ('min_sell_grams', '1', datetime('now'), NULL),
+  ('quote_validity_seconds', '60', datetime('now'), NULL),
+  ('maintenance_mode', 'false', datetime('now'), NULL);

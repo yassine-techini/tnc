@@ -17,10 +17,12 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 --    kyc_documents.reviewed_by, withdrawals.approved_by, por_reports.verified_by,
 --    system_config.updated_by, admin_permissions.admin_id, integrations.updated_by,
 --    blocked_ips.blocked_by. With foreign keys enforced, DROP TABLE performs an
---    implicit DELETE and those rows would fail the constraint, aborting the
---    migration midway. Deferring the checks to COMMIT lets the rebuild run: the
---    ids are preserved, so every reference resolves again once the rename lands.
-PRAGMA defer_foreign_keys = ON;
+--    implicit DELETE and those rows fail the constraint, aborting the migration
+--    midway. `defer_foreign_keys` does NOT help — verified against a real SQLite
+--    engine, it fails identically inside and outside an explicit transaction.
+--    Enforcement has to be off across the rebuild; ids are preserved, so every
+--    reference resolves again once the rename lands.
+PRAGMA foreign_keys = OFF;
 
 CREATE TABLE admins_new (
   id TEXT PRIMARY KEY,
@@ -42,6 +44,8 @@ DROP TABLE admins;
 ALTER TABLE admins_new RENAME TO admins;
 CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
 CREATE INDEX IF NOT EXISTS idx_admins_role ON admins(role);
+
+PRAGMA foreign_keys = ON;
 
 -- 3. Consignment (gold lot) with its export state machine.
 CREATE TABLE IF NOT EXISTS gold_consignments (
