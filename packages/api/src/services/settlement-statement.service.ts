@@ -9,7 +9,12 @@
 
 import { ConsignmentService, type ConsignmentRow } from './consignment.service';
 import { ConfigService } from './config.service';
-import { buildSettlementStatement, type StatementInput } from '../lib/settlement-statement';
+import {
+  buildSettlementStatement,
+  type StatementInput,
+  type StatementDisposition,
+} from '../lib/settlement-statement';
+import { DispositionService, type DispositionRow } from './disposition.service';
 import { renderPdf } from '../lib/pdf';
 
 export class SettlementStatementService {
@@ -35,12 +40,16 @@ export class SettlementStatementService {
       .bind(lot.producer_id, lot.producer_id)
       .first<{ email: string | null; legal_name: string | null }>();
 
-    const producerShare = await this.config.getNumber('consignment_producer_share', 1);
+    const [producerShare, disposition] = await Promise.all([
+      this.config.getNumber('consignment_producer_share', 1),
+      new DispositionService(this.db).getByConsignment(consignmentId),
+    ]);
 
     return toStatementInput(lot, {
       producerName: producer?.legal_name || producer?.email || lot.producer_id,
       producerShare,
       generatedAt: now.toISOString(),
+      disposition: disposition ? toStatementDisposition(disposition) : null,
     });
   }
 
@@ -51,9 +60,27 @@ export class SettlementStatementService {
   }
 }
 
+export function toStatementDisposition(row: DispositionRow): StatementDisposition {
+  return {
+    sellG: row.sell_g,
+    leaseG: row.lease_g,
+    storeG: row.store_g,
+    sellPricePerGram: row.sell_price_per_gram,
+    sellProceedsXof: row.sell_proceeds_xof,
+    status: row.status,
+    failureReason: row.failure_reason,
+    executedAt: row.executed_at,
+  };
+}
+
 export function toStatementInput(
   lot: ConsignmentRow,
-  extra: { producerName: string; producerShare: number; generatedAt: string }
+  extra: {
+    producerName: string;
+    producerShare: number;
+    generatedAt: string;
+    disposition?: StatementDisposition | null;
+  }
 ): StatementInput {
   return {
     reference: lot.reference,
@@ -88,6 +115,7 @@ export function toStatementInput(
 
     status: lot.status,
     generatedAt: extra.generatedAt,
+    disposition: extra.disposition ?? null,
   };
 }
 

@@ -3,6 +3,7 @@ import {
   buildSettlementStatement,
   statementTotals,
   type StatementInput,
+  type StatementDisposition,
 } from './settlement-statement';
 import { renderPdf } from './pdf';
 
@@ -34,6 +35,18 @@ const base: StatementInput = {
   auditedAt: '2026-07-20T10:00:00Z',
   status: 'AUDIT_VALIDATED',
   generatedAt: '2026-08-16T12:00:00Z',
+  disposition: null,
+};
+
+const disposed: StatementDisposition = {
+  sellG: 300,
+  leaseG: 400,
+  storeG: 210,
+  sellPricePerGram: 53_000,
+  sellProceedsXof: 15_900_000,
+  status: 'EXECUTED',
+  failureReason: null,
+  executedAt: '2026-07-21T09:00:00Z',
 };
 
 const text = (doc: ReturnType<typeof buildSettlementStatement>) =>
@@ -142,6 +155,55 @@ describe('buildSettlementStatement', () => {
     );
     expect(body).toContain('33 000 000 XOF');
     expect(body).toContain('53 000 XOF/g');
+  });
+
+  it('retrace ce que le raffineur a fait du lot', () => {
+    const body = text(buildSettlementStatement({ ...base, disposition: disposed }));
+
+    expect(body).toContain('Destination du lot');
+    expect(body).toContain('300.000 g'); // vendu
+    expect(body).toContain('400.000 g'); // loué
+    expect(body).toContain('210.000 g'); // gardé
+    expect(body).toContain('15 900 000 XOF');
+    expect(body).toContain('53 000 XOF/g');
+  });
+
+  it('ne mentionne aucune destination tant que le lot n’est pas réparti', () => {
+    // Un lot réglé mais non réparti n'est pas un lot entièrement stocké : le
+    // relevé ne doit pas laisser croire l'un pour l'autre.
+    const body = text(buildSettlementStatement(base));
+    expect(body).not.toContain('Destination du lot');
+    expect(body).not.toContain('Gardé en coffre');
+  });
+
+  it('n’attribue pas de rendement à la part louée', () => {
+    // Le rendement s'accumule jour après jour sur la position ; le figer sur un
+    // relevé daté serait faux dès le lendemain.
+    const body = text(buildSettlementStatement({ ...base, disposition: disposed }));
+    const rows = JSON.parse(body).find((b: { type: string }) => b.type === 'table' && JSON.stringify(b).includes('Placé en location'));
+    const leaseRow = rows.rows.find((r: string[]) => r[0] === 'Placé en location');
+    expect(leaseRow[2]).toBe('—');
+  });
+
+  it('dit qu’une répartition incomplète l’est', () => {
+    const body = text(
+      buildSettlementStatement({
+        ...base,
+        disposition: { ...disposed, status: 'PARTIAL', failureReason: 'location: BELOW_MINIMUM' },
+      })
+    );
+    // Présenter une répartition incomplète comme faite serait faux sur le point
+    // qui compte le plus pour le lecteur.
+    expect(body).toContain("n'a pas été exécutée en totalité");
+    expect(body).toContain('BELOW_MINIMUM');
+    expect(body).toContain('Les opérations réussies ont bien eu lieu');
+  });
+
+  it('n’impute aucun frais de garde à un lot', () => {
+    // Les frais portent sur l'or détenu en compte, jour par jour. Les rattacher
+    // à un lot supposerait une répartition qui n'existe pas.
+    const body = text(buildSettlementStatement({ ...base, disposition: disposed }));
+    expect(body).toContain('Les frais de garde ne figurent pas sur ce relevé');
   });
 
   it('renders to a real PDF', () => {

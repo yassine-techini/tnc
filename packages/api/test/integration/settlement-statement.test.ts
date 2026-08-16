@@ -125,6 +125,35 @@ describe('SettlementStatementService (real D1)', () => {
     expect(statementFilename('CONS-AB12CD34')).toBe('releve-reglement-CONS-AB12CD34.pdf');
   });
 
+  it('reprend la répartition réellement enregistrée pour ce lot', async () => {
+    seedLot(db);
+    db.sqlite
+      .prepare(
+        `INSERT INTO lot_dispositions
+           (id, consignment_id, user_id, total_g, sell_g, lease_g, store_g,
+            status, sell_status, lease_status, sell_price_per_gram, sell_proceeds_xof, executed_at)
+         VALUES ('d1', ?, ?, 289, 100, 150, 39, 'EXECUTED', 'DONE', 'DONE', 53000, 5300000, '2026-07-21T09:00:00Z')`
+      )
+      .run(LOT, PRODUCER);
+
+    const input = await makeService(db).inputFor(LOT);
+    // Lue en base, pas reconstituée : un relevé bâti sur une copie des données
+    // ne prouve rien sur ce que le raffineur a réellement décidé.
+    expect(input!.disposition).toMatchObject({
+      sellG: 100,
+      leaseG: 150,
+      storeG: 39,
+      sellProceedsXof: 5_300_000,
+      status: 'EXECUTED',
+    });
+  });
+
+  it('laisse la destination absente tant que le lot n’est pas réparti', async () => {
+    seedLot(db);
+    const input = await makeService(db).inputFor(LOT);
+    expect(input!.disposition).toBeNull();
+  });
+
   it('documents a lot still in transit instead of refusing', async () => {
     seedLot(db, {
       status: 'IN_TRANSIT',

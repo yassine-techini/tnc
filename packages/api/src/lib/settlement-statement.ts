@@ -45,6 +45,25 @@ export interface StatementInput {
 
   status: string;
   generatedAt: string;
+
+  /**
+   * Ce que le raffineur a décidé de faire du lot une fois réglé. Absent tant
+   * qu'aucune répartition n'a eu lieu — un lot réglé mais non réparti n'est pas
+   * un lot entièrement stocké, et le relevé ne doit pas laisser croire l'un
+   * pour l'autre.
+   */
+  disposition: StatementDisposition | null;
+}
+
+export interface StatementDisposition {
+  sellG: number;
+  leaseG: number;
+  storeG: number;
+  sellPricePerGram: number | null;
+  sellProceedsXof: number | null;
+  status: 'PENDING' | 'EXECUTED' | 'PARTIAL' | 'FAILED';
+  failureReason: string | null;
+  executedAt: string | null;
 }
 
 const g = (n: number) => `${(Math.round(n * 1000) / 1000).toFixed(3)} g`;
@@ -203,6 +222,54 @@ export function buildSettlementStatement(input: StatementInput): PdfDoc {
       text: `Écart constaté entre le solde calculé (${g(totals.balanceG)}) et le montant effectivement crédité (${g(
         input.producerTokensCredited
       )}). Contactez le support en citant la référence du lot.`,
+    });
+  }
+
+  if (input.disposition) {
+    const d = input.disposition;
+    blocks.push({ type: 'heading', text: 'Destination du lot' });
+    blocks.push({
+      type: 'table',
+      columns: ['Destination', 'Poids', 'Produit'],
+      rows: [
+        ['Vendu', g(d.sellG), d.sellProceedsXof ? xof(d.sellProceedsXof) : '—'],
+        // Une location ne produit rien à la date du relevé : le rendement
+        // s'accumule jour après jour et figure sur la position, pas ici.
+        ['Placé en location', g(d.leaseG), '—'],
+        ['Gardé en coffre à Dubaï', g(d.storeG), '—'],
+      ],
+    });
+
+    if (d.sellPricePerGram) {
+      blocks.push({
+        type: 'keyValue',
+        rows: [
+          ['Cours retenu pour la vente', `${groupDigits(d.sellPricePerGram)} XOF/g`],
+          ['Répartition exécutée le', date(d.executedAt)],
+        ],
+      });
+    }
+
+    if (d.status !== 'EXECUTED') {
+      // Un relevé qui présenterait une répartition incomplète comme faite
+      // serait faux sur le point qui compte le plus pour son lecteur.
+      blocks.push({
+        type: 'note',
+        text:
+          `La répartition n'a pas été exécutée en totalité (${d.status})` +
+          (d.failureReason ? ` : ${d.failureReason}` : '') +
+          ". Les opérations réussies ont bien eu lieu ; les autres n'ont pas été effectuées " +
+          "et l'or correspondant est resté disponible.",
+      });
+    }
+
+    blocks.push({
+      type: 'note',
+      text:
+        "Les frais de garde ne figurent pas sur ce relevé : ils portent sur l'or détenu en " +
+        'compte, jour par jour, et non sur un lot en particulier. Les rattacher à un lot ' +
+        "supposerait une répartition qui n'existe pas. Le détail figure dans votre espace, " +
+        'rubrique frais de garde.',
     });
   }
 
