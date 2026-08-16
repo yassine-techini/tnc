@@ -14,6 +14,7 @@ import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
 import { ProducerProfileService } from '../services/producer-profile.service';
+import { ReadinessService } from '../services/readiness.service';
 import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
 
@@ -3046,6 +3047,35 @@ admin.patch('/users/:id/role', requirePermission('users', 'update'), async (c) =
     .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ role }))
     .run();
   return c.json({ success: true, data: { id, role }, requestId });
+});
+
+// ============================================
+// READINESS — can this deployment actually demonstrate what it implements?
+// ============================================
+
+// GET /admin/readiness?probe=true
+admin.get('/readiness', requirePermission('integrations', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  // Probing is opt-in: it performs real outbound calls (read-only, and never to
+  // a payment gateway), so it must be an explicit request rather than a side
+  // effect of opening a dashboard.
+  const probe = c.req.query('probe') === 'true';
+
+  const service = new ReadinessService(c.env as never);
+  const report = await service.report(probe);
+
+  // Audit trail: a readiness probe is an outbound action on production systems.
+  if (probe) {
+    await c.env.DB
+      .prepare(
+        `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+         VALUES (?, ?, 'READINESS_PROBE', 'system', 'readiness', ?, datetime('now'))`
+      )
+      .bind(crypto.randomUUID(), c.get('adminId'), JSON.stringify(report.summary))
+      .run();
+  }
+
+  return c.json({ success: true, data: report, requestId });
 });
 
 // ============================================
