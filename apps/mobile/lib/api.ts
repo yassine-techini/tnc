@@ -591,6 +591,38 @@ class MobileApiClient {
     });
   }
 
+  // Répartition d'un lot (raffineur)
+  async getLotDisposition(consignmentId: string) {
+    return this.request<LotDispositionView>(
+      `/api/v1/producer/consignments/${consignmentId}/disposition`
+    );
+  }
+
+  async disposeLot(consignmentId: string, split: { sellG: number; leaseG: number; storeG: number }) {
+    return this.request<{
+      id: string;
+      status: DispositionStatus;
+      sellG: number;
+      leaseG: number;
+      storeG: number;
+      sellProceedsXof: number | null;
+      leasePositionId: string | null;
+      failureReason: string | null;
+    }>(`/api/v1/producer/consignments/${consignmentId}/disposition`, {
+      method: 'POST',
+      body: JSON.stringify(split),
+    });
+  }
+
+  async getStorageFees() {
+    return this.request<{
+      outstandingCount: number;
+      outstandingXof: number;
+      accruals: StorageFeeAccrual[];
+      notice: string;
+    }>('/api/v1/producer/storage-fees');
+  }
+
   // Gold lease (location d'or)
   async getLeaseTerms() {
     return this.request<LeaseTerms>('/api/v1/lease/terms');
@@ -965,6 +997,46 @@ export interface LeaseAccrual {
   pricePerGram: number;
   annualRate: number;
   amountXof: number;
+}
+
+export type DispositionStatus = 'PENDING' | 'EXECUTED' | 'PARTIAL' | 'FAILED';
+export type DispositionLegStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
+
+export interface LotDisposition {
+  id: string;
+  consignment_id: string;
+  total_g: number;
+  sell_g: number;
+  lease_g: number;
+  store_g: number;
+  status: DispositionStatus;
+  sell_status: DispositionLegStatus;
+  lease_status: DispositionLegStatus;
+  sell_price_per_gram: number | null;
+  sell_proceeds_xof: number | null;
+  lease_position_id: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  executed_at: string | null;
+}
+
+export interface LotDispositionView {
+  consignmentId: string;
+  reference: string;
+  settled: boolean;
+  creditedG: number;
+  sellPricePerGram: number | null;
+  /** Avertissement de l'API sur la garde — affiché tel quel, jamais reformulé. */
+  storageNotice: string;
+  disposition: LotDisposition | null;
+}
+
+export interface StorageFeeAccrual {
+  accrual_date: string;
+  stored_g: number;
+  price_per_gram: number;
+  amount_xof: number;
+  status: 'PAID' | 'OUTSTANDING';
 }
 
 export const api = new MobileApiClient(API_URL);

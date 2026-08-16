@@ -11,3 +11,4 @@ export * from './kyc';
 export * from './errors';
 export * from './gold';
 export * from './lease';
+export * from './disposition';

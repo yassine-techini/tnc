@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api, { type ProducerConsignment } from '../lib/api';
+import { LotDisposition } from '../components/producer/LotDisposition';
+import { StorageFees } from '../components/producer/StorageFees';
 
 const statusLabels: Record<string, string> = {
   SUBMITTED: 'Soumis',
@@ -44,6 +46,8 @@ export default function ProducerConsignments() {
           {showForm ? 'Fermer' : '+ Nouveau lot'}
         </button>
       </div>
+
+      <StorageFees />
 
       {showForm && <SubmitForm onDone={() => { setShowForm(false); queryClient.invalidateQueries({ queryKey: ['my-consignments'] }); }} />}
 
@@ -222,12 +226,27 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                       Crédité sur votre portefeuille : {c.producer_tokens_credited.toLocaleString('fr-FR')} g en tokens
                     </div>
                     <p className="text-xs text-slate-400">
-                      1 token = 1 gramme d'or. Vous pouvez les conserver ou les vendre depuis votre portefeuille.
+                      1 token = 1 gramme d'or.
                     </p>
                   </>
                 )}
               </div>
             )}
+
+            {/* La répartition ne s'affiche que sur un lot réglé — le composant
+                le dit lui-même plutôt que d'être masqué sans explication. */}
+            {c.status === 'AUDIT_VALIDATED' && (
+              <div className="border border-slate-800 rounded-lg p-4">
+                <LotDisposition consignmentId={c.id} />
+              </div>
+            )}
+
+            <a
+              href={`/api/v1/producer/consignments/${c.id}/statement.pdf`}
+              className="block text-sm text-gold-400 hover:text-gold-300"
+            >
+              Télécharger le relevé de règlement (PDF)
+            </a>
 
             <PhotoStrip consignmentId={c.id} photosJson={c.photos} />
 

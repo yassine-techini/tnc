@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '../../stores/theme';
 import { api, type Consignment, type ConsignmentEvent } from '../../lib/api';
@@ -72,9 +72,22 @@ export default function ConsignmentDetailScreen() {
             </Text>
           )}
           <Text style={[styles.payoutNote, { color: c.textSecondary }]}>
-            1 token = 1 gramme d'or. Retrouvez-les dans votre portefeuille.
+            1 token = 1 gramme d'or.
           </Text>
         </View>
+      )}
+
+      {/* La répartition n'a de sens qu'une fois le lot réglé : proposée
+          seulement là, plutôt que grisée sans explication ailleurs. */}
+      {consignment.status === 'AUDIT_VALIDATED' && (
+        <TouchableOpacity
+          style={[styles.disposeCta, { backgroundColor: c.gold }]}
+          onPress={() => router.push(`/(producer)/dispose?id=${consignment.id}`)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="git-branch-outline" size={18} color="#0F0F1A" />
+          <Text style={styles.disposeCtaText}>Vendre, louer ou stocker ce lot</Text>
+        </TouchableOpacity>
       )}
 
       {rejected ? (
@@ -128,6 +141,15 @@ export default function ConsignmentDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  disposeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  disposeCtaText: { color: '#0F0F1A', fontWeight: '700', fontSize: 15 },
   content: { padding: 16, paddingBottom: 48 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   reference: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },

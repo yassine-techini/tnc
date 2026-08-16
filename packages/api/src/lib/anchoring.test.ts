@@ -100,9 +100,16 @@ describe('adapter selection', () => {
       rpcUrl: 'https://rpc.invalid',
       privateKey: '0x' + '1'.repeat(64),
     });
+    // La configuration est complète : ce n'est donc PAS elle qui fait échouer
+    // l'ancrage, mais bien l'absence de la bibliothèque.
+    expect(await adapter.isAvailable()).toBe(true);
+
     const result = await adapter.anchor(DIGEST);
     expect(result.ok).toBe(false);
     expect(result.txHash).toBeNull();
     expect(result.error).toBeTruthy();
-  });
+    // Une seconde suffirait si l'import échoue tout de suite ; ce délai couvre
+    // la charge d'une suite complète, où ce test a déjà échoué une fois faute
+    // de temps plutôt que faute de code.
+  }, 20_000);
 });
