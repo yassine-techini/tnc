@@ -28,10 +28,12 @@ export default function Wallet() {
   const [transactionResult, setTransactionResult] = useState<TransactionResult | null>(null);
   const [certificateData, setCertificateData] = useState<{
     certificateId: string;
+    verificationCode: string;
     downloadUrl: string;
     tokenBalance: number;
-    estimatedValueXof: number;
-    generatedAt: string;
+    leasedBalance: number;
+    totalOwnedGrams: number;
+    issuedAt: string;
   } | null>(null);
 
   // Form states
@@ -152,10 +154,12 @@ export default function Wallet() {
     onSuccess: (data) => {
       setCertificateData({
         certificateId: data.data.certificateId,
+        verificationCode: data.data.verificationCode,
         downloadUrl: data.data.downloadUrl,
         tokenBalance: data.data.tokenBalance,
-        estimatedValueXof: data.data.estimatedValueXof,
-        generatedAt: data.data.generatedAt,
+        leasedBalance: data.data.leasedBalance,
+        totalOwnedGrams: data.data.totalOwnedGrams,
+        issuedAt: data.data.issuedAt,
       });
       setActiveSection('certificate');
     },
@@ -542,16 +546,30 @@ export default function Wallet() {
             </p>
             <div className="bg-slate-800 rounded-lg p-4 mb-4 space-y-3 text-left max-w-sm mx-auto">
               <div className="flex justify-between">
-                <span className="text-slate-400">Quantité d'or</span>
-                <span className="font-bold text-amber-500">{formatGrams(certificateData.tokenBalance)}</span>
+                <span className="text-slate-400">Or détenu</span>
+                <span className="font-bold text-amber-500">{formatGrams(certificateData.totalOwnedGrams)}</span>
+              </div>
+              {certificateData.leasedBalance > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">dont en portefeuille</span>
+                    <span>{formatGrams(certificateData.tokenBalance)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">dont en location (prêté)</span>
+                    <span>{formatGrams(certificateData.leasedBalance)}</span>
+                  </div>
+                </>
+              )}
+              {/* No valuation: gold moves, and a certificate stating a value is
+                  wrong the next day. The document says so too. */}
+              <div className="flex justify-between">
+                <span className="text-slate-400">Code de vérification</span>
+                <span className="font-mono text-sm">{certificateData.verificationCode}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Valeur estimée</span>
-                <span className="font-bold">{formatCurrency(certificateData.estimatedValueXof, 'XOF')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Date de génération</span>
-                <span className="text-sm">{new Date(certificateData.generatedAt).toLocaleDateString('fr-FR')}</span>
+                <span className="text-slate-400">Émis le</span>
+                <span className="text-sm">{new Date(certificateData.issuedAt).toLocaleDateString('fr-FR')}</span>
               </div>
               <div className="pt-2 border-t border-slate-700">
                 <p className="text-xs text-slate-500">

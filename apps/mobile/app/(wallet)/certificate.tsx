@@ -311,7 +311,12 @@ export default function CertificateScreen() {
         onPress={() => {
           if (!cert) return;
           Share.share({
-            message: `Certificat de propriété ${cert.certificateId}\nJe possède ${cert.tokenBalance.toFixed(3)} grammes d'or physique tokenisé via TNC Trading, adossé aux réserves du Burkina Faso.\n\nCode de vérification : ${cert.verificationCode}\nVérifier : https://app.tnc-trading.com/verify/${cert.verificationCode}`,
+            message: `Certificat de propriété ${cert.certificateId}\nJe possède ${cert.totalOwnedGrams.toFixed(3)} grammes d'or physique tokenisé via TNC Trading, adossé aux réserves du Burkina Faso.${
+              // Never let a shared message claim vaulted gold that is lent out.
+              cert.leasedBalance > 0
+                ? `\n(dont ${cert.leasedBalance.toFixed(3)} g placés en location, donc prêtés)`
+                : ''
+            }\n\nCode de vérification : ${cert.verificationCode}\nVérifier : https://app.tnc-trading.com/verify/${cert.verificationCode}`,
           });
         }}
         activeOpacity={0.8}

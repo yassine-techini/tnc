@@ -799,9 +799,15 @@ class MobileApiClient {
     return this.request<{
       certificateId: string;
       verificationCode: string;
+      /** PDF — what the holder keeps or hands to a third party. */
       downloadUrl: string;
+      /** The same certificate as an in-app HTML view. */
+      viewUrl: string;
       userName: string;
       tokenBalance: number;
+      /** Grams in an open lease: owned, lent out, not in the wallet. */
+      leasedBalance: number;
+      totalOwnedGrams: number;
       issuedAt: string;
     }>('/api/v1/wallet/certificate', { token });
   }

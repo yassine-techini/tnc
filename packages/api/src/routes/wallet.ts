@@ -521,7 +521,22 @@ wallet.get('/certificate', async (c) => {
   const certificateService = new CertificateService(c.env.DB, c.env.STORAGE, c.env.CACHE);
 
   const walletData = await walletService.findByUserId(userId);
-  if (!walletData || walletData.token_balance === 0) {
+
+  // Grams in an open lease left the wallet but not the holder. Since the lease
+  // exists, an empty `token_balance` no longer proves there is nothing to
+  // certify — refusing on it alone would deny a certificate to exactly the
+  // holders who put all their gold to work.
+  const leased = await c.env.DB
+    .prepare(
+      `SELECT COALESCE(SUM(principal_g), 0) AS g FROM lease_positions
+       WHERE user_id = ? AND status IN ('ACTIVE', 'EXITING')`
+    )
+    .bind(userId)
+    .first<{ g: number }>();
+  const leasedBalance = Math.round((leased?.g ?? 0) * 1000) / 1000;
+  const walletBalance = walletData?.token_balance ?? 0;
+
+  if (walletBalance + leasedBalance === 0) {
     return c.json({
       success: false,
       error: {
@@ -552,8 +567,9 @@ wallet.get('/certificate', async (c) => {
     userEmail: user?.email || '',
     userId,
     kycLevel: user?.kyc_level || 'BASIC',
-    tokenBalance: walletData.token_balance,
-    equivalentGrams: walletData.token_balance,
+    tokenBalance: walletBalance,
+    equivalentGrams: walletBalance,
+    leasedBalance,
   });
 
   return c.json({
@@ -562,15 +578,21 @@ wallet.get('/certificate', async (c) => {
       certificateId: certData.certificateId,
       verificationCode: certData.verificationCode,
       downloadUrl: `/api/v1/wallet/certificate/${certData.certificateId}`,
+      viewUrl: `/api/v1/wallet/certificate/${certData.certificateId}?format=html`,
       userName: certData.userName,
       tokenBalance: certData.tokenBalance,
+      leasedBalance: certData.leasedBalance,
+      totalOwnedGrams: Math.round((certData.tokenBalance + certData.leasedBalance) * 1000) / 1000,
       issuedAt: certData.issuedAt,
     },
     requestId,
   });
 });
 
-// GET /wallet/certificate/:id - Download certificate HTML
+// GET /wallet/certificate/:id - Download the certificate
+//
+// PDF by default: it is the file a holder keeps or hands to a third party.
+// `?format=html` returns the in-app view, which is what the app renders.
 wallet.get('/certificate/:id', async (c) => {
   const userId = c.get('userId');
   const { id } = c.req.param();
@@ -605,10 +627,8 @@ wallet.get('/certificate/:id', async (c) => {
   }
 
   const certificateService = new CertificateService(c.env.DB, c.env.STORAGE, c.env.CACHE);
-  const html = await certificateService.getCertificateHtml(id);
-
-  if (!html) {
-    return c.json({
+  const notFound = () =>
+    c.json({
       success: false,
       error: {
         code: 'CERTIFICATE_NOT_FOUND',
@@ -616,9 +636,26 @@ wallet.get('/certificate/:id', async (c) => {
       },
       requestId,
     }, 404);
+
+  if (c.req.query('format') === 'html') {
+    const html = await certificateService.getCertificateHtml(id);
+    return html ? c.html(html) : notFound();
   }
 
-  return c.html(html);
+  const pdf = await certificateService.getCertificatePdf(id);
+  if (!pdf) {
+    // Certificates issued before the PDF existed only have their HTML in R2.
+    // Falling back beats a 404 on a document the holder legitimately owns.
+    const html = await certificateService.getCertificateHtml(id);
+    return html ? c.html(html) : notFound();
+  }
+
+  return new Response(pdf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="certificat-${id}.pdf"`,
+    },
+  });
 });
 
 // GET /wallet/deposits/pending - List pending deposits

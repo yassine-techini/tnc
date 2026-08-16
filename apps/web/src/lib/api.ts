@@ -905,17 +905,21 @@ class ApiClient {
 
   // Certificate
   async generateCertificate(authToken?: string) {
+    // These are exactly the fields the route returns. The previous declaration
+    // promised expiresAt / currentPriceXof / estimatedValueXof / generatedAt,
+    // none of which the API sends — so the UI rendered NaN and "Invalid Date"
+    // while TypeScript reported no problem.
     return this.request<{
       certificateId: string;
+      verificationCode: string;
       downloadUrl: string;
-      expiresAt: string;
+      viewUrl: string;
       userName: string;
-      userEmail: string;
       tokenBalance: number;
-      equivalentGrams: number;
-      currentPriceXof: number;
-      estimatedValueXof: number;
-      generatedAt: string;
+      /** Grams in an open lease: owned, lent out, not in the wallet. */
+      leasedBalance: number;
+      totalOwnedGrams: number;
+      issuedAt: string;
     }>('/api/v1/wallet/certificate', { token: authToken });
   }
 

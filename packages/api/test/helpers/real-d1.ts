@@ -292,6 +292,26 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE certificates (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  verification_code TEXT NOT NULL UNIQUE,
+  token_balance REAL NOT NULL,
+  -- 0030: grams in an open lease. Stored, not recomputed, so an old
+  -- certificate reproduces exactly as it was issued.
+  leased_balance REAL NOT NULL DEFAULT 0,
+  user_name TEXT NOT NULL,
+  user_email TEXT NOT NULL,
+  kyc_level TEXT NOT NULL DEFAULT 'BASIC',
+  status TEXT NOT NULL DEFAULT 'VALID' CHECK(status IN ('VALID','REVOKED','EXPIRED')),
+  issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT,
+  revoked_at TEXT,
+  revocation_reason TEXT,
+  verification_count INTEGER NOT NULL DEFAULT 0,
+  last_verified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

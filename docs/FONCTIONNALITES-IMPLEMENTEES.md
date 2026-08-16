@@ -69,7 +69,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | Historique des transactions | ✅ | Web et mobile |
 | Dépôts | ⚙️ | Orange Money, Moov Money, CinetPay, Stripe — webhooks signés implémentés ; inactifs sans clés |
 | Retraits | ✅ | Débit atomique, plafonds par niveau KYC, validation admin |
-| Certificat de propriété | ⚠️ | Généré en **HTML**, pas en PDF |
+| Certificat de propriété | ✅ | **PDF** téléchargeable (`/wallet/certificate/:id`), vue HTML conservée via `?format=html`. Aucune valeur imprimée — seulement un poids. Les grammes **en location sont comptés et affichés à part** : ils appartiennent au titulaire mais ne sont pas en coffre. Le montant loué est **stocké**, pas recalculé, pour qu'un ancien certificat ne change jamais |
 | Vérification publique de certificat | ✅ | Sans authentification |
 
 ## 5. Filière or — consignation à l'export

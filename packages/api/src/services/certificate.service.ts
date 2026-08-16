@@ -13,6 +13,8 @@ export interface CertificateData {
   kycLevel: string;
   tokenBalance: number;
   equivalentGrams: number;
+  /** Grams currently in a lease: owned by the holder, lent out, not in the wallet. */
+  leasedBalance: number;
   issuedAt: string;
 }
 
@@ -21,6 +23,7 @@ export interface CertificateRecord {
   user_id: string;
   verification_code: string;
   token_balance: number;
+  leased_balance: number;
   user_name: string;
   user_email: string;
   kyc_level: string;
@@ -38,6 +41,8 @@ export interface VerificationResult {
     verificationCode: string;
     holderName: string;
     tokenBalance: number;
+    leasedBalance: number;
+    totalOwnedGrams: number;
     kycLevel: string;
     status: string;
     issuedAt: string;
@@ -47,6 +52,8 @@ export interface VerificationResult {
 }
 
 import { ConfigService } from './config.service';
+import { renderPdf } from '../lib/pdf';
+import { buildCertificateDocument, totalOwnedGrams } from '../lib/certificate-document';
 
 export class CertificateService {
   private configService: ConfigService;
@@ -78,7 +85,14 @@ export class CertificateService {
    * Issue a new certificate — persists to D1 + generates HTML + stores in R2
    */
   async issueCertificate(data: Omit<CertificateData, 'certificateId' | 'verificationCode' | 'issuedAt'>): Promise<CertificateData> {
-    const certificateId = `CERT-${Date.now()}-${data.userId.slice(0, 8).toUpperCase()}`;
+    // The random suffix is not decoration: on `CERT-{ms}-{userId}` alone, two
+    // certificates issued by the same holder in the same millisecond — a
+    // double-tap, a client retry — collide on the primary key and the second
+    // one fails instead of being issued.
+    const certificateId = `CERT-${Date.now()}-${data.userId.slice(0, 8).toUpperCase()}-${crypto
+      .randomUUID()
+      .slice(0, 8)
+      .toUpperCase()}`;
     const verificationCode = this.generateVerificationCode();
     const issuedAt = new Date().toISOString();
 
@@ -91,13 +105,14 @@ export class CertificateService {
 
     // Persist to D1
     await this.db
-      .prepare(`INSERT INTO certificates (id, user_id, verification_code, token_balance, user_name, user_email, kyc_level, issued_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .prepare(`INSERT INTO certificates (id, user_id, verification_code, token_balance, leased_balance, user_name, user_email, kyc_level, issued_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(
         certificateId,
         data.userId,
         verificationCode,
         data.tokenBalance,
+        data.leasedBalance,
         data.userName,
         data.userEmail,
         data.kycLevel,
@@ -105,16 +120,26 @@ export class CertificateService {
       )
       .run();
 
-    // Generate and store HTML
+    const metadata = {
+      certificateId,
+      verificationCode,
+      userEmail: data.userEmail,
+      issuedAt,
+    };
+
+    // HTML is what the app displays; the PDF is what the holder downloads,
+    // sends to a bank, or still opens in ten years. Both are stored at issue
+    // time so a certificate can never be re-rendered differently later.
     const html = await this.generateHtmlCertificate(certData);
     await this.storage.put(`certificates/${certificateId}.html`, html, {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
-      customMetadata: {
-        certificateId,
-        verificationCode,
-        userEmail: data.userEmail,
-        issuedAt,
-      },
+      customMetadata: metadata,
+    });
+
+    const pdf = await this.generatePdfCertificate(certData);
+    await this.storage.put(`certificates/${certificateId}.pdf`, pdf, {
+      httpMetadata: { contentType: 'application/pdf' },
+      customMetadata: metadata,
     });
 
     // Cache for quick lookups
@@ -164,6 +189,11 @@ export class CertificateService {
         verificationCode: record.verification_code,
         holderName: record.user_name,
         tokenBalance: record.token_balance,
+        leasedBalance: record.leased_balance ?? 0,
+        totalOwnedGrams: totalOwnedGrams({
+          walletGrams: record.token_balance,
+          leasedGrams: record.leased_balance ?? 0,
+        }),
         kycLevel: record.kyc_level,
         status: record.status,
         issuedAt: record.issued_at,
@@ -178,6 +208,42 @@ export class CertificateService {
   async getCertificateHtml(certificateId: string): Promise<string | null> {
     const obj = await this.storage.get(`certificates/${certificateId}.html`);
     return obj ? await obj.text() : null;
+  }
+
+  /** Get the certificate PDF from R2. */
+  async getCertificatePdf(certificateId: string): Promise<ArrayBuffer | null> {
+    const obj = await this.storage.get(`certificates/${certificateId}.pdf`);
+    return obj ? await obj.arrayBuffer() : null;
+  }
+
+  /**
+   * Generate the official PDF certificate.
+   *
+   * No QR image: the PDF writer embeds no bitmaps, and pulling one from an
+   * external service would make the document depend on that service still
+   * existing when it is opened. The verification code and the URL are printed
+   * as text, which is what actually proves the certificate anyway.
+   */
+  async generatePdfCertificate(data: CertificateData): Promise<Uint8Array> {
+    const [appUrl, platformName] = await Promise.all([
+      this.configService.get('app_url', 'https://app.tnc-trading.com'),
+      this.configService.get('app_name', 'TNC Trading'),
+    ]);
+
+    return renderPdf(
+      buildCertificateDocument({
+        certificateId: data.certificateId,
+        verificationCode: data.verificationCode,
+        holderName: data.userName,
+        holderEmail: data.userEmail,
+        kycLevel: data.kycLevel,
+        walletGrams: data.tokenBalance,
+        leasedGrams: data.leasedBalance,
+        issuedAt: data.issuedAt,
+        verifyUrl: `${appUrl || 'https://app.tnc-trading.com'}/verify`,
+        platformName: platformName || 'TNC Trading',
+      })
+    );
   }
 
   /**
