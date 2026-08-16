@@ -591,6 +591,45 @@ class MobileApiClient {
     });
   }
 
+  // Gold lease (location d'or)
+  async getLeaseTerms() {
+    return this.request<LeaseTerms>('/api/v1/lease/terms');
+  }
+
+  async getLeasePositions() {
+    return this.request<{
+      positions: LeasePosition[];
+      totalPrincipalG: number;
+      totalAccruedXof: number;
+    }>('/api/v1/lease/positions');
+  }
+
+  async getLeaseAccruals(positionId: string) {
+    return this.request<{ positionId: string; accruedXof: number; accruals: LeaseAccrual[] }>(
+      `/api/v1/lease/positions/${positionId}/accruals`
+    );
+  }
+
+  async openLeasePosition(grams: number) {
+    return this.request<{
+      id: string;
+      principalG: number;
+      annualRate: number;
+      status: string;
+      openedAt: string;
+    }>('/api/v1/lease/positions', {
+      method: 'POST',
+      body: JSON.stringify({ grams }),
+    });
+  }
+
+  async requestLeaseExit(positionId: string) {
+    return this.request<{ positionId: string; settlesOn: string; message: string }>(
+      `/api/v1/lease/positions/${positionId}/exit`,
+      { method: 'POST' }
+    );
+  }
+
   // KYC
   async getKycStatus(token: string) {
     return this.request<{
@@ -888,6 +927,38 @@ export interface ProducerProfile {
   status: 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
   rejection_reason: string | null;
   created_at: string;
+}
+
+export interface LeaseTerms {
+  annualRate: number;
+  annualRatePercent: number;
+  exitSettlementBusinessDays: number;
+  minimumGrams: number;
+  /** Plain-language warning from the API. Displayed verbatim, never paraphrased. */
+  disclosure: string;
+}
+
+export type LeasePositionStatus = 'ACTIVE' | 'EXITING' | 'CLOSED';
+
+export interface LeasePosition {
+  id: string;
+  principalG: number;
+  annualRate: number;
+  /** Accrued yield in XOF. The principal stays in grams — two units, never mixed. */
+  accruedXof: number;
+  principalValueXof: number;
+  lastAccruedOn: string | null;
+  status: LeasePositionStatus;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface LeaseAccrual {
+  date: string;
+  principalG: number;
+  pricePerGram: number;
+  annualRate: number;
+  amountXof: number;
 }
 
 export const api = new MobileApiClient(API_URL);

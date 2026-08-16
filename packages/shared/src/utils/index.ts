@@ -10,3 +10,4 @@ export * from './validation';
 export * from './kyc';
 export * from './errors';
 export * from './gold';
+export * from './lease';

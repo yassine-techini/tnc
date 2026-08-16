@@ -142,6 +142,12 @@ export default function WalletScreen() {
           </View>
           <Text style={[styles.actionText, { color: c.text }]}>Certificat</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionButton, { backgroundColor: c.surface }]} onPress={() => router.push('/(lease)')} activeOpacity={0.7}>
+          <View style={[styles.actionIconBg, { backgroundColor: 'rgba(212, 175, 55, 0.12)' }]}>
+            <Ionicons name="lock-closed" size={20} color="#D4AF37" />
+          </View>
+          <Text style={[styles.actionText, { color: c.text }]}>Location</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Transactions */}
@@ -203,8 +209,18 @@ const styles = StyleSheet.create({
   performanceItem: { width: '46%' },
   performanceLabel: { fontSize: 11, color: '#6B7280' },
   performanceValue: { fontSize: 15, fontWeight: '600', color: '#D1D5DB', marginTop: 3 },
-  actionsCard: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  actionButton: { flex: 1, backgroundColor: '#1A1A2E', borderRadius: 12, padding: 14, alignItems: 'center', gap: 8 },
+  // Wraps to a 2x2 grid: with four actions, a single row leaves ~50px per label
+  // on a small phone and "Certificat" breaks across two lines.
+  actionsCard: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  actionButton: {
+    flexGrow: 1,
+    flexBasis: '45%',
+    backgroundColor: '#1A1A2E',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    gap: 8,
+  },
   actionIconBg: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 12, color: '#D1D5DB', fontWeight: '500' },
   transactionsCard: { backgroundColor: '#1A1A2E', borderRadius: 14, padding: 16, marginBottom: 32 },

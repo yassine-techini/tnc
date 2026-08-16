@@ -15,6 +15,7 @@ const navigation = [
   { name: 'Tableau de bord', href: '/dashboard', icon: '📊' },
   { name: 'Marketplace', href: '/marketplace', icon: '💰' },
   { name: 'Portefeuille', href: '/wallet', icon: '👛' },
+  { name: "Location d'or", href: '/lease', icon: '🔒' },
   { name: 'Transactions', href: '/transactions', icon: '📋' },
   { name: 'Analyses', href: '/analytics', icon: '📈' },
 ];

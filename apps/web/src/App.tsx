@@ -43,6 +43,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Marketplace = lazy(() => import('./pages/Marketplace'));
 const Wallet = lazy(() => import('./pages/Wallet'));
 const Transactions = lazy(() => import('./pages/Transactions'));
+const Lease = lazy(() => import('./pages/Lease'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const Profile = lazy(() => import('./pages/Profile'));
 const KYC = lazy(() => import('./pages/KYC'));
@@ -119,6 +120,7 @@ function App() {
           <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
           <Route path="/marketplace" element={<ErrorBoundary><Marketplace /></ErrorBoundary>} />
           <Route path="/wallet" element={<ErrorBoundary><Wallet /></ErrorBoundary>} />
+          <Route path="/lease" element={<ErrorBoundary><Lease /></ErrorBoundary>} />
           <Route path="/transactions" element={<ErrorBoundary><Transactions /></ErrorBoundary>} />
           <Route path="/analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
           <Route path="/profile" element={<ErrorBoundary><Profile /></ErrorBoundary>} />

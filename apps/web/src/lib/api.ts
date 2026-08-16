@@ -509,6 +509,47 @@ class ApiClient {
     return URL.createObjectURL(await res.blob());
   }
 
+  // ── Gold lease (location d'or) ──
+  async getLeaseTerms() {
+    return this.request<LeaseTerms>('/api/v1/lease/terms');
+  }
+
+  async getLeasePositions() {
+    return this.request<{
+      positions: LeasePosition[];
+      totalPrincipalG: number;
+      totalAccruedXof: number;
+    }>('/api/v1/lease/positions');
+  }
+
+  async getLeaseAccruals(positionId: string) {
+    return this.request<{
+      positionId: string;
+      accruedXof: number;
+      accruals: LeaseAccrual[];
+    }>(`/api/v1/lease/positions/${positionId}/accruals`);
+  }
+
+  async openLeasePosition(grams: number) {
+    return this.request<{
+      id: string;
+      principalG: number;
+      annualRate: number;
+      status: string;
+      openedAt: string;
+    }>('/api/v1/lease/positions', {
+      method: 'POST',
+      body: JSON.stringify({ grams }),
+    });
+  }
+
+  async requestLeaseExit(positionId: string) {
+    return this.request<{ positionId: string; settlesOn: string; message: string }>(
+      `/api/v1/lease/positions/${positionId}/exit`,
+      { method: 'POST' }
+    );
+  }
+
   // ── Public reserve attestations (no auth — ADR 002 phase 1) ──
   async getReserveAttestations(page = 1, limit = 20) {
     return this.request<{
@@ -960,6 +1001,38 @@ export interface ProducerProfile {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface LeaseTerms {
+  annualRate: number;
+  annualRatePercent: number;
+  exitSettlementBusinessDays: number;
+  minimumGrams: number;
+  /** The plain-language warning the API returns; displayed verbatim, never paraphrased. */
+  disclosure: string;
+}
+
+export type LeasePositionStatus = 'ACTIVE' | 'EXITING' | 'CLOSED';
+
+export interface LeasePosition {
+  id: string;
+  principalG: number;
+  annualRate: number;
+  /** Yield accrued so far, in XOF. The principal stays in grams — two units, never mixed. */
+  accruedXof: number;
+  principalValueXof: number;
+  lastAccruedOn: string | null;
+  status: LeasePositionStatus;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface LeaseAccrual {
+  date: string;
+  principalG: number;
+  pricePerGram: number;
+  annualRate: number;
+  amountXof: number;
 }
 
 export const api = new ApiClient(API_URL);

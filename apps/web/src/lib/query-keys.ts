@@ -15,6 +15,9 @@ export const queryKeys = {
   sessions: ['auth', 'sessions'] as const,
   notifications: ['user', 'notifications'] as const,
   priceAlerts: ['user', 'priceAlerts'] as const,
+  leaseTerms: ['lease', 'terms'] as const,
+  leasePositions: ['lease', 'positions'] as const,
+  leaseAccruals: (positionId: string) => ['lease', 'accruals', positionId] as const,
 };
 
 export const staleTimes = {
@@ -28,4 +31,8 @@ export const staleTimes = {
   sessions: 5 * 60 * 1000,    // 5min
   notifications: 60 * 1000,   // 1min
   priceAlerts: 5 * 60 * 1000, // 5min
+  leaseTerms: 30 * 60 * 1000,  // 30min - terms change rarely, and the rate is
+                               // frozen at opening anyway
+  leasePositions: 60 * 1000,   // 1min - accrual is daily, but a fresh opening
+                               // must show up immediately
 };
