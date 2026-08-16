@@ -15,6 +15,9 @@ import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
 import { ProducerProfileService } from '../services/producer-profile.service';
 import { ReadinessService } from '../services/readiness.service';
+import { AttestationService } from '../services/attestation.service';
+import { renderPdf, type PdfBlock } from '../lib/pdf';
+import { GOLD_STOCK_ID } from '../services/market.service';
 import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
 
@@ -3047,6 +3050,117 @@ admin.patch('/users/:id/role', requirePermission('users', 'update'), async (c) =
     .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ role }))
     .run();
   return c.json({ success: true, data: { id, role }, requestId });
+});
+
+// GET /admin/reports/por.pdf — the same Proof of Reserve, as a document
+admin.get('/reports/por.pdf', requirePermission('stock', 'view'), async (c) => {
+  const stock = await c.env.DB
+    .prepare('SELECT total_allocated, tokens_issued, gold_on_loan, last_audit_date FROM gold_stock WHERE id = ?')
+    .bind(GOLD_STOCK_ID)
+    .first<{ total_allocated: number; tokens_issued: number; gold_on_loan: number | null; last_audit_date: string | null }>();
+
+  if (!stock) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Aucun stock enregistré' },
+      requestId: crypto.randomUUID(),
+    }, 404);
+  }
+
+  const onLoan = stock.gold_on_loan ?? 0;
+  const vaulted = stock.total_allocated - onLoan;
+  const g = (n: number) => `${n.toFixed(3)} g`;
+
+  const loans = await c.env.DB
+    .prepare(
+      `SELECT counterparty, weight_g, due_at FROM gold_loans WHERE status = 'ACTIVE'
+       ORDER BY started_at ASC, counterparty ASC`
+    )
+    .all<{ counterparty: string; weight_g: number; due_at: string | null }>();
+
+  const lots = await c.env.DB
+    .prepare(
+      `SELECT reference, refined_weight_g, audited_at FROM gold_consignments
+       WHERE status = 'AUDIT_VALIDATED' ORDER BY audited_at DESC LIMIT 20`
+    )
+    .all<{ reference: string; refined_weight_g: number; audited_at: string }>();
+
+  const attestation = await new AttestationService(c.env.DB).getLatest();
+
+  const blocks: PdfBlock[] = [
+    { type: 'heading', text: 'Couverture' },
+    {
+      type: 'keyValue',
+      rows: [
+        ['Or alloué', g(stock.total_allocated)],
+        ['Tokens en circulation', g(stock.tokens_issued)],
+        ['Dont or en coffre', g(vaulted)],
+        ['Dont or prêté', g(onLoan)],
+        ['Tokens émis <= or alloué', stock.tokens_issued <= stock.total_allocated ? 'Oui' : 'NON'],
+        ['Tokens émis <= or en coffre', stock.tokens_issued <= vaulted ? 'Oui' : 'Non'],
+        ['Dernier audit physique', stock.last_audit_date || 'Non renseigné'],
+      ],
+    },
+  ];
+
+  // The distinction that a reader must not miss: lent gold is owed, not held.
+  if (onLoan > 0) {
+    blocks.push({
+      type: 'note',
+      text:
+        "Une partie de la réserve est prêtée. L'or reste dû à la plateforme mais n'est pas " +
+        'physiquement présent : la couverture correspondante dépend du remboursement de la ' +
+        'contrepartie.',
+    });
+    blocks.push({
+      type: 'table',
+      columns: ['Contrepartie', 'Poids', 'Échéance'],
+      rows: (loans.results || []).map((l) => [l.counterparty, g(l.weight_g), l.due_at || '—']),
+    });
+  }
+
+  if ((lots.results || []).length) {
+    blocks.push({ type: 'heading', text: 'Derniers lots audités' });
+    blocks.push({
+      type: 'table',
+      columns: ['Référence', 'Poids raffiné', 'Date'],
+      rows: lots.results!.map((l) => [l.reference, g(l.refined_weight_g), l.audited_at?.slice(0, 10) || '—']),
+    });
+  }
+
+  blocks.push({ type: 'heading', text: 'Attestation vérifiable' });
+  blocks.push(
+    attestation
+      ? {
+          type: 'keyValue',
+          rows: [
+            ['Attestation', `#${attestation.sequence}`],
+            ['Empreinte', attestation.digest],
+            ['Ancrage', attestation.anchor_tx_hash ? `${attestation.anchor_chain} · ${attestation.anchor_tx_hash}` : 'Non ancrée'],
+          ],
+        }
+      : { type: 'paragraph', text: 'Aucune attestation publiée à ce jour.' }
+  );
+  blocks.push({
+    type: 'note',
+    text:
+      "Ce document est un état à un instant donné. Il n'est pas la preuve : la preuve est " +
+      "l'attestation signée, vérifiable publiquement sur /reserve à partir de son empreinte.",
+  });
+
+  const pdf = renderPdf({
+    title: 'Preuve de réserve',
+    subtitle: `TNC Trading — ${new Date().toLocaleString('fr-FR')}`,
+    footer: 'Document généré automatiquement — vérification publique sur /reserve',
+    blocks,
+  });
+
+  return new Response(pdf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="proof-of-reserve-${new Date().toISOString().slice(0, 10)}.pdf"`,
+    },
+  });
 });
 
 // ============================================

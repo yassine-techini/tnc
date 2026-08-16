@@ -90,7 +90,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | Fonctionnalité | Statut | Détail |
 |---|---|---|
 | Rapport Proof of Reserve | ✅ | Statut dérivé de la couverture réelle |
-| Export du rapport | ⚠️ | **JSON**, pas de PDF |
+| Export du rapport | ✅ | JSON **et PDF** (`GET /admin/reports/por.pdf`), générateur sans dépendance. Le PDF porte la divulgation du prêt et renvoie à l'attestation vérifiable |
 | **Attestations signées et chaînées** | ⚙️ | Pipeline vérifié de bout en bout avec une vraie clé ES256. Inertes sans `ATTESTATION_SIGNING_JWK` et sans le cron `30 0 * * *` |
 | **Divulgation or en coffre / or prêté** | ✅ | La location étant financée par le prêt de l'or, l'attestation distingue `vaultedG` de `onLoanG`, expose `fullyVaulted` et **nomme les contreparties** |
 | Vérification publique indépendante | ✅ | Page `/reserve` : SHA-256 et signature ECDSA recalculés **dans le navigateur** |
