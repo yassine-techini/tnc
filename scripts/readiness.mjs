@@ -79,6 +79,10 @@ for (const check of checks) {
 console.log(
   `\n  ${summary.ok} OK · ${summary.partial} partiels · ${summary.missing} absents` +
     (summary.failed ? ` · ${summary.failed} en échec` : '') +
+    // Sans objet aujourd'hui — un job qui n'a rien à calculer, par exemple.
+    // Affiché plutôt qu'omis : sinon les compteurs ne totalisent pas et le
+    // lecteur croit à un bug du rapport.
+    (summary.notProbed ? ` · ${summary.notProbed} sans objet` : '') +
     ` (sur ${summary.total})\n`
 );
 

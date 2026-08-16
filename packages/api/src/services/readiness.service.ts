@@ -42,7 +42,15 @@ export interface Check {
 export interface ReadinessReport {
   generatedAt: string;
   probed: boolean;
-  summary: { ok: number; missing: number; partial: number; failed: number; total: number };
+  summary: {
+    ok: number;
+    missing: number;
+    partial: number;
+    failed: number;
+    /** Sans objet aujourd'hui — un job qui n'a rien a calculer, par exemple. */
+    notProbed: number;
+    total: number;
+  };
   checks: Check[];
 }
 
@@ -231,11 +239,17 @@ export class ReadinessService {
       });
     }
 
+    checks.push(...(await this.anchoringChecks()));
+    checks.push(...(await this.dailyJobChecks()));
+    checks.push(await this.countryCheck());
+    checks.push(await this.priceFreshnessCheck());
+
     const summary = {
       ok: checks.filter((c) => c.state === 'ok').length,
       missing: checks.filter((c) => c.state === 'missing').length,
       partial: checks.filter((c) => c.state === 'partial').length,
       failed: checks.filter((c) => c.state === 'probe_failed').length,
+      notProbed: checks.filter((c) => c.state === 'not_probed').length,
       total: checks.length,
     };
 
@@ -303,6 +317,251 @@ export class ReadinessService {
         probeable: false,
       },
     ];
+  }
+
+  /**
+   * Ancrage sur chaîne publique (ADR 003).
+   *
+   * Absent du rapport jusqu'ici, alors que le script de démo invite à ouvrir ce
+   * rapport en premier : une fonctionnalité inerte donnait un rapport vert.
+   */
+  private async anchoringChecks(): Promise<Check[]> {
+    const rpc = present(this.env.ANCHOR_RPC_URL);
+    const key = present(this.env.ANCHOR_PRIVATE_KEY);
+    const chain = (this.env.ANCHOR_CHAIN as string) || '';
+    const mainnetOptIn = this.env.ANCHOR_ALLOW_MAINNET === 'true';
+    const configured = rpc && key;
+
+    let anchored: { sequence: number; anchor_chain: string; anchored_at: string } | null = null;
+    try {
+      anchored = await this.env.DB
+        .prepare(
+          `SELECT sequence, anchor_chain, anchored_at FROM reserve_attestations
+           WHERE anchor_tx_hash IS NOT NULL ORDER BY sequence DESC LIMIT 1`
+        )
+        .first<{ sequence: number; anchor_chain: string; anchored_at: string }>();
+    } catch {
+      // Table absente sur un deploiement non migre : traite comme non ancre.
+    }
+
+    return [
+      {
+        key: 'anchor_credentials',
+        group: 'Preuve de réserve',
+        label: 'Ancrage — RPC et clé de signature',
+        state: configured ? 'ok' : rpc || key ? 'partial' : 'missing',
+        detail: configured
+          ? 'Présents'
+          : rpc || key
+            ? `Incomplet : ${rpc ? 'clé absente' : 'URL RPC absente'}`
+            : "Absents — les attestations restent vérifiables, simplement non ancrées",
+        // Dit explicitement pour éviter la panique : l'ancrage est une
+        // confirmation supplémentaire, jamais une condition (ADR 003).
+        impact: "Aucun ancrage public ; la vérification des attestations fonctionne malgré tout",
+        source: 'secret',
+        probeable: false,
+      },
+      {
+        key: 'anchor_activity',
+        group: 'Preuve de réserve',
+        label: 'Ancrage — activité (cron 0 1 * * *)',
+        // Inféré comme pour l'attestation : un Worker ne peut pas lire ses
+        // propres triggers, mais une attestation ancrée en est la preuve.
+        state: anchored ? 'ok' : configured ? 'missing' : 'not_probed',
+        detail: anchored
+          ? `Dernier ancrage #${anchored.sequence} sur ${anchored.anchor_chain} le ${anchored.anchored_at}`
+          : configured
+            ? "Configuré mais aucune attestation ancrée — vérifier le trigger dans wrangler.toml"
+            : "Sans objet tant que l'ancrage n'est pas configuré",
+        impact: "L'historique n'est pas ancré publiquement",
+        source: 'wrangler',
+        probeable: false,
+      },
+      {
+        key: 'anchor_mainnet_guard',
+        group: 'Preuve de réserve',
+        label: 'Ancrage — garde réseau principal',
+        // Un déploiement mal configuré doit ancrer sur un testnet, pas dépenser
+        // de vrais fonds par accident.
+        state: 'ok',
+        detail: chain
+          ? `Chaîne ${chain}${mainnetOptIn ? ' avec opt-in mainnet explicite' : ''}`
+          : 'Chaîne par défaut (réseau de test)',
+        impact: 'Sans opt-in explicite, un mainnet est refusé par le job',
+        source: 'secret',
+        probeable: false,
+      },
+    ];
+  }
+
+  /**
+   * Jobs quotidiens : location et frais de garde.
+   *
+   * Chacun distingue « rien à faire » de « job à l'arrêt ». Sans cette
+   * distinction le rapport crierait au loup sur un déploiement neuf, et on
+   * apprendrait à l'ignorer — ce qui est pire que de ne rien afficher.
+   */
+  private async dailyJobChecks(): Promise<Check[]> {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const count = async (sql: string, ...binds: unknown[]): Promise<number> => {
+      try {
+        const row = await this.env.DB.prepare(sql)
+          .bind(...binds)
+          .first<{ c: number }>();
+        return row?.c ?? 0;
+      } catch {
+        // Table absente sur un deploiement non migre : rien a signaler.
+        return 0;
+      }
+    };
+
+    const positions = await count(
+      "SELECT COUNT(*) AS c FROM lease_positions WHERE status = 'ACTIVE'"
+    );
+    const accruals = await count(
+      'SELECT COUNT(*) AS c FROM lease_accruals WHERE accrual_date = ?',
+      yesterday
+    );
+    const overdue = await count(
+      "SELECT COUNT(*) AS c FROM lease_exit_orders WHERE status = 'PENDING' AND settles_on < ?",
+      today
+    );
+    const holders = await count('SELECT COUNT(*) AS c FROM wallets WHERE token_balance > 0');
+    const fees = await count(
+      'SELECT COUNT(*) AS c FROM storage_fee_accruals WHERE accrual_date = ?',
+      yesterday
+    );
+
+    return [
+      {
+        key: 'lease_accrual_cron',
+        group: "Location d'or",
+        label: 'Rendement quotidien (cron 0 4 * * *)',
+        state: positions === 0 ? 'not_probed' : accruals > 0 ? 'ok' : 'missing',
+        detail:
+          positions === 0
+            ? 'Aucune position ouverte — rien à calculer'
+            : accruals > 0
+              ? `${accruals} calcul(s) pour le ${yesterday}`
+              : `${positions} position(s) ouverte(s) et aucun calcul pour le ${yesterday}`,
+        impact: 'Le rendement des détenteurs cesse de progresser',
+        source: 'wrangler',
+        probeable: false,
+      },
+      {
+        key: 'lease_settlement_cron',
+        group: "Location d'or",
+        label: 'Règlement des sorties (cron 0 5 * * *)',
+        // Un ordre échu et non réglé est le seul symptôme observable : c'est de
+        // l'or qu'un détenteur attend et qui n'est pas revenu.
+        state: overdue === 0 ? 'ok' : 'missing',
+        detail:
+          overdue === 0
+            ? 'Aucun ordre échu en attente'
+            : `${overdue} sortie(s) échue(s) non réglée(s) — l'or n'est pas revenu aux détenteurs`,
+        impact: 'Les sorties de location restent bloquées',
+        source: 'wrangler',
+        probeable: false,
+      },
+      {
+        key: 'storage_fee_cron',
+        group: 'Filière or',
+        label: 'Frais de garde (cron 0 6 * * *)',
+        state: holders === 0 ? 'not_probed' : fees > 0 ? 'ok' : 'missing',
+        detail:
+          holders === 0
+            ? 'Aucun or gardé — rien à facturer'
+            : fees > 0
+              ? `${fees} frais calculé(s) pour le ${yesterday}`
+              : `Or gardé mais aucun frais pour le ${yesterday}`,
+        impact: "La garde n'est pas facturée",
+        source: 'wrangler',
+        probeable: false,
+      },
+    ];
+  }
+
+  /** Au moins un pays réellement ouvrable. */
+  private async countryCheck(): Promise<Check> {
+    let enabled: Array<{ code: string; payment_methods: string }> = [];
+    try {
+      const rows = await this.env.DB
+        .prepare('SELECT code, payment_methods FROM country_config WHERE enabled = 1')
+        .all<{ code: string; payment_methods: string }>();
+      enabled = rows.results || [];
+    } catch {
+      // Table absente : aucun pays ouvrable, ce que le check dira.
+    }
+    // Le drapeau `enabled` ne suffit pas : sans moyen de paiement branché, un
+    // détenteur pourrait s'inscrire puis ne pas pouvoir déposer.
+    const serviceable = enabled.filter((c) => {
+      try {
+        const methods = JSON.parse(c.payment_methods) as Array<{ implemented?: boolean }>;
+        return Array.isArray(methods) && methods.some((m) => m.implemented);
+      } catch {
+        return false;
+      }
+    });
+
+    return {
+      key: 'country_config',
+      group: 'Multi-pays',
+      label: 'Pays réellement ouvrables',
+      state: serviceable.length > 0 ? 'ok' : 'missing',
+      detail:
+        serviceable.length > 0
+          ? `${serviceable.map((c) => c.code).join(', ')} (${enabled.length} activé(s))`
+          : enabled.length > 0
+            ? `${enabled.length} pays activé(s), aucun avec un moyen de paiement branché`
+            : 'Aucun pays activé',
+      impact: 'Aucune inscription possible',
+      source: 'config',
+      probeable: false,
+    };
+  }
+
+  /**
+   * Fraîcheur du prix — le blocage numéro un d'une démonstration.
+   *
+   * Distinct de la clé GoldAPI : la clé peut être présente et le rafraîchisseur
+   * à l'arrêt, auquel cas achat et vente échouent avec une clé pourtant valide.
+   */
+  private async priceFreshnessCheck(): Promise<Check> {
+    let latest: { timestamp: string } | null = null;
+    try {
+      latest = await this.env.DB
+        .prepare('SELECT timestamp FROM gold_prices ORDER BY timestamp DESC LIMIT 1')
+        .first<{ timestamp: string }>();
+    } catch {
+      // Table absente : aucun prix, ce que le check dira.
+    }
+
+    // SQLite ecrit `datetime('now')` en UTC mais sans indicateur de fuseau.
+    // `new Date(...)` lit alors la valeur en heure LOCALE : l'age serait decale
+    // du fuseau du serveur, et un prix frais paraitrait perime — ou l'inverse.
+    const utc = /(Z|[+-]\d{2}:?\d{2})$/.test(latest?.timestamp ?? '')
+      ? latest?.timestamp
+      : `${(latest?.timestamp ?? '').replace(' ', 'T')}Z`;
+    const parsed = latest ? new Date(utc as string).getTime() : Number.NaN;
+    const ageMinutes = Number.isNaN(parsed) ? null : Math.round((Date.now() - parsed) / 60000);
+    // Le cron tourne toutes les 5 à 15 minutes ; une heure signale un arrêt,
+    // pas un simple retard.
+    const fresh = ageMinutes !== null && ageMinutes <= 60;
+
+    return {
+      key: 'price_freshness',
+      group: 'Marché',
+      label: "Prix de l'or récent en base",
+      state: fresh ? 'ok' : 'missing',
+      detail: latest
+        ? `Dernier prix il y a ${ageMinutes} minute(s)`
+        : "Aucun prix en base — le rafraîchisseur n'a jamais tourné",
+      impact: 'Achat, vente et valorisation indisponibles',
+      source: 'wrangler',
+      probeable: false,
+    };
   }
 
   /** Read-only price fetch. Never mutates anything. */

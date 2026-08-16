@@ -270,6 +270,18 @@ CREATE TABLE gold_loans (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE gold_prices (
+  id TEXT PRIMARY KEY,
+  price_usd REAL NOT NULL,
+  price_xof REAL NOT NULL,
+  exchange_rate REAL NOT NULL,
+  spread_buy REAL NOT NULL DEFAULT 0.02,
+  spread_sell REAL NOT NULL DEFAULT 0.02,
+  buy_price REAL NOT NULL,
+  sell_price REAL NOT NULL,
+  source TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE reserve_attestations (
   id TEXT PRIMARY KEY,
   sequence INTEGER NOT NULL UNIQUE,

@@ -22,7 +22,9 @@ exactement ses identifiants (`gold_api`, `encryption_key`, …).
 |---|---|---|
 | Migrations appliquées jusqu'à `0032` | `pnpm db:migrate` | Rien ne fonctionne |
 | Rapport de readiness au vert sur les clés des étapes prévues | `/admin/readiness?probe=true` | Voir chaque étape |
-| Un prix d'or récent en base | `/api/v1/market/price` | Achat et vente indisponibles |
+| Un prix d'or récent en base | clé `price_freshness` du rapport | Achat et vente indisponibles |
+| Les jobs quotidiens tournent | clés `lease_accrual_cron`, `lease_settlement_cron`, `storage_fee_cron` | Rendement figé, sorties bloquées, garde non facturée |
+| Un pays réellement ouvrable | clé `country_config` | Aucune inscription possible |
 | Pins SSL (si démo sur build mobile) | `pnpm --filter @tnc-trading/mobile check:pins` | Le build refuse l'API de production |
 
 **Le piège des jobs quotidiens.** Trois écrans ne montrent rien sur un
