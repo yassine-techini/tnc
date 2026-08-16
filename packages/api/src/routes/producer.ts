@@ -30,6 +30,9 @@ import {
   SettlementStatementService,
   statementFilename,
 } from '../services/settlement-statement.service';
+import { DispositionService } from '../services/disposition.service';
+import { StorageFeeService } from '../services/storage-fee.service';
+import { MarketService } from '../services/market.service';
 
 const producer = new Hono<AppEnv>();
 
@@ -291,6 +294,157 @@ producer.get('/consignments/:id/statement.pdf', async (c) => {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${statementFilename(consignment.reference)}"`,
+    },
+  });
+});
+
+// ============================================
+// RÉPARTITION D'UN LOT — vendre / louer / stocker
+// ============================================
+
+const disposeSchema = z.object({
+  sellG: z.number().min(0).max(1_000_000).default(0),
+  leaseG: z.number().min(0).max(1_000_000).default(0),
+  storeG: z.number().min(0).max(1_000_000).default(0),
+});
+
+// GET /producer/consignments/:id/disposition — ce qui est répartissable, et comment
+producer.get('/consignments/:id/disposition', async (c) => {
+  const userId = c.get('userId');
+  const { id } = c.req.param();
+
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment || consignment.producer_id !== userId) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+  }
+
+  const dispositions = new DispositionService(c.env.DB);
+  const existing = await dispositions.getByConsignment(id);
+  const market = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT);
+  const price = await market.getCurrentPrice();
+
+  const creditedG = consignment.producer_tokens_credited ?? 0;
+
+  return c.json({
+    success: true,
+    data: {
+      consignmentId: id,
+      reference: consignment.reference,
+      settled: consignment.status === 'AUDIT_VALIDATED',
+      creditedG,
+      sellPricePerGram: price?.sell_price ?? null,
+      // La part gardée sera facturée : le dire avant le choix, pas après.
+      storageNotice:
+        "L'or laissé en stockage à Dubaï est conservé dans le coffre et facturé en frais de garde. L'or placé en location n'est pas facturé : il n'est pas en coffre et vous rémunère déjà.",
+      disposition: existing,
+    },
+  });
+});
+
+// POST /producer/consignments/:id/disposition — répartir, éventuellement en trois
+producer.post('/consignments/:id/disposition', zValidator('json', disposeSchema), async (c) => {
+  const userId = c.get('userId');
+  const { id } = c.req.param();
+  const split = c.req.valid('json');
+
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment || consignment.producer_id !== userId) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+  }
+  if (consignment.status !== 'AUDIT_VALIDATED') {
+    return c.json({
+      success: false,
+      error: {
+        code: 'NOT_SETTLED',
+        message: "Ce lot n'est pas encore réglé : la répartition se fait après l'essai",
+      },
+    }, 400);
+  }
+
+  const config = new ConfigService(c.env.DB, c.env.CACHE);
+  const market = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, config);
+  const [price, leaseAnnualRate, leaseMinimumG] = await Promise.all([
+    market.getCurrentPrice(),
+    config.getNumber('lease_annual_rate', 0.06),
+    config.getNumber('lease_min_grams', 1),
+  ]);
+
+  const dispositions = new DispositionService(c.env.DB);
+  const result = await dispositions.dispose({
+    consignmentId: id,
+    userId,
+    split: { sellG: split.sellG, leaseG: split.leaseG, storeG: split.storeG },
+    creditedG: consignment.producer_tokens_credited ?? 0,
+    // Prix de vente marché : le même spread que tout le monde, décision actée.
+    sellPricePerGram: price?.sell_price ?? 0,
+    leaseAnnualRate,
+    leaseMinimumG,
+  });
+
+  if (!result.disposition) {
+    const messages: Record<string, string> = {
+      SPLIT_MISMATCH: 'La somme des trois parts doit couvrir exactement le lot',
+      NEGATIVE_SHARE: 'Une part ne peut pas être négative',
+      NOTHING_CREDITED: 'Aucun gramme crédité sur ce lot',
+      ALREADY_DISPOSED: 'Ce lot a déjà été réparti',
+      INSUFFICIENT_BALANCE: 'Solde en or insuffisant pour cette répartition',
+      NO_PRICE: 'Prix indisponible : la vente est impossible pour le moment',
+      NO_WALLET: 'Portefeuille introuvable',
+    };
+    const status = result.error === 'ALREADY_DISPOSED' ? 409 : 400;
+    return c.json({
+      success: false,
+      error: {
+        code: result.error,
+        message: messages[result.error as string] || 'Répartition impossible',
+      },
+    }, status as 400 | 409);
+  }
+
+  const d = result.disposition;
+  return c.json({
+    success: true,
+    data: {
+      id: d.id,
+      status: d.status,
+      sellG: d.sell_g,
+      leaseG: d.lease_g,
+      storeG: d.store_g,
+      sellProceedsXof: d.sell_proceeds_xof,
+      leasePositionId: d.lease_position_id,
+      // Une exécution partielle est dite, pas tue.
+      failureReason: d.failure_reason,
+    },
+  }, d.status === 'EXECUTED' ? 201 : 200);
+});
+
+// GET /producer/storage-fees — ce qui est dû au titre de la garde
+producer.get('/storage-fees', async (c) => {
+  const userId = c.get('userId');
+  const service = new StorageFeeService(c.env.DB);
+
+  const [outstanding, totalXof] = await Promise.all([
+    service.outstandingFor(userId),
+    service.totalOutstandingXof(userId),
+  ]);
+
+  const recent = await c.env.DB.prepare(
+    `SELECT accrual_date, stored_g, price_per_gram, amount_xof, status
+     FROM storage_fee_accruals WHERE user_id = ?
+     ORDER BY accrual_date DESC LIMIT 90`
+  ).bind(userId).all();
+
+  return c.json({
+    success: true,
+    data: {
+      outstandingCount: outstanding.length,
+      outstandingXof: totalXof,
+      // Jour par jour, pour que le total se recalcule au lieu d'être cru.
+      accruals: recent.results || [],
+      notice:
+        "Les frais de garde sont prélevés sur votre solde espèces. Lorsqu'il est insuffisant, le frais reste dû et sera prélevé automatiquement dès que votre solde le permettra.",
     },
   });
 });

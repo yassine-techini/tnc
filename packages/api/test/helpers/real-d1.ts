@@ -292,6 +292,40 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE lot_dispositions (
+  id TEXT PRIMARY KEY,
+  consignment_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  total_g REAL NOT NULL CHECK (total_g > 0),
+  sell_g REAL NOT NULL DEFAULT 0 CHECK (sell_g >= 0),
+  lease_g REAL NOT NULL DEFAULT 0 CHECK (lease_g >= 0),
+  store_g REAL NOT NULL DEFAULT 0 CHECK (store_g >= 0),
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','EXECUTED','PARTIAL','FAILED')),
+  sell_status TEXT NOT NULL DEFAULT 'NONE' CHECK (sell_status IN ('NONE','PENDING','DONE','FAILED')),
+  lease_status TEXT NOT NULL DEFAULT 'NONE' CHECK (lease_status IN ('NONE','PENDING','DONE','FAILED')),
+  sell_transaction_id TEXT,
+  sell_price_per_gram REAL,
+  sell_proceeds_xof REAL,
+  lease_position_id TEXT,
+  failure_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  executed_at TEXT,
+  UNIQUE (consignment_id)
+);
+CREATE TABLE storage_fee_accruals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  accrual_date TEXT NOT NULL,
+  stored_g REAL NOT NULL,
+  price_per_gram REAL NOT NULL,
+  annual_rate REAL NOT NULL,
+  amount_xof REAL NOT NULL CHECK (amount_xof >= 0),
+  status TEXT NOT NULL DEFAULT 'OUTSTANDING' CHECK (status IN ('PAID','OUTSTANDING')),
+  paid_at TEXT,
+  transaction_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, accrual_date)
+);
 CREATE TABLE country_config (
   code TEXT PRIMARY KEY,
   name TEXT NOT NULL,

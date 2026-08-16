@@ -13,6 +13,7 @@ import { publishReserveAttestation } from './jobs/reserve-attestation';
 import { anchorLatestAttestation } from './jobs/anchor-attestation';
 import { accrueLeaseYield } from './jobs/lease-accrual';
 import { settleLeaseExits } from './jobs/lease-settlement';
+import { chargeStorageFees } from './jobs/storage-fee';
 // NOTE: price alerts are delivered inline by refreshGoldPrice()
 // (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
 // The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
@@ -81,6 +82,12 @@ export async function handleScheduled(
       // a position settling today is paid for every day it was actually lent
       case '0 5 * * *':
         await settleLeaseExits(env, ctx);
+        break;
+
+      // Storage fees - 6 AM UTC, after the lease settlement: gold returned this
+      // morning is back in the vault and must be charged for from today
+      case '0 6 * * *':
+        await chargeStorageFees(env, ctx);
         break;
 
       // Monthly report - 1st of month at 1 AM UTC

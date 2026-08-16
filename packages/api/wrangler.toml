@@ -95,6 +95,7 @@ crons = [
   "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
   "0 4 * * *",      # Lease yield accrual at 4 AM UTC, for the day just ended
   "0 5 * * *",      # Lease exit settlement at 5 AM UTC, after the accrual
+  "0 6 * * *",      # Storage fees at 6 AM UTC, after the lease settlement
   "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
 ]
 
@@ -169,6 +170,7 @@ crons = [
   "0 3 * * *",
   "0 4 * * *",
   "0 5 * * *",
+  "0 6 * * *",
   "0 1 1 * *",
 ]
 
@@ -250,6 +252,7 @@ crons = [
   "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
   "0 4 * * *",      # Lease yield accrual at 4 AM UTC, for the day just ended
   "0 5 * * *",      # Lease exit settlement at 5 AM UTC, after the accrual
+  "0 6 * * *",      # Storage fees at 6 AM UTC, after the lease settlement
   "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
 ]
 
