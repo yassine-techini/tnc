@@ -878,6 +878,49 @@ state.get('/transactions/stats', async (c) => {
   }
 });
 
+/**
+ * Trace d'un export sortant du portail État.
+ *
+ * Un export quitte la plateforme : sans trace, personne ne peut dire qui a
+ * emporté quoi ni quand. On enregistre l'appelant, les filtres et le VOLUME —
+ * jamais les données elles-mêmes, sinon la piste d'audit deviendrait une
+ * seconde copie de ce qu'elle est censée surveiller.
+ *
+ * Renvoie `false` si la trace n'a pas pu être écrite ; l'appelant décide.
+ */
+async function recordStateExport(
+  c: Context<AppEnv>,
+  p: { kind: string; rows: number; filters?: Record<string, unknown> }
+): Promise<boolean> {
+  try {
+    await c.env.DB
+      .prepare(
+        `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+         VALUES (?, ?, 'STATE_EXPORT', 'state_export', ?, ?, datetime('now'))`
+      )
+      .bind(
+        crypto.randomUUID(),
+        c.get('adminId') ?? null,
+        p.kind,
+        JSON.stringify({
+          kind: p.kind,
+          rows: p.rows,
+          filters: p.filters ?? {},
+          operator: c.get('adminEmail') ?? null,
+          // L'IP est celle vue par Cloudflare ; utile pour recouper avec la
+          // liste d'adresses autorisées du portail.
+          ip: c.req.header('CF-Connecting-IP') ?? null,
+          userAgent: c.req.header('User-Agent')?.slice(0, 200) ?? null,
+        })
+      )
+      .run();
+    return true;
+  } catch (error) {
+    console.error('[State] Export audit write failed', String(error));
+    return false;
+  }
+}
+
 // GET /state/reports/por/export - Export PoR as PDF (returns JSON for now)
 state.get('/reports/por/export', async (c) => {
   try {
@@ -919,6 +962,11 @@ state.get('/reports/por/export', async (c) => {
       lastAudit: stock?.last_audit_date,
       walletDistribution: walletDistribution.results,
     };
+
+    // Tracé sans bloquer : la preuve de réserve est de l'information publique
+    // — la même est servie sans compte sur /reserve. Refuser de la remettre
+    // parce qu'un journal n'a pas pu s'écrire serait disproportionné.
+    await recordStateExport(c, { kind: 'por_report', rows: 1 });
 
     const reportJson = JSON.stringify(report, null, 2);
     return new Response(reportJson, {
@@ -969,6 +1017,13 @@ state.get('/reports/monthly/export', async (c) => {
       transactions: txStats.results,
       newUsers: newUsersResult?.count || 0,
     };
+
+    // Agrégats mensuels : tracé sans bloquer, pour la même raison.
+    await recordStateExport(c, {
+      kind: 'monthly_report',
+      rows: (txStats.results || []).length,
+      filters: { month },
+    });
 
     const reportJson = JSON.stringify(report, null, 2);
     return new Response(reportJson, {
@@ -1038,6 +1093,27 @@ state.get('/reports/data/export', async (c) => {
 
     const result = await c.env.DB.prepare(query).bind(...params).all<any>();
     const transactions = result.results || [];
+
+    // FAIL-CLOSED, contrairement aux deux exports d'agrégats ci-dessus.
+    //
+    // Celui-ci sort des données transaction par transaction. Elles sont
+    // pseudonymisées, mais leur volume et leur régularité en font une matière
+    // sensible : un export qu'on ne peut pas tracer est un export dont personne
+    // ne saura jamais qu'il a eu lieu. On préfère le refuser.
+    if (!(await recordStateExport(c, {
+      kind: 'transactions_csv',
+      rows: transactions.length,
+      filters: { start: start ?? null, end: end ?? null, limit: exportLimit },
+    }))) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'EXPORT_NOT_TRACEABLE',
+          message: "Export impossible : la trace d'audit n'a pas pu être enregistrée",
+        },
+        requestId: crypto.randomUUID(),
+      }, 503);
+    }
 
     // Generate CSV
     const headers = ['ID', 'Type', 'Status', 'Token Amount', 'Cash Amount', 'Price/g', 'Fees', 'Created At', 'Holder Ref', 'KYC Level'];

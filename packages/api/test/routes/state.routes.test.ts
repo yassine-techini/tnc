@@ -211,4 +211,45 @@ describe('Portail État', () => {
       }
     });
   });
+
+  describe('traçabilité des exports', () => {
+    it('trace les trois exports du portail', () => {
+      // Un export quitte la plateforme. Sans trace, personne ne peut dire qui a
+      // emporté quoi ni quand.
+      for (const kind of ['transactions_csv', 'por_report', 'monthly_report']) {
+        expect(VIEWS, kind).toContain(kind);
+      }
+      // Les appels, pas la définition du helper — qui vit elle aussi dans
+      // cette portion du fichier.
+      expect((VIEWS.match(/await recordStateExport\(/g) || []).length).toBe(3);
+    });
+
+    it("refuse l'export transactionnel quand la trace ne peut pas être écrite", () => {
+      // Fail-closed, contrairement aux exports d'agrégats : un export qu'on ne
+      // peut pas tracer est un export dont personne ne saura qu'il a eu lieu.
+      expect(VIEWS).toContain('EXPORT_NOT_TRACEABLE');
+
+      const csvBlock = VIEWS.slice(VIEWS.indexOf('transactions_csv'));
+      expect(csvBlock.slice(0, 800)).toContain('EXPORT_NOT_TRACEABLE');
+    });
+
+    it("ne bloque pas les exports d'agrégats sur un échec de trace", () => {
+      // La preuve de réserve est servie sans compte sur /reserve : refuser de la
+      // remettre parce qu'un journal a échoué serait disproportionné.
+      const porBlock = VIEWS.slice(VIEWS.indexOf("kind: 'por_report'"));
+      expect(porBlock.slice(0, 400)).not.toContain('EXPORT_NOT_TRACEABLE');
+    });
+
+    it("n'écrit jamais les données exportées dans la piste d'audit", () => {
+      // Sinon le journal deviendrait une seconde copie de ce qu'il surveille —
+      // et une copie que personne ne pense à protéger.
+      const helper = SOURCE.slice(
+        SOURCE.indexOf('async function recordStateExport'),
+        SOURCE.indexOf('// GET /state/reports/por/export')
+      );
+      expect(helper).toContain('rows:');
+      expect(helper).not.toContain('transactions');
+      expect(helper).not.toContain('csv');
+    });
+  });
 });
