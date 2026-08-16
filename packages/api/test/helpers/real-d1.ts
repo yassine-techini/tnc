@@ -169,6 +169,19 @@ CREATE TABLE gold_consignments (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE reserve_attestations (
+  id TEXT PRIMARY KEY,
+  sequence INTEGER NOT NULL UNIQUE,
+  previous_digest TEXT,
+  digest TEXT NOT NULL UNIQUE,
+  payload TEXT NOT NULL,
+  signature TEXT,
+  signing_key_id TEXT,
+  anchor_chain TEXT,
+  anchor_tx_hash TEXT,
+  anchored_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,

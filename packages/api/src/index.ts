@@ -30,6 +30,7 @@ import { adminRoutes } from './routes/admin';
 import { stateRoutes } from './routes/state';
 import { webhookRoutes } from './routes/webhooks';
 import { verifyRoutes } from './routes/verify';
+import { publicVerificationRoutes } from './routes/public';
 import { setupRoutes } from './routes/setup';
 import { realtimeRoutes } from './routes/realtime';
 
@@ -272,6 +273,9 @@ api.route('/webhooks', webhookRoutes);
 
 // Public certificate verification (no auth required)
 api.route('/verify', verifyRoutes);
+
+// Public reserve attestations (no auth required — ADR 002 phase 1)
+api.route('/public', publicVerificationRoutes);
 
 // Setup routes (for initial configuration)
 api.route('/setup', setupRoutes);

@@ -9,6 +9,7 @@ import { dailyReconciliation } from './jobs/daily-reconciliation';
 import { cleanupExpiredSessions } from './jobs/session-cleanup';
 import { cleanupExpiredQuotes } from './jobs/quote-cleanup';
 import { generateMonthlyReport } from './jobs/monthly-report';
+import { publishReserveAttestation } from './jobs/reserve-attestation';
 // NOTE: price alerts are delivered inline by refreshGoldPrice()
 // (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
 // The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
@@ -45,6 +46,11 @@ export async function handleScheduled(
       // Daily reconciliation - midnight UTC
       case '0 0 * * *':
         await dailyReconciliation(env, ctx);
+        break;
+
+      // Reserve attestation - 00:30 UTC, after reconciliation has settled
+      case '30 0 * * *':
+        await publishReserveAttestation(env, ctx);
         break;
 
       // Session cleanup - 2 AM UTC

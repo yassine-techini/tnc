@@ -36,6 +36,7 @@ const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
 const VerifyCertificate = lazy(() => import('./pages/VerifyCertificate'));
+const VerifyReserve = lazy(() => import('./pages/VerifyReserve'));
 
 // Protected pages (lazy loaded)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -103,6 +104,8 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Reserve verification is public: that is the point of an attestation. */}
+          <Route path="/reserve" element={<VerifyReserve />} />
           <Route path="/verify" element={<VerifyCertificate />} />
           <Route path="/verify/:code" element={<VerifyCertificate />} />
         </Route>

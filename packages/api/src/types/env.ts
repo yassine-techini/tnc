@@ -39,6 +39,11 @@ export interface Env {
 
   // Bootstrap / setup routes (must be set to enable /setup/* in any environment)
   SETUP_SECRET?: string;
+  /**
+   * Private JWK (ES256) signing reserve attestations — ADR 002 phase 1.
+   * Absent means no attestation is produced at all (fail-closed).
+   */
+  ATTESTATION_SIGNING_JWK?: string;
   SETUP_ADMIN_PASSWORD?: string;
   SETUP_STATE_PASSWORD?: string;
   SETUP_DEMO_PASSWORD?: string;

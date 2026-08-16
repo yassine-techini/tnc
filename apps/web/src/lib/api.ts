@@ -509,6 +509,34 @@ class ApiClient {
     return URL.createObjectURL(await res.blob());
   }
 
+  // ── Public reserve attestations (no auth — ADR 002 phase 1) ──
+  async getReserveAttestations(page = 1, limit = 20) {
+    return this.request<{
+      items: Array<{
+        sequence: number;
+        digest: string;
+        previousDigest: string | null;
+        anchorChain: string | null;
+        anchorTxHash: string | null;
+        anchoredAt: string | null;
+        createdAt: string;
+      }>;
+      meta: { page: number; limit: number; total: number };
+    }>(`/api/v1/public/reserve/attestations?page=${page}&limit=${limit}`);
+  }
+
+  async getReserveAttestation(digest: string) {
+    return this.request<ReserveAttestation>(`/api/v1/public/reserve/attestations/${digest}`);
+  }
+
+  async getReserveAttestationLatest() {
+    return this.request<ReserveAttestation>('/api/v1/public/reserve/attestations/latest');
+  }
+
+  async getReserveVerificationKey() {
+    return this.request<{ alg: string; jwk: JsonWebKey }>('/api/v1/public/reserve/key');
+  }
+
   // ── Producer KYB (the entity behind the account) ──
   async getProducerProfile() {
     return this.request<ProducerProfile>('/api/v1/producer/profile');
@@ -888,6 +916,25 @@ export interface ProducerConsignmentEvent {
   actor_role: string | null;
   note: string | null;
   created_at: string;
+}
+
+export interface ReserveAttestation {
+  sequence: number;
+  digest: string;
+  previousDigest: string | null;
+  payload: string;
+  signature: string | null;
+  signingKeyId: string | null;
+  anchorChain: string | null;
+  anchorTxHash: string | null;
+  anchoredAt: string | null;
+  createdAt: string;
+  verification?: {
+    digestMatches: boolean;
+    chainLinkValid: boolean;
+    signatureValid: boolean;
+    anchored: boolean;
+  };
 }
 
 export type KybStatus = 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
