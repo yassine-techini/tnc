@@ -2,6 +2,9 @@
 
 Inventaire établi à partir du code, destiné à être confronté ligne à ligne aux promesses du deck.
 
+> Pour **montrer** ce document plutôt que le lire : [DEMO-SCRIPT.md](DEMO-SCRIPT.md) déroule les
+> quatre parcours en indiquant, à chaque étape, la configuration qu'elle exige.
+
 ## Comment lire ce document
 
 Une fonctionnalité peut être écrite, compilée, testée — et malgré tout ne rien faire. Cet audit
@@ -15,9 +18,13 @@ trompeur. Chaque entrée porte un statut :
 | ⚠️ | Implémenté avec une réserve explicite — lire la colonne |
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
-**Volumétrie** : 159 endpoints API sur 12 modules, 21 services métier, 21 migrations, 6 jobs
-planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387 API, 285 `shared`,
-34 web — le mobile et le portail État n'en ont aucun).
+**Volumétrie** : 13 modules API, 26 services métier, **31 migrations**, 8 jobs planifiés,
+4 Durable Objects, 4 applications front, **900 tests automatisés** (539 API, 298 `shared`, 34 web,
+29 mobile — le portail État n'en a toujours aucun).
+
+Les 26 tests API non exécutés sont ceux d'`auth.service.test.ts` : le binding wasm d'argon2 fait
+tomber le worker de test sous Node 24. C'est un problème d'environnement de test, pas de code de
+production, et il préexiste à ce chantier.
 
 ---
 
@@ -159,7 +166,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 
 ## Points à ne pas cocher trop vite face au deck
 
-Trois promesses classiques de deck méritent une lecture attentive.
+Cinq promesses classiques de deck méritent une lecture attentive.
 
 **« Notifications push »** — la mécanique est complète et testée, mais aucun compte de service
 Firebase n'est provisionné : à ce jour, aucune notification ne part.
@@ -177,6 +184,10 @@ de l'or**, une partie de la réserve peut être détenue et absente. L'attestati
 explicitement (`vaultedG`, `onLoanG`, `fullyVaulted`, contreparties nommées), et la page `/reserve`
 affiche un avertissement dès qu'une partie est prêtée. Un deck qui promettrait « or intégralement
 détenu en coffre » entrerait en contradiction directe avec ce que la preuve publie.
+
+**« Location d'or à 6 %/an, vente possible à tout moment »** — la location est complète, du back-end aux écrans. Mais « vente possible à tout moment » se lit : *sortie demandable à tout moment*, puis vente une fois les grammes revenus au portefeuille. La sortie **rend** l'or, elle ne le vend pas ([ADR 004](adr/004-sortie-de-location.md)), et le délai T+n est le **rappel du prêt**, pas un délai de règlement boursier. Un deck qui laisserait entendre une liquidation instantanée promettrait autre chose que ce qui est livré.
+
+**« Multi-pays »** — la configuration existe et l'Ouganda est décrit, mais **aucun moyen de paiement ougandais n'est implémenté** et le pays est marqué non ouvrable tant que c'est le cas. Annoncer une présence multi-pays sur la base de cette table serait prématuré.
 
 Plus généralement : les mentions ⚙️ ne sont pas du développement restant, mais de la
 configuration. C'est le meilleur rapport effort/effet du projet — et tant qu'elle n'est pas faite,

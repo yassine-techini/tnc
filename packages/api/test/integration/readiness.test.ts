@@ -115,7 +115,12 @@ describe('ReadinessService', () => {
   });
 
   it('does not probe at all unless asked', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    // Mocked, not merely spied: a bare spy CALLS THROUGH, so a regression that
+    // starts probing would hit the real network instead of failing the
+    // assertion — which is how this suite once failed on a flaky connection.
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('no network call expected here'));
     await new ReadinessService(makeEnv(db, { GOLD_API_KEY: 'k' })).report(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
