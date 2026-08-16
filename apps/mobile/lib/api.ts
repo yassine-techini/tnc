@@ -300,6 +300,22 @@ class MobileApiClient {
     throw lastError || new Error('Une erreur réseau est survenue');
   }
 
+  // Push devices — the token must be the NATIVE FCM/APNs one, not an Expo
+  // token: the API sends through FCM HTTP v1 directly.
+  async registerDevice(token: string, platform: 'ios' | 'android' | 'web', deviceId?: string) {
+    return this.request<{ registered: boolean }>('/api/v1/users/me/devices', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform, deviceId }),
+    });
+  }
+
+  async unregisterDevice(token: string) {
+    return this.request<{ removed: boolean }>('/api/v1/users/me/devices', {
+      method: 'DELETE',
+      body: JSON.stringify({ token }),
+    });
+  }
+
   // Auth
   async register(email: string, phone: string, password: string, country = 'BF') {
     return this.request<{ message: string; userId: string }>('/api/v1/auth/register', {

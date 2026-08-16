@@ -14,7 +14,11 @@ export interface NotificationConfig {
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioPhoneNumber?: string;
-  fcmServerKey?: string;
+  /**
+   * Service account JSON for FCM HTTP v1. Replaces the former `fcmServerKey`:
+   * the legacy server-key endpoint was shut down by Google in June 2024.
+   */
+  fcmServiceAccount?: string;
 }
 
 export interface EmailOptions {
@@ -41,6 +45,8 @@ export interface NotificationResult {
   success: boolean;
   provider: string;
   messageId?: string;
+  /** Set when the provider says this device token will never work again. */
+  invalidToken?: boolean;
   error?: string;
 }
 
@@ -370,6 +376,13 @@ export interface NotificationQueueMessage {
 }
 
 import { ConfigService } from './config.service';
+import { PushTokenService, isTokenPermanentlyInvalid } from './push-token.service';
+import {
+  parseServiceAccount,
+  getAccessToken,
+  messagingEndpoint,
+  buildMessage,
+} from '../lib/fcm-oauth';
 
 interface PlatformBranding {
   appName: string;
@@ -409,7 +422,7 @@ export class NotificationService {
       });
       const resendApiKey = await this.configService.getResendApiKey(this.config.resendApiKey);
       const sendgridApiKey = await this.configService.getSendGridApiKey(this.config.sendgridApiKey);
-      const fcmServerKey = await this.configService.getFcmServerKey(this.config.fcmServerKey);
+      const fcmServiceAccount = await this.configService.getFcmServiceAccount(this.config.fcmServiceAccount);
 
       this._cachedConfig = {
         resendApiKey: resendApiKey || undefined,
@@ -417,7 +430,7 @@ export class NotificationService {
         twilioAccountSid: twilioConfig.accountSid || undefined,
         twilioAuthToken: twilioConfig.authToken || undefined,
         twilioPhoneNumber: twilioConfig.phoneNumber || undefined,
-        fcmServerKey: fcmServerKey || undefined,
+        fcmServiceAccount: fcmServiceAccount || undefined,
       };
       return this._cachedConfig;
     }
@@ -680,41 +693,82 @@ export class NotificationService {
       return { success: false, provider: 'fcm', error: 'FCM is currently disabled' };
     }
 
-    const config = await this.getConfig();
-    if (!config.fcmServerKey) {
+    // HTTP v1. The legacy `fcm/send` endpoint with a server key was shut down by
+    // Google in June 2024 — this path had been dead, not merely deprecated.
+    const rawAccount = this.configService
+      ? await this.configService.get('fcm_service_account', this.config.fcmServiceAccount)
+      : this.config.fcmServiceAccount;
+    const account = parseServiceAccount(rawAccount || undefined);
+    if (!account) {
       return { success: false, provider: 'fcm', error: 'FCM not configured' };
     }
 
     try {
-      const fcmApiUrl = this.configService
-        ? await this.configService.get('fcm_api_url', 'https://fcm.googleapis.com/fcm/send')
-        : 'https://fcm.googleapis.com/fcm/send';
-      const response = await fetch(fcmApiUrl, {
+      const accessToken = await getAccessToken(account, this.configService?.cache ?? null);
+      if (!accessToken) {
+        return { success: false, provider: 'fcm', error: 'FCM authentication failed' };
+      }
+
+      const response = await fetch(messagingEndpoint(account.project_id), {
         method: 'POST',
         headers: {
-          'Authorization': `key=${config.fcmServerKey}`,
+          Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          to: options.token,
-          notification: {
-            title: options.title,
-            body: options.body,
-          },
-          data: options.data,
-        }),
+        body: JSON.stringify(buildMessage(options)),
       });
 
       if (!response.ok) {
         const error = await response.text();
-        return { success: false, provider: 'fcm', error };
+        return {
+          success: false,
+          provider: 'fcm',
+          error,
+          // Lets the caller prune the device instead of retrying it forever.
+          invalidToken: isTokenPermanentlyInvalid(response.status, error),
+        };
       }
 
-      const data = await response.json() as { message_id: string };
-      return { success: true, provider: 'fcm', messageId: data.message_id };
+      // v1 returns the message name, not message_id.
+      const data = await response.json() as { name?: string };
+      return { success: true, provider: 'fcm', messageId: data.name };
     } catch (error) {
       return { success: false, provider: 'fcm', error: String(error) };
     }
+  }
+
+  /**
+   * Send one notification to every active device of a user.
+   *
+   * Tokens the provider rejects as unknown are deactivated: without pruning,
+   * `push_tokens` fills with dead installations and every later notification
+   * pays for calls that cannot land. Only permanent rejections deactivate —
+   * a quota error or a 5xx must not unsubscribe a working device.
+   */
+  async sendPushToUser(
+    userId: string,
+    options: Omit<PushOptions, 'token'>
+  ): Promise<{ sent: number; failed: number; deactivated: number }> {
+    const pushTokens = new PushTokenService(this.db);
+    const tokens = await pushTokens.listActive(userId);
+
+    let sent = 0;
+    let failed = 0;
+    let deactivated = 0;
+
+    for (const row of tokens) {
+      const result = await this.sendPush({ ...options, token: row.token });
+      if (result.success) {
+        sent++;
+        continue;
+      }
+      failed++;
+      if (result.invalidToken && (await pushTokens.deactivate(row.token))) {
+        deactivated++;
+      }
+    }
+
+    return { sent, failed, deactivated };
   }
 
   /**

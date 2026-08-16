@@ -350,7 +350,7 @@ export default {
       twilioAccountSid: env.TWILIO_ACCOUNT_SID,
       twilioAuthToken: env.TWILIO_AUTH_TOKEN,
       twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
-      fcmServerKey: env.FCM_SERVER_KEY,
+      fcmServiceAccount: env.FCM_SERVICE_ACCOUNT,
     }, undefined, configService);
 
     const alertService = new AlertService(env.DB, undefined, {

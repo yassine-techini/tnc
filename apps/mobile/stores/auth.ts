@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import * as SecureStore from 'expo-secure-store';
+import { registerForPush, unregisterForPush } from '../lib/push-registration';
 
 interface User {
   id: string;
@@ -88,8 +89,16 @@ export const useAuthStore = create<AuthState>()(
           lastActivityAt: now,
           loginAt: now,
         });
+
+        // Best-effort and deliberately not awaited: a device that cannot
+        // register for push must still be able to log in.
+        void registerForPush();
       },
-      logout: () =>
+      logout: () => {
+        // Fire before clearing the session — the call needs the access token,
+        // and the next user of this device must not inherit these notifications.
+        void unregisterForPush();
+
         set({
           user: null,
           tokens: null,
@@ -98,7 +107,8 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiresAt: null,
           lastActivityAt: null,
           loginAt: null,
-        }),
+        });
+      },
       setUser: (user) => set({ user }),
       setTokens: (tokens) => {
         const now = Date.now();

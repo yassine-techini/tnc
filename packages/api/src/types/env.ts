@@ -73,7 +73,11 @@ export interface Env {
   TWILIO_PHONE_NUMBER: string;
   RESEND_API_KEY: string;
   SENDGRID_API_KEY: string;
-  FCM_SERVER_KEY: string;
+  /**
+   * Firebase service account JSON for FCM HTTP v1. Replaces FCM_SERVER_KEY:
+   * the legacy server-key endpoint was shut down by Google in June 2024.
+   */
+  FCM_SERVICE_ACCOUNT?: string;
 
   // Alert Recipients (comma-separated)
   ALERT_EMAIL_RECIPIENTS?: string;

@@ -2726,7 +2726,7 @@ admin.get('/integrations/:provider', requirePermission('integrations', 'view'), 
       twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'],
       resend: ['RESEND_API_KEY'],
       sendgrid: ['SENDGRID_API_KEY'],
-      fcm: ['FCM_SERVER_KEY'],
+      fcm: ['FCM_SERVICE_ACCOUNT'],
       smile_identity: ['SMILE_IDENTITY_API_KEY', 'SMILE_IDENTITY_PARTNER_ID'],
       gold_api: ['GOLD_API_KEY'],
     };

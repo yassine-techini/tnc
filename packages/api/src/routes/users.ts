@@ -10,6 +10,7 @@ import { NotificationService } from '../services/notification.service';
 import { EncryptionService } from '../services/encryption.service';
 import { ConfigService } from '../services/config.service';
 import { sniffImageType, extensionFor } from '../lib/image-upload';
+import { PushTokenService } from '../services/push-token.service';
 
 const users = new Hono<AppEnv>();
 
@@ -1576,6 +1577,61 @@ users.delete('/me', async (c) => {
       requestId,
     }, 500);
   }
+});
+
+// ============================================
+// PUSH DEVICES
+// The `push_tokens` table shipped in the initial schema but nothing ever wrote
+// to it, so the platform had no one to notify even once FCM was repaired.
+// ============================================
+
+const registerDeviceSchema = z.object({
+  token: z.string().min(10).max(512),
+  platform: z.enum(['ios', 'android', 'web']),
+  deviceId: z.string().max(128).optional(),
+});
+
+// POST /users/me/devices — register this installation for push
+users.post('/me/devices', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const parsed = registerDeviceSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      requestId,
+    }, 400);
+  }
+
+  const service = new PushTokenService(c.env.DB);
+  await service.register({
+    userId,
+    token: parsed.data.token,
+    platform: parsed.data.platform,
+    deviceId: parsed.data.deviceId,
+  });
+
+  return c.json({ success: true, data: { registered: true }, requestId }, 201);
+});
+
+// DELETE /users/me/devices — stop notifying this installation (logout)
+users.delete('/me/devices', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+  const body = await c.req.json().catch(() => ({})) as { token?: string };
+  if (!body?.token) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_INPUT', message: 'Token requis' },
+      requestId,
+    }, 400);
+  }
+
+  const service = new PushTokenService(c.env.DB);
+  // Scoped to the caller: a token you do not own is not yours to silence.
+  const removed = await service.deactivateForUser(userId, body.token);
+  return c.json({ success: true, data: { removed }, requestId });
 });
 
 export const userRoutes = users;

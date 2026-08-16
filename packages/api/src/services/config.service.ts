@@ -24,6 +24,15 @@ export class ConfigService {
   ) {}
 
   /**
+   * The KV namespace backing this config, for callers that need short-lived
+   * caching of their own — the FCM access token, for instance. Exposed rather
+   * than threading a second KV parameter through every service constructor.
+   */
+  get cache(): KVNamespace {
+    return this.kv;
+  }
+
+  /**
    * Load entire config into memory (batch cache).
    * This dramatically reduces KV operations from 500+/sec to ~1/5min.
    */
@@ -269,8 +278,12 @@ export class ConfigService {
   /**
    * Get FCM server key for push notifications
    */
-  async getFcmServerKey(envFallback?: string): Promise<string | null> {
-    return await this.get('fcm_server_key', envFallback);
+  /**
+   * Service account JSON for FCM HTTP v1. The former `fcm_server_key` addressed
+   * an endpoint Google shut down in June 2024 and is no longer read.
+   */
+  async getFcmServiceAccount(envFallback?: string): Promise<string | null> {
+    return await this.get('fcm_service_account', envFallback);
   }
 
   /**

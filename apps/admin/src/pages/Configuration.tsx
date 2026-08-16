@@ -32,7 +32,7 @@ const CONFIG_GROUPS: ConfigGroup[] = [
       'cinetpay_api_key', 'cinetpay_site_id',
       'stripe_secret_key', 'stripe_webhook_secret',
       'smile_identity_api_key', 'smile_identity_partner_id',
-      'webhook_secret', 'fcm_server_key',
+      'webhook_secret', 'fcm_service_account',
     ],
   },
   {
@@ -124,7 +124,7 @@ const CONFIG_GROUPS: ConfigGroup[] = [
     label: 'URLs Notifications',
     icon: '📡',
     description: 'URLs API des fournisseurs de notifications',
-    keys: ['resend_api_url', 'sendgrid_api_url', 'twilio_api_url', 'fcm_api_url'],
+    keys: ['resend_api_url', 'sendgrid_api_url', 'twilio_api_url'],
   },
   {
     label: 'Prix de l\'or',
@@ -232,7 +232,7 @@ const KEY_LABELS: Record<string, string> = {
   smile_identity_api_key: 'Clé API Smile Identity (KYC)',
   smile_identity_partner_id: 'Partner ID Smile Identity',
   webhook_secret: 'Secret pour webhooks entrants',
-  fcm_server_key: 'Clé serveur Firebase Cloud Messaging',
+  fcm_service_account: 'JSON du compte de service Firebase (FCM HTTP v1)',
   // Plateforme
   app_name: 'Nom de la plateforme',
   app_tagline: 'Slogan',
@@ -322,7 +322,7 @@ const KEY_LABELS: Record<string, string> = {
   resend_api_url: 'URL API Resend',
   sendgrid_api_url: 'URL API SendGrid',
   twilio_api_url: 'URL API Twilio',
-  fcm_api_url: 'URL API Firebase Cloud Messaging',
+  
   // Prix or
   gold_api_base_url: 'URL de base GoldAPI',
   metals_api_url: 'URL API Metals (fallback)',
