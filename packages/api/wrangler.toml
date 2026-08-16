@@ -89,8 +89,12 @@ new_classes = []
 crons = [
   "*/15 * * * *",   # Price refresh every 15 minutes
   "0 0 * * *",      # Daily reconciliation at midnight UTC
+  "30 0 * * *",     # Reserve attestation at 00:30 UTC, after reconciliation
+  "0 1 * * *",      # Anchor the latest attestation at 1 AM UTC
   "0 2 * * *",      # Session cleanup at 2 AM UTC
   "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
+  "0 4 * * *",      # Lease yield accrual at 4 AM UTC, for the day just ended
+  "0 5 * * *",      # Lease exit settlement at 5 AM UTC, after the accrual
   "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
 ]
 
@@ -159,8 +163,12 @@ class_name = "AnalyticsHub"
 crons = [
   "*/15 * * * *",
   "0 0 * * *",
+  "30 0 * * *",
+  "0 1 * * *",
   "0 2 * * *",
   "0 3 * * *",
+  "0 4 * * *",
+  "0 5 * * *",
   "0 1 1 * *",
 ]
 
@@ -236,8 +244,12 @@ class_name = "AnalyticsHub"
 crons = [
   "*/5 * * * *",    # Price refresh every 5 minutes in production
   "0 0 * * *",      # Daily reconciliation at midnight UTC
+  "30 0 * * *",     # Reserve attestation at 00:30 UTC, after reconciliation
+  "0 1 * * *",      # Anchor the latest attestation at 1 AM UTC
   "0 2 * * *",      # Session cleanup at 2 AM UTC
   "0 3 * * *",      # Expired quotes cleanup at 3 AM UTC
+  "0 4 * * *",      # Lease yield accrual at 4 AM UTC, for the day just ended
+  "0 5 * * *",      # Lease exit settlement at 5 AM UTC, after the accrual
   "0 1 1 * *",      # Monthly reports on 1st of month at 1 AM UTC
 ]
 

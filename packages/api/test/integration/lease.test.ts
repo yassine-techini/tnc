@@ -6,7 +6,7 @@
  * reserve attestation discloses it), and accrual cannot pay the same day twice.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LeaseService } from '../../src/services/lease.service';
+import { LeaseService, type LeaseExitOrderRow } from '../../src/services/lease.service';
 import { createTestD1, seedStock, seedWallet, type TestD1 } from '../helpers/real-d1';
 
 const asD1 = (db: TestD1) => db as unknown as D1Database;
@@ -26,6 +26,19 @@ function balance(db: TestD1): number {
     token_balance: number;
   };
   return r.token_balance;
+}
+
+function cash(db: TestD1): number {
+  const r = db.sqlite.prepare('SELECT cash_balance FROM wallets WHERE id = ?').get(WALLET) as {
+    cash_balance: number;
+  };
+  return r.cash_balance;
+}
+
+function orderFor(db: TestD1, positionId: string): LeaseExitOrderRow {
+  return db.sqlite
+    .prepare('SELECT * FROM lease_exit_orders WHERE position_id = ?')
+    .get(positionId) as LeaseExitOrderRow;
 }
 
 describe('LeaseService (real D1)', () => {
@@ -155,5 +168,128 @@ describe('LeaseService (real D1)', () => {
     // Lending does not create or destroy claims; it moves metal out of the vault.
     expect(s.tokens_issued).toBeLessThanOrEqual(s.total_allocated);
     expect(s.total_allocated - s.gold_on_loan).toBe(900); // vaulted
+  });
+
+  describe('exit settlement (ADR 004: the gold comes back, it is not sold)', () => {
+    async function openAndExit(grams = 100, days = ['2026-08-16', '2026-08-17']) {
+      const r = await svc.open(USER, grams, RATE, 1);
+      for (const day of days) {
+        await svc.accrueDay((await svc.getById(r.position!.id))!, day, PRICE);
+      }
+      await svc.requestExit(r.position!.id, USER, 3, new Date('2026-08-13T10:00:00Z'));
+      return { positionId: r.position!.id, order: orderFor(db, r.position!.id) };
+    }
+
+    it('returns the grams, pays the yield in XOF and closes the position', async () => {
+      const { positionId, order } = await openAndExit();
+      const result = await svc.settleExit(order, PRICE);
+
+      expect(result).toMatchObject({ ok: true, principalG: 100, yieldXof: 1742 });
+      // The gold is back and spendable.
+      expect(balance(db)).toBe(500);
+      // It is back in the vault, so the disclosure stops flagging it.
+      expect(stock(db).gold_on_loan).toBe(0);
+      // The yield is money, on the cash side.
+      expect(cash(db)).toBe(1742);
+      expect((await svc.getById(positionId))!.status).toBe('CLOSED');
+    });
+
+    it('is the exact inverse of opening — no token created or destroyed', async () => {
+      const before = stock(db);
+      const { order } = await openAndExit();
+      await svc.settleExit(order, PRICE);
+      const after = stock(db);
+
+      expect(after.tokens_issued).toBe(before.tokens_issued);
+      expect(after.total_allocated).toBe(before.total_allocated);
+      expect(after.gold_on_loan).toBe(before.gold_on_loan);
+      expect(after.tokens_issued).toBeLessThanOrEqual(after.total_allocated);
+    });
+
+    it('records the yield as LEASE_YIELD, not as a deposit', async () => {
+      const { order } = await openAndExit();
+      await svc.settleExit(order, PRICE);
+
+      const tx = db.sqlite
+        .prepare('SELECT type, cash_amount, token_amount, status FROM transactions WHERE user_id = ?')
+        .all(USER) as { type: string; cash_amount: number; token_amount: number | null; status: string }[];
+
+      // A deposit is money the holder brought in; conflating the two would
+      // corrupt every report that sums deposits.
+      expect(tx).toHaveLength(1);
+      expect(tx[0]).toMatchObject({ type: 'LEASE_YIELD', cash_amount: 1742, status: 'COMPLETED' });
+      // The yield is XOF. It must not carry a token amount.
+      expect(tx[0].token_amount).toBeNull();
+    });
+
+    it('settles once even if the job runs twice', async () => {
+      const { order } = await openAndExit();
+      expect((await svc.settleExit(order, PRICE)).ok).toBe(true);
+
+      // Same order replayed — the guard must stop everything, not just the flip.
+      const replay = await svc.settleExit(order, PRICE);
+      expect(replay.ok).toBe(false);
+      expect(balance(db)).toBe(500); // not 600
+      expect(cash(db)).toBe(1742); // not 3484
+      expect(stock(db).gold_on_loan).toBe(0);
+    });
+
+    it('settles a position that never accrued, without a phantom transaction', async () => {
+      const { order } = await openAndExit(100, []);
+      const result = await svc.settleExit(order, PRICE);
+
+      expect(result).toMatchObject({ ok: true, principalG: 100, yieldXof: 0 });
+      expect(balance(db)).toBe(500);
+      expect(cash(db)).toBe(0);
+      // No money moved, so no money movement is recorded.
+      const count = db.sqlite
+        .prepare('SELECT COUNT(*) c FROM transactions WHERE user_id = ?')
+        .get(USER) as { c: number };
+      expect(count.c).toBe(0);
+    });
+
+    it('records the spot value for the statement without selling anything', async () => {
+      const { order } = await openAndExit();
+      await svc.settleExit(order, PRICE);
+
+      const settled = db.sqlite
+        .prepare('SELECT * FROM lease_exit_orders WHERE id = ?')
+        .get(order.id) as LeaseExitOrderRow;
+      expect(settled.status).toBe('SETTLED');
+      expect(settled.price_per_gram).toBe(PRICE);
+      expect(settled.proceeds_xof).toBe(100 * PRICE);
+      expect(settled.yield_xof).toBe(1742);
+      // Informational only: the grams are in the wallet, not sold.
+      expect(balance(db)).toBe(500);
+    });
+
+    it('still returns the gold when no price is available', async () => {
+      const { order } = await openAndExit(100, []);
+      // A missing price must not strand a holder's gold in a lease.
+      const result = await svc.settleExit(order, 0);
+      expect(result.ok).toBe(true);
+      expect(balance(db)).toBe(500);
+    });
+
+    it('lists orders only once they are due', async () => {
+      await openAndExit(100, []);
+      expect(await svc.dueExitOrders(new Date('2026-08-17T12:00:00Z'))).toHaveLength(0);
+      expect(await svc.dueExitOrders(new Date('2026-08-18T00:00:00Z'))).toHaveLength(1);
+    });
+
+    it('drops a settled order out of the due list', async () => {
+      const { order } = await openAndExit(100, []);
+      await svc.settleExit(order, PRICE);
+      expect(await svc.dueExitOrders(new Date('2026-08-25T00:00:00Z'))).toHaveLength(0);
+    });
+
+    it('marks an unsettleable order FAILED instead of retrying it forever', async () => {
+      const { order } = await openAndExit(100, []);
+      await svc.failExit(order.id, 'NOT_ACTIVE');
+
+      const failed = orderFor(db, order.position_id);
+      expect(failed).toMatchObject({ status: 'FAILED', failure_reason: 'NOT_ACTIVE' });
+      expect(await svc.dueExitOrders(new Date('2026-08-25T00:00:00Z'))).toHaveLength(0);
+    });
   });
 });

@@ -27,6 +27,7 @@ import { userRoutes } from './routes/users';
 import { marketRoutes } from './routes/market';
 import { walletRoutes } from './routes/wallet';
 import { producerRoutes } from './routes/producer';
+import { leaseRoutes } from './routes/lease';
 import { adminRoutes } from './routes/admin';
 import { stateRoutes } from './routes/state';
 import { webhookRoutes } from './routes/webhooks';
@@ -262,6 +263,7 @@ api.route('/users', userRoutes);
 api.route('/market', marketRoutes);  // Market has mixed public/protected routes
 api.route('/wallet', walletRoutes);
 api.route('/producer', producerRoutes);
+api.route('/lease', leaseRoutes);
 
 // Privileged portals. This deployment does not use Cloudflare Access, so the
 // allowlist is the only network control in front of them — applied before the

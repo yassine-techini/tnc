@@ -19,10 +19,25 @@
  *     (position, date), so re-running the job cannot pay a day twice.
  */
 import { GOLD_STOCK_ID } from './market.service';
-import { settlementDate } from '../lib/business-days';
+import { settlementDate, toIsoDate } from '../lib/business-days';
 
 const g = (n: number) => Math.round(n * 1000) / 1000;
 const xof = (n: number) => Math.round(n);
+
+export interface LeaseExitOrderRow {
+  id: string;
+  position_id: string;
+  user_id: string;
+  principal_g: number;
+  requested_at: string;
+  settles_on: string;
+  status: 'PENDING' | 'SETTLED' | 'FAILED';
+  settled_at: string | null;
+  price_per_gram: number | null;
+  proceeds_xof: number | null;
+  yield_xof: number | null;
+  failure_reason: string | null;
+}
 
 export interface LeasePositionRow {
   id: string;
@@ -236,5 +251,153 @@ export class LeaseService {
     }
 
     return { ok: true, settlesOn, error: null };
+  }
+
+  /** Exit orders due for settlement as of `today` and not yet settled. */
+  async dueExitOrders(today: Date = new Date()): Promise<LeaseExitOrderRow[]> {
+    const rows = await this.db
+      .prepare(
+        `SELECT * FROM lease_exit_orders
+         WHERE status = 'PENDING' AND settles_on <= ?
+         ORDER BY settles_on ASC, requested_at ASC`
+      )
+      .bind(toIsoDate(today))
+      .all<LeaseExitOrderRow>();
+    return rows.results || [];
+  }
+
+  /**
+   * Settle a due exit order: the gold comes back.
+   *
+   * The exact symmetry of `open()` — principal returns to the wallet,
+   * `gold_on_loan` drops by the same amount, `tokens_issued` and
+   * `total_allocated` are untouched. The claim existed throughout the lease; the
+   * holder never stopped owning the gold, it was simply illiquid. So nothing is
+   * created or destroyed here and the reserve invariant holds by construction.
+   *
+   * The exit RETURNS the metal, it does not sell it — see ADR 004. Selling is an
+   * explicit user action going through the KYC limits, the stock check and the
+   * quote expiry, none of which a background job should decide on its own.
+   *
+   * The accrued yield is paid in XOF with its own LEASE_YIELD transaction, so a
+   * holder seeing their cash balance rise can find out why.
+   *
+   * Every statement carries the same `status = 'PENDING'` guard and the order
+   * flip goes last: a job run twice settles once.
+   */
+  async settleExit(
+    order: LeaseExitOrderRow,
+    pricePerGram: number,
+    now: Date = new Date()
+  ): Promise<{ ok: boolean; principalG: number; yieldXof: number; error: LeaseError | null }> {
+    const nothing = (error: LeaseError) => ({ ok: false, principalG: 0, yieldXof: 0, error });
+
+    const position = await this.getById(order.position_id);
+    if (!position) return nothing('NOT_FOUND');
+    if (position.status !== 'EXITING') return nothing('NOT_ACTIVE');
+
+    const principalG = g(order.principal_g);
+    const yieldXof = xof(position.accrued_xof);
+    // Informational only: what the returned principal was worth at settlement,
+    // for the position statement. No sale takes place (ADR 004).
+    const proceedsXof = xof(principalG * (pricePerGram > 0 ? pricePerGram : 0));
+    const settledAt = now.toISOString();
+    // Same guard on every statement, bound not interpolated: the order must
+    // still be PENDING when each one runs.
+    const guard = `EXISTS (SELECT 1 FROM lease_exit_orders WHERE id = ? AND status = 'PENDING')`;
+
+    const statements = [
+      // The metal comes back into the vault.
+      this.db
+        .prepare(
+          `UPDATE gold_stock SET gold_on_loan = MAX(0, gold_on_loan - ?), updated_at = datetime('now')
+           WHERE id = ? AND ${guard}`
+        )
+        .bind(principalG, GOLD_STOCK_ID, order.id),
+      // ...and the grams become spendable again.
+      this.db
+        .prepare(
+          `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now')
+           WHERE id = ? AND ${guard}`
+        )
+        .bind(principalG, position.wallet_id, order.id),
+      this.db
+        .prepare(
+          `UPDATE lease_positions
+           SET status = 'CLOSED', closed_at = ?, updated_at = datetime('now')
+           WHERE id = ? AND status = 'EXITING' AND ${guard}`
+        )
+        .bind(settledAt, position.id, order.id),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+           SELECT ?, NULL, 'LEASE_SETTLED', 'lease_position', ?, ?, datetime('now')
+           WHERE ${guard}`
+        )
+        .bind(
+          crypto.randomUUID(),
+          position.id,
+          JSON.stringify({ orderId: order.id, principalG, yieldXof, pricePerGram }),
+          order.id
+        ),
+    ];
+
+    if (yieldXof > 0) {
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE wallets SET cash_balance = cash_balance + ?, updated_at = datetime('now')
+             WHERE id = ? AND ${guard}`
+          )
+          .bind(yieldXof, position.wallet_id, order.id),
+        this.db
+          .prepare(
+            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, metadata, created_at, completed_at)
+             SELECT ?, ?, ?, 'LEASE_YIELD', 'COMPLETED', NULL, ?, ?, ?, datetime('now'), datetime('now')
+             WHERE ${guard}`
+          )
+          .bind(
+            crypto.randomUUID(),
+            position.user_id,
+            position.wallet_id,
+            yieldXof,
+            pricePerGram > 0 ? pricePerGram : null,
+            JSON.stringify({ positionId: position.id, principalG, annualRate: position.annual_rate }),
+            order.id
+          )
+      );
+    }
+
+    // Flip LAST: its `changes` is what decides whether this run settled.
+    statements.push(
+      this.db
+        .prepare(
+          `UPDATE lease_exit_orders
+           SET status = 'SETTLED', settled_at = ?, price_per_gram = ?, proceeds_xof = ?, yield_xof = ?
+           WHERE id = ? AND status = 'PENDING'`
+        )
+        .bind(settledAt, pricePerGram > 0 ? pricePerGram : null, proceedsXof, yieldXof, order.id)
+    );
+
+    try {
+      const results = await this.db.batch(statements);
+      const flip = results[results.length - 1] as { meta: { changes: number } };
+      if (flip.meta.changes === 0) return nothing('CONFLICT');
+    } catch {
+      return nothing('CONFLICT');
+    }
+
+    return { ok: true, principalG, yieldXof, error: null };
+  }
+
+  /** Record a settlement failure so a broken order stops being retried blindly. */
+  async failExit(orderId: string, reason: string): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE lease_exit_orders SET status = 'FAILED', failure_reason = ?
+         WHERE id = ? AND status = 'PENDING'`
+      )
+      .bind(reason.slice(0, 500), orderId)
+      .run();
   }
 }

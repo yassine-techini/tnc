@@ -95,6 +95,6 @@ ALTER TABLE gold_consignments ADD COLUMN balance_cash_xof REAL;
 ALTER TABLE gold_consignments ADD COLUMN balance_paid_at TEXT;
 
 INSERT OR IGNORE INTO config (key, value, description) VALUES
-    ('settlement_advance_percent', '0.75', "Part du lot versée en acompte à la réception à Dubaï (0..1)"),
-    ('settlement_advance_currency', 'TOKENS', "Devise de l'acompte : TOKENS ou XOF"),
-    ('settlement_advance_haircut', '0.90', "Décote appliquée au poids déclaré pour estimer l'acompte (prudence avant essai)");
+    ('settlement_advance_percent', '0.75', 'Part du lot versée en acompte à la réception à Dubaï (0..1)'),
+    ('settlement_advance_currency', 'TOKENS', 'Devise de l''acompte : TOKENS ou XOF'),
+    ('settlement_advance_haircut', '0.90', 'Décote appliquée au poids déclaré pour estimer l''acompte (prudence avant essai)');

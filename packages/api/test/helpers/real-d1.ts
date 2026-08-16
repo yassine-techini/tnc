@@ -107,7 +107,7 @@ CREATE TABLE transactions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   wallet_id TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('BUY','SELL','DEPOSIT','WITHDRAWAL','FEE','CONSIGNMENT')),
+  type TEXT NOT NULL CHECK (type IN ('BUY','SELL','DEPOSIT','WITHDRAWAL','FEE','CONSIGNMENT','LEASE_YIELD')),
   status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING','PROCESSING','COMPLETED','FAILED','CANCELLED')),
   token_amount REAL,
   cash_amount REAL NOT NULL,
@@ -115,6 +115,13 @@ CREATE TABLE transactions (
   fees REAL DEFAULT 0,
   payment_method TEXT,
   payment_reference TEXT,
+  -- Present in production since 0001/0018; missing here until a statement that
+  -- writes them failed against the harness only. The harness has to mirror the
+  -- real schema or it certifies queries production would reject.
+  quote_id TEXT,
+  payout_method TEXT,
+  payout_reference TEXT,
+  metadata TEXT,
   failure_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT,

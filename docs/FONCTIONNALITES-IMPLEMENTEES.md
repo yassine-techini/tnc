@@ -85,7 +85,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | **Paiement du producteur en tokens** | ✅ | À la validation d'audit, atomique. Part configurable |
 | **Règlement en deux temps** | ✅ | Acompte à la réception à Dubaï (défaut 75 %, avec décote de prudence), solde à l'outturn. En tokens ou en XOF. Un acompte en tokens **alloue l'or qu'il émet**, donc l'invariant tient à chaque étape |
 | **Profil raffineur avec corridor** | ⚠️ | Type `REFINER` et corridor origine→destination en base ; écrans non branchés |
-| **Location d'or (6 %/an)** | ⚠️ | Ouverture de position, accrual quotidien en **XOF**, demande de sortie en T+3 jours ouvrés. Les grammes loués **quittent le portefeuille** et alimentent `gold_on_loan`, donc l'attestation les divulgue. Exécution du règlement et écrans restants |
+| **Location d'or (6 %/an)** | ✅ | API `/lease` complète : ouverture, position, relevé jour par jour, sortie. Accrual quotidien en **XOF** (cron 4 h UTC), règlement des sorties à T+3 jours ouvrés (cron 5 h UTC) avec notification. Les grammes loués **quittent le portefeuille** et alimentent `gold_on_loan`, donc l'attestation les divulgue. La sortie **rend l'or, elle ne le vend pas** ([ADR 004](adr/004-sortie-de-location.md)). Écrans web/mobile restants |
 | Traçabilité du montant payé par lot | ✅ | Visible producteur et back-office |
 | Suivi d'état par le producteur | ✅ | Web et mobile |
 

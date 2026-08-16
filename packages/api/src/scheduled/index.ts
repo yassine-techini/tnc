@@ -11,6 +11,8 @@ import { cleanupExpiredQuotes } from './jobs/quote-cleanup';
 import { generateMonthlyReport } from './jobs/monthly-report';
 import { publishReserveAttestation } from './jobs/reserve-attestation';
 import { anchorLatestAttestation } from './jobs/anchor-attestation';
+import { accrueLeaseYield } from './jobs/lease-accrual';
+import { settleLeaseExits } from './jobs/lease-settlement';
 // NOTE: price alerts are delivered inline by refreshGoldPrice()
 // (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
 // The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
@@ -68,6 +70,17 @@ export async function handleScheduled(
       // Expired quotes cleanup - 3 AM UTC
       case '0 3 * * *':
         await cleanupExpiredQuotes(env, ctx);
+        break;
+
+      // Lease yield accrual - 4 AM UTC, on the day that has just ended
+      case '0 4 * * *':
+        await accrueLeaseYield(env, ctx);
+        break;
+
+      // Lease exit settlement - 5 AM UTC, after the day's accrual is booked so
+      // a position settling today is paid for every day it was actually lent
+      case '0 5 * * *':
+        await settleLeaseExits(env, ctx);
         break;
 
       // Monthly report - 1st of month at 1 AM UTC
