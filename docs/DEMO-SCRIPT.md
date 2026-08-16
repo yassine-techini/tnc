@@ -20,10 +20,24 @@ exactement ses identifiants (`gold_api`, `encryption_key`, …).
 
 | Vérifier | Où | Si absent |
 |---|---|---|
-| Migrations appliquées jusqu'à `0031` | `pnpm db:migrate` | Rien ne fonctionne |
+| Migrations appliquées jusqu'à `0032` | `pnpm db:migrate` | Rien ne fonctionne |
 | Rapport de readiness au vert sur les clés des étapes prévues | `/admin/readiness?probe=true` | Voir chaque étape |
 | Un prix d'or récent en base | `/api/v1/market/price` | Achat et vente indisponibles |
 | Pins SSL (si démo sur build mobile) | `pnpm --filter @tnc-trading/mobile check:pins` | Le build refuse l'API de production |
+
+**Le piège des jobs quotidiens.** Trois écrans ne montrent rien sur un
+environnement fraîchement lancé, non parce qu'ils sont cassés mais parce que
+leur job n'a pas encore tourné :
+
+| Écran vide | Job | Heure |
+|---|---|---|
+| Rendement de location à 0 | accrual | 4 h UTC |
+| Sortie de location non réglée | règlement | 5 h UTC |
+| Aucun frais de garde | garde | 6 h UTC |
+
+Deux options, toutes deux honnêtes : faire tourner les jobs une fois avant la
+réunion, ou expliquer que le premier calcul a lieu le lendemain. La mauvaise
+option est de découvrir l'écran vide en direct et d'improviser une explication.
 
 **Décidez à l'avance ce que vous ne montrerez pas.** Une démo qui annonce trois
 parcours et en réussit trois vaut mieux qu'une qui en promet six.
@@ -96,7 +110,7 @@ location*. Puis vérifiez le code sur `/verify` — publiquement, sans compte.
 
 ---
 
-## Parcours B — Le producteur / la coopérative (8 min)
+## Parcours B — Le producteur, la coopérative, le raffineur (12 min)
 
 ### B1. Dossier KYB
 **Configuration requise** : `encryption_key`.
@@ -135,11 +149,65 @@ Saisissez le poids raffiné. Le solde versé est le **dû moins l'acompte**, jam
 le dû entier — et si l'essai ressort sous l'acompte, rien de plus n'est versé et
 rien n'est repris.
 
-### B7. Relevé de règlement (PDF)
+### B7. Répartir le lot — *vendre, louer, stocker, ou les trois*
+**Configuration requise** : un prix d'or récent pour la part vendue. La location
+et le stockage n'exigent aucune clé.
+
+C'est l'étape qui distingue un raffineur d'un investisseur. Sur un lot réglé,
+proposez les trois destinations **en une seule instruction** :
+
+1. Saisissez une part à vendre et une part à louer.
+2. Faites remarquer que **le stockage n'est pas saisi : c'est le reste**, calculé
+   en direct. La règle « la somme doit couvrir exactement le lot » est
+   structurelle — l'utilisateur ne peut pas l'enfreindre, donc on ne lui répète
+   jamais un message d'erreur.
+3. Validez, puis montrez les trois effets : le solde espèces monte du produit de
+   la vente, une position de location apparaît, le reste est resté en
+   portefeuille.
+
+**Un lot ne se répartit qu'une fois** — l'écran le dit avant l'action, pas après.
+
+**Si vous voulez montrer la robustesse** : saisissez une part en location
+inférieure au minimum. La vente passe, la location échoue, et la répartition
+s'affiche « partiellement exécutée » **en nommant la jambe en échec**. Rien n'est
+défait pour masquer l'échec voisin. C'est un bon moment pour dire que chaque
+jambe délègue au chemin de vente ou de location existant, plutôt que de le
+réécrire.
+
+### B8. Frais de garde
+**Configuration requise** : aucune. Le prélèvement tourne à 6 h UTC.
+
+Deux points valent la démonstration :
+
+- **L'or en location n'est pas facturé.** Il n'est pas dans le coffre et
+  rémunère déjà son détenteur ; le facturer serait prélever deux fois le même
+  gramme.
+- **Un raffineur qui a livré du métal n'a pas d'espèces.** Le frais devient
+  alors une **dette lisible** et non un prélèvement forcé : le solde ne peut pas
+  passer sous zéro, et le frais est prélevé automatiquement dès qu'une vente
+  crédite le compte ([ADR 005](adr/005-frais-de-garde-impayes.md)).
+
+Sur un environnement neuf, le bandeau des frais est **absent** : rien n'est dû et
+rien n'est affiché. Pour le montrer, faites tourner le job une fois à l'avance.
+
+### B9. Relevé de règlement (PDF)
 **Configuration requise** : aucune.
 Producteur et back-office téléchargent **le même document**. Poids déclaré,
 essai, part appliquée, acompte, solde, total, parcours du lot. Un lot encore en
 transit est documenté « en attente », pas réglé à zéro.
+
+Depuis la répartition, le relevé porte aussi la **destination du lot** — vendu,
+loué, gardé — avec le produit de la vente et le cours retenu. Trois absences y
+sont volontaires, et ce sont elles qui méritent d'être signalées :
+
+- **Aucun rendement sur la part louée.** Il s'accumule jour après jour ; le figer
+  sur un relevé daté le rendrait faux dès le lendemain.
+- **Aucun frais de garde imputé au lot**, et le document explique pourquoi : les
+  frais portent sur l'or détenu en compte, pas sur un lot. L'or de plusieurs lots
+  est fongible dans un même portefeuille ; inventer une clé de répartition pour
+  remplir une colonne serait une fabrication sur un document fait pour être
+  vérifié.
+- **Aucune répartition partielle présentée comme faite.**
 
 ---
 
@@ -207,6 +275,20 @@ et la plateforme l'affiche : l'or prêté apparaît en `gold_on_loan` sur la pag
 publique et sur l'attestation signée. Un investisseur a le droit de savoir que
 son or n'est pas dans le coffre pendant qu'il rapporte.
 
+**« Un raffineur peut-il faire autre chose que vendre ? »**
+Oui, et il peut **combiner**. Sur un lot réglé, il répartit entre vente,
+location et stockage en une seule instruction — 300 g vendus, 400 g loués,
+210 g gardés à Dubaï, par exemple. La somme doit couvrir exactement le lot, et
+l'interface rend cette règle impossible à enfreindre puisque le stockage est le
+reste, jamais une saisie.
+
+**« Le stockage chez vous, c'est gratuit ? »**
+Non : 0,5 %/an, prélevés en FCFA sur l'or **réellement gardé**. L'or placé en
+location n'est pas facturé — il n'est pas dans le coffre et rémunère déjà son
+détenteur. Et si le raffineur n'a pas d'espèces, ce qui est le cas normal quand
+on vient de livrer du métal, le frais devient une dette prélevée automatiquement
+à la première vente, jamais un découvert imposé.
+
 **« Vous êtes prêts pour l'Ouganda ? »**
 La configuration existe — UGX, indicatif, pièces d'identité ougandaises. **Les
 paiements, non** : MTN MoMo et Airtel Money sont déclarés *non implémentés*, et
@@ -228,6 +310,12 @@ devise ; c'est le vrai coût, et il est visible dans la table.
   vente reste une action de l'utilisateur (ADR 004).
 - **Les tests bout-en-bout mobiles** — la logique est testée, pas les écrans sur
   appareil.
+- **Le recouvrement des frais de garde** — un arriéré n'empêche ni de vendre ni
+  de retirer. Aucune relance, aucune pénalité, aucun blocage n'est implémenté ;
+  c'est une décision à prendre avec le juridique, pas une omission.
+- **Défaire une répartition** — elle est définitive. Un lot mal réparti se
+  corrige par les parcours normaux (vendre depuis le portefeuille, sortir de
+  location), pas en revenant sur l'instruction.
 - **L'ancrage sur réseau principal** — configuré pour un réseau de test par
   défaut, et le passage en mainnet exige un opt-in explicite.
 
