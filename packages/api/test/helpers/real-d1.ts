@@ -169,6 +169,17 @@ CREATE TABLE gold_consignments (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('TRANSACTION','KYC','SECURITY','MARKETING','SYSTEM')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  data TEXT,
+  read INTEGER DEFAULT 0,
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE push_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

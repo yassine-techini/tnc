@@ -34,6 +34,9 @@ export interface SmsOptions {
   message: string;
 }
 
+/** Matches the CHECK constraint on notifications.type (migration 0001). */
+export type NotificationType = 'TRANSACTION' | 'KYC' | 'SECURITY' | 'MARKETING' | 'SYSTEM';
+
 export interface PushOptions {
   token: string;
   title: string;
@@ -631,7 +634,6 @@ export class NotificationService {
     }
 
     // Log notification
-    await this.logNotification('email', options.to, options.subject, result.success);
 
     return result;
   }
@@ -677,10 +679,8 @@ export class NotificationService {
       }
 
       const data = await response.json() as { sid: string };
-      await this.logNotification('sms', options.to, 'SMS', true);
       return { success: true, provider: 'twilio', messageId: data.sid };
     } catch (error) {
-      await this.logNotification('sms', options.to, 'SMS', false);
       return { success: false, provider: 'twilio', error: String(error) };
     }
   }
@@ -772,44 +772,41 @@ export class NotificationService {
   }
 
   /**
-   * Log notification to database
+   * Record an in-app notification and push it to the user's devices.
+   *
+   * Replaces two writers that could never have worked: both inserted into a
+   * `message` column, while the table (0001) has `body`. logNotification also
+   * bound user_id = NULL against a NOT NULL column and a type outside the CHECK
+   * list — it was wrapped in try/catch, so every email and SMS "logged" nothing
+   * at all. Delivery logs never belonged in this table anyway: `notifications`
+   * is the feed the user reads in the app.
+   *
+   * Push failures never propagate: the in-app record is the durable one, and a
+   * device that cannot be reached must not fail the business operation that
+   * triggered the notification.
    */
-  private async logNotification(
-    type: string,
-    recipient: string,
-    subject: string,
-    success: boolean
-  ): Promise<void> {
-    try {
-      await this.db
-        .prepare(`
-          INSERT INTO notifications (id, user_id, type, title, message, read, created_at)
-          VALUES (?, NULL, ?, ?, ?, 0, datetime('now'))
-        `)
-        .bind(crypto.randomUUID(), type, subject, recipient)
-        .run();
-    } catch (error) {
-      console.error('Failed to log notification:', error);
-    }
-  }
-
-  /**
-   * Store user notification in database
-   */
-  async createUserNotification(
-    userId: string,
-    type: string,
-    title: string,
-    message: string
-  ): Promise<string> {
+  async notifyUser(p: {
+    userId: string;
+    type: NotificationType;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+  }): Promise<string> {
     const id = crypto.randomUUID();
     await this.db
-      .prepare(`
-        INSERT INTO notifications (id, user_id, type, title, message, read, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, datetime('now'))
-      `)
-      .bind(id, userId, type, title, message)
+      .prepare(
+        `INSERT INTO notifications (id, user_id, type, title, body, data, read, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`
+      )
+      .bind(id, p.userId, p.type, p.title, p.body, p.data ? JSON.stringify(p.data) : null)
       .run();
+
+    try {
+      await this.sendPushToUser(p.userId, { title: p.title, body: p.body, data: p.data });
+    } catch (error) {
+      console.error('Push delivery failed for notification', id, String(error));
+    }
+
     return id;
   }
 

@@ -14,6 +14,7 @@ import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { analyticsRoutes } from './admin/analytics';
 import { ConsignmentService } from '../services/consignment.service';
 import { ProducerProfileService } from '../services/producer-profile.service';
+import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
 
 /**
@@ -3074,6 +3075,25 @@ admin.get('/producers/:id', requirePermission('kyc', 'view'), async (c) => {
   return c.json({ success: true, data: profile, requestId });
 });
 
+/**
+ * Notify a user in-app and on their devices, without ever failing the operation
+ * that triggered it: an admin decision must not be rolled back because a phone
+ * is unreachable.
+ */
+async function notifyProducer(
+  c: Context<AppEnv>,
+  userId: string,
+  n: { type: NotificationType; title: string; body: string; data?: Record<string, string> }
+): Promise<void> {
+  try {
+    const configService = new ConfigService(c.env.DB, c.env.CACHE);
+    const notifications = new NotificationService(c.env.DB, {}, undefined, configService);
+    await notifications.notifyUser({ userId, ...n });
+  } catch (error) {
+    console.error('Notification failed', String(error));
+  }
+}
+
 function kybError(c: Context<AppEnv>, r: { ok?: boolean; error?: string; from?: string }) {
   const requestId = crypto.randomUUID();
   if (r.error === 'NOT_FOUND') {
@@ -3096,6 +3116,13 @@ admin.post('/producers/:id/approve', requirePermission('kyc', 'approve'), async 
   const service = new ProducerProfileService(c.env.DB);
   const r = await service.approve(c.req.param('id'), { id: c.get('adminId') as string }, grantedLevel);
   if (!r.ok) return kybError(c, r);
+
+  await notifyProducer(c, r.profile.user_id, {
+    type: 'KYC',
+    title: 'Dossier producteur validé',
+    body: "Votre dossier a été validé. Vous pouvez désormais consigner vos lots d'or.",
+  });
+
   return c.json({ success: true, data: r.profile, requestId });
 });
 
@@ -3107,6 +3134,13 @@ admin.post('/producers/:id/reject', requirePermission('kyc', 'reject'), async (c
   const service = new ProducerProfileService(c.env.DB);
   const r = await service.reject(c.req.param('id'), { id: c.get('adminId') as string }, reason);
   if (!r.ok) return kybError(c, r);
+
+  await notifyProducer(c, r.profile.user_id, {
+    type: 'KYC',
+    title: 'Dossier producteur à corriger',
+    body: `Votre dossier n'a pas été validé : ${reason}`,
+  });
+
   return c.json({ success: true, data: r.profile, requestId });
 });
 
@@ -3210,6 +3244,19 @@ admin.post('/consignments/:id/audit-validate', requirePermission('consignments',
   const service = new ConsignmentService(c.env.DB);
   const r = await service.auditValidate(id, currentAdmin(c), { ...parsed.data, producerShare });
   if (!r.ok) return consignmentError(c, r);
+
+  // The producer has just been paid in tokens — worth telling him, and one of
+  // the few events that genuinely justifies interrupting someone.
+  const credited = r.consignment.producer_tokens_credited;
+  if (credited) {
+    await notifyProducer(c, r.consignment.producer_id, {
+      type: 'TRANSACTION',
+      title: 'Lot validé et payé',
+      body: `Votre lot ${r.consignment.reference} a été validé à Dubaï. ${credited} g ont été crédités en tokens sur votre portefeuille.`,
+      data: { consignmentReference: r.consignment.reference, creditedGrams: String(credited) },
+    });
+  }
+
   return c.json({ success: true, data: r.consignment, requestId });
 });
 
