@@ -1,3 +1,4 @@
-export { authMiddleware, adminAuthMiddleware, stateAuthMiddleware } from './auth';
+export { authMiddleware } from './auth';
+export { portalAllowlist } from './portal-allowlist';
 export { rateLimiter } from './rate-limiter';
 export { errorHandler } from './error-handler';

@@ -382,7 +382,7 @@ POST   /api/v1/wallet/withdraw           # Demande de retrait
 GET    /api/v1/wallet/certificate        # Générer certificat PDF
 ```
 
-### Admin (Authentification Cloudflare Access)
+### Admin (mot de passe + TOTP obligatoire, jeton lié au portail, liste d'IP)
 ```
 GET    /api/v1/admin/dashboard           # KPIs
 GET    /api/v1/admin/users               # Liste utilisateurs
@@ -396,7 +396,7 @@ PATCH  /api/v1/admin/withdrawals/:id     # Approuver/Rejeter retrait
 GET    /api/v1/admin/reports/por         # Proof of Reserve
 ```
 
-### État (Read-only)
+### État (Read-only — même authentification que l'admin, portail distinct)
 ```
 GET    /api/v1/state/dashboard           # Vue d'ensemble
 GET    /api/v1/state/stock               # État du stock
@@ -472,7 +472,7 @@ const ERROR_CODES = {
 - [ ] Certificats SSL actifs
 - [ ] Webhooks paiement configurés
 - [ ] Clés API (GoldAPI, Smile Identity, Orange Money) actives
-- [ ] Cloudflare Access configuré pour admin/état
+- [ ] Liste d'IP renseignée pour admin/état (`admin_ip_allowlist`, `state_ip_allowlist`)
 - [ ] Monitoring et alertes configurés
 - [ ] Backup automatique D1 activé
 - [ ] Tests E2E passés

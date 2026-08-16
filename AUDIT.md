@@ -79,7 +79,7 @@ GoldAPI + taux de change (avec fallbacks de résilience), Smile Identity (KYC, s
 
 | # | Action | Sévérité | Statut |
 |---|---|---|---|
-| 1 | Monter **Cloudflare Access** sur `/admin/*` et `/state/*` | 🔴 Critique | ⏸️ Prod (infra Zero-Trust) |
+| 1 | Monter **Cloudflare Access** sur `/admin/*` et `/state/*` | 🔴 Critique | ❌ Abandonné — Access n'est pas utilisé sur ce déploiement. Remplacé par une liste d'IP applicative (voir AUDIT-2026-08-15.md) |
 | 2 | **Valider l'entropie de `JWT_SECRET`** (≥ 32) au démarrage | 🔴 Critique | ✅ Corrigé |
 | 3 | **Corriger l'historique de mot de passe** (verify vs égalité de hash) | 🔴 Élevé | ✅ Corrigé |
 | 4 | **`isProviderEnabled` fail-closed** | 🟠 Élevé | ✅ Corrigé |
@@ -113,7 +113,7 @@ GoldAPI + taux de change (avec fallbacks de résilience), Smile Identity (KYC, s
 
 ## 4. Checklist avant go-live (restant — infra / prod)
 
-- [ ] Monter/valider **Cloudflare Access** sur les portails admin et État (défense en profondeur).
+- [x] ~~Cloudflare Access sur les portails~~ — non utilisé ; remplacé par `admin_ip_allowlist` / `state_ip_allowlist`, à renseigner avant go-live.
 - [ ] Injecter les **clés providers** de production (paiement, KYC, prix, notifications).
 - [ ] **FCM HTTP v1** (service account) + câblage de l'enregistrement des push tokens mobile.
 - [ ] **SSL pinning mobile** : générer et injecter les pins de certificats de prod avant build EAS.

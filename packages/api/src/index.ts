@@ -17,6 +17,7 @@ import type { Env, AppEnv } from './types/env';
 // Middleware
 import { authMiddleware } from './middleware/auth';
 import { rateLimiter } from './middleware/rate-limiter';
+import { portalAllowlist } from './middleware/portal-allowlist';
 import { errorHandler } from './middleware/error-handler';
 import { analyticsMiddleware } from './middleware/analytics';
 
@@ -262,10 +263,16 @@ api.route('/market', marketRoutes);  // Market has mixed public/protected routes
 api.route('/wallet', walletRoutes);
 api.route('/producer', producerRoutes);
 
-// Admin routes (Cloudflare Access auth)
+// Privileged portals. This deployment does not use Cloudflare Access, so the
+// allowlist is the only network control in front of them — applied before the
+// routes, login included. Inactive until the corresponding config key is set.
+api.use('/admin/*', portalAllowlist('admin_ip_allowlist'));
+api.use('/state/*', portalAllowlist('state_ip_allowlist'));
+
+// Admin routes (password + mandatory TOTP, portal-bound tokens)
 api.route('/admin', adminRoutes);
 
-// State portal routes (Cloudflare Access auth)
+// State portal routes (password + mandatory TOTP, portal-bound tokens)
 api.route('/state', stateRoutes);
 
 // Webhook routes (signature verification)

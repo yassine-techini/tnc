@@ -92,11 +92,6 @@ export interface Env {
 
   // Error Monitoring
   SENTRY_DSN?: string;
-
-  // Cloudflare Access (for admin/state portals)
-  CF_ACCESS_TEAM_DOMAIN?: string;  // e.g., 'tnc-trading' (without .cloudflareaccess.com)
-  CF_ACCESS_AUDIENCE?: string;      // Application audience tag for admin
-  CF_ACCESS_STATE_AUDIENCE?: string; // Application audience tag for state portal
 }
 
 // Hono context variables set by middleware
