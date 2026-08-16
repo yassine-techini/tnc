@@ -20,7 +20,7 @@ trompeur. Chaque entrée porte un statut :
 
 **Volumétrie** : 13 modules API, 26 services métier, **31 migrations**, 8 jobs planifiés,
 4 Durable Objects, 4 applications front, **900 tests automatisés** (539 API, 298 `shared`, 34 web,
-29 mobile — le portail État n'en a toujours aucun).
+29 mobile, portail État couvert par les tests d'API).
 
 Les 26 tests API non exécutés sont ceux d'`auth.service.test.ts` : le binding wasm d'argon2 fait
 tomber le worker de test sous Node 24. C'est un problème d'environnement de test, pas de code de
@@ -162,7 +162,7 @@ production, et il préexiste à ce chantier.
 | Web (PWA) | ✅ | 12 pages + authentification + vitrine |
 | Back-office | ✅ | 18 écrans |
 | Mobile (iOS/Android) | ⚠️ | Complet côté investisseur, producteur et location. **29 tests** sur la logique pure (formatage, règles d'épinglage). Pins SSL de production **déclarés une seule fois** dans `expo.extra.sslPinning`, vérifiés avant chaque build par `pnpm check:pins`. Reste : tests de composants et bout-en-bout sur appareil (Detox/Maestro) |
-| Portail État | ⚠️ | 4 écrans seulement |
+| Portail État | ⚠️ | 4 écrans seulement, mais **13 tests** sur ce qui fonde l'argument fait à l'État : aucune route d'écriture hors authentification, cloisonnement des jetons, et **aucune identité exportée** — l'export CSV livrait l'adresse e-mail de chaque détenteur, il ne porte plus qu'une référence pseudonyme |
 
 ---
 

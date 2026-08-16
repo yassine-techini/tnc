@@ -1003,7 +1003,17 @@ state.get('/reports/data/export', async (c) => {
         t.price_per_gram,
         t.fees,
         t.created_at,
-        u.email as user_email,
+        -- PAS d'adresse e-mail. Le portail État existe pour donner des
+        -- agrégats ; cet export livrait un fichier NOMINATIF de qui détient de
+        -- l'or dans le pays, ce que le cloisonnement des portails est censé
+        -- empêcher (voir lib/portal.ts).
+        --
+        -- La référence ci-dessous est PSEUDONYME, pas anonyme : elle permet de
+        -- regrouper les lignes d'un même détenteur — donc de compter des
+        -- détenteurs distincts, ce dont une statistique a besoin — sans
+        -- désigner personne. Le dire plutôt que de laisser croire à un
+        -- anonymat qui n'existe pas.
+        substr(t.user_id, 1, 8) AS holder_ref,
         u.kyc_level
       FROM transactions t
       JOIN users u ON t.user_id = u.id
@@ -1030,7 +1040,7 @@ state.get('/reports/data/export', async (c) => {
     const transactions = result.results || [];
 
     // Generate CSV
-    const headers = ['ID', 'Type', 'Status', 'Token Amount', 'Cash Amount', 'Price/g', 'Fees', 'Created At', 'User', 'KYC Level'];
+    const headers = ['ID', 'Type', 'Status', 'Token Amount', 'Cash Amount', 'Price/g', 'Fees', 'Created At', 'Holder Ref', 'KYC Level'];
     const rows = transactions.map((t: any) => [
       t.id,
       t.type,
@@ -1040,7 +1050,7 @@ state.get('/reports/data/export', async (c) => {
       t.price_per_gram,
       t.fees,
       t.created_at,
-      t.user_email,
+      t.holder_ref,
       t.kyc_level,
     ]);
 
