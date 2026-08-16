@@ -19,6 +19,7 @@ const navigation: NavItem[] = [
   { name: 'Stock Or', href: '/stock', icon: '🪙', permission: { module: 'stock', action: 'view' } },
   { name: 'Dossiers producteurs', href: '/producers', icon: '🏭', permission: { module: 'kyc', action: 'view' } },
   { name: 'Lots (Export)', href: '/consignments', icon: '📦', permission: { module: 'consignments', action: 'view' } },
+  { name: 'Support', href: '/support', icon: '🛟', permission: { module: 'consignments', action: 'view' } },
   { name: 'Proof of Reserve', href: '/proof-of-reserve', icon: '🔒', permission: { module: 'stock', action: 'view' } },
   { name: 'Reconciliation', href: '/reconciliation', icon: '⚖️', permission: { module: 'reconciliation', action: 'view' } },
   { name: 'Retraits', href: '/withdrawals', icon: '📤', permission: { module: 'withdrawals', action: 'view' } },

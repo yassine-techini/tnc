@@ -21,6 +21,7 @@ const Configuration = lazy(() => import('./pages/Configuration'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const ProofOfReserve = lazy(() => import('./pages/ProofOfReserve'));
 const Consignments = lazy(() => import('./pages/Consignments'));
+const Support = lazy(() => import('./pages/Support'));
 const Producers = lazy(() => import('./pages/Producers'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -57,6 +58,7 @@ export default function App() {
                     <Route path="/transactions" element={<Transactions />} />
                     <Route path="/stock" element={<Stock />} />
                     <Route path="/consignments" element={<Consignments />} />
+                    <Route path="/support" element={<Support />} />
                     <Route path="/producers" element={<Producers />} />
                     <Route path="/reconciliation" element={<Reconciliation />} />
                     <Route path="/withdrawals" element={<Withdrawals />} />

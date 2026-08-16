@@ -163,6 +163,10 @@ function ConsignmentDetail({ id, onClose, canUpdate, canApprove, canReject, onCh
 
   const c = data?.data?.consignment;
   const events = data?.data?.events || [];
+  // Ce que le raffineur a fait du lot. Sans cela, le support ne peut pas
+  // répondre à « ma location ne s'est pas ouverte » — l'appel que cette
+  // fonctionnalité va justement générer.
+  const disposition = data?.data?.disposition ?? null;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -201,6 +205,47 @@ function ConsignmentDetail({ id, onClose, canUpdate, canApprove, canReject, onCh
             {c.rejection_reason && <div className="text-sm text-red-400">Rejet : {c.rejection_reason}</div>}
 
             <AdminPhotoStrip consignmentId={c.id} photosJson={c.photos} />
+
+            <div className="space-y-2">
+              <h3 className="text-xs uppercase tracking-wider text-slate-500">Répartition du lot</h3>
+              {disposition ? (
+                <div className="rounded-lg bg-slate-800/60 p-3 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Vendu</span>
+                    <span>
+                      {disposition.sell_g.toFixed(3)} g
+                      {disposition.sell_status === 'FAILED' && (
+                        <span className="text-red-400 ml-2">échec</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">En location</span>
+                    <span>
+                      {disposition.lease_g.toFixed(3)} g
+                      {disposition.lease_status === 'FAILED' && (
+                        <span className="text-red-400 ml-2">échec</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Gardé à Dubaï</span>
+                    <span>{disposition.store_g.toFixed(3)} g</span>
+                  </div>
+                  {disposition.status !== 'EXECUTED' && (
+                    <p className="text-xs text-amber-300 pt-2 border-t border-slate-700">
+                      {disposition.status}
+                      {disposition.failure_reason ? ` — ${disposition.failure_reason}` : ''}. Les
+                      opérations réussies ont bien eu lieu.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                // Distinguer « pas encore réparti » de « tout en stockage » : ce
+                // n'est pas la même situation pour le producteur.
+                <p className="text-sm text-slate-500">Lot non encore réparti.</p>
+              )}
+            </div>
 
             {/* Event timeline */}
             <div>

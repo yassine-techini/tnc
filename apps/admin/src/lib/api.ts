@@ -964,6 +964,26 @@ class AdminApiClient {
     });
   }
 
+  // ── Support : ce qui a échoué et ce qui est dû ──
+  async getDispositions(status?: string, page = 1, limit = 50) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set('status', status);
+    return this.request<{
+      items: AdminDisposition[];
+      meta: { page: number; limit: number; total: number };
+      /** Filtre réellement appliqué — une liste vide ne veut pas dire « rien à faire ». */
+      filter: string;
+    }>(`/api/v1/admin/dispositions?${params}`);
+  }
+
+  async getOutstandingStorageFees() {
+    return this.request<{
+      items: StorageFeeDebtor[];
+      totalXof: number;
+      notice: string;
+    }>('/api/v1/admin/storage-fees/outstanding');
+  }
+
   // ── Gold consignments (export workflow) ──
   async getConsignments(status?: string, page = 1, limit = 20) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -974,7 +994,11 @@ class AdminApiClient {
   }
 
   async getConsignment(id: string) {
-    return this.request<{ consignment: Consignment; events: ConsignmentEvent[] }>(`/api/v1/admin/consignments/${id}`);
+    return this.request<{
+      consignment: Consignment;
+      events: ConsignmentEvent[];
+      disposition: LotDisposition | null;
+    }>(`/api/v1/admin/consignments/${id}`);
   }
 
   /** Fetch a consignment photo (authenticated) and return an object URL. */
@@ -1059,6 +1083,45 @@ export interface ConsignmentEvent {
   actor_role: string | null;
   note: string | null;
   created_at: string;
+}
+
+export type DispositionStatus = 'PENDING' | 'EXECUTED' | 'PARTIAL' | 'FAILED';
+export type DispositionLegStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
+
+export interface LotDisposition {
+  id: string;
+  consignment_id: string;
+  user_id: string;
+  total_g: number;
+  sell_g: number;
+  lease_g: number;
+  store_g: number;
+  status: DispositionStatus;
+  sell_status: DispositionLegStatus;
+  lease_status: DispositionLegStatus;
+  sell_transaction_id: string | null;
+  sell_proceeds_xof: number | null;
+  lease_position_id: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  executed_at: string | null;
+}
+
+/** Une répartition, jointe à la référence du lot que le producteur citera. */
+export interface AdminDisposition extends LotDisposition {
+  reference: string | null;
+  producer_id: string | null;
+}
+
+export interface StorageFeeDebtor {
+  user_id: string;
+  days_outstanding: number;
+  total_xof: number;
+  oldest: string;
+  newest: string;
+  /** Joint volontairement : un arriéré sur un compte approvisionné est un job en panne. */
+  cash_balance: number | null;
+  token_balance: number | null;
 }
 
 export const adminApi = new AdminApiClient(API_URL);
