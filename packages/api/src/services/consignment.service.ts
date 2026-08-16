@@ -41,6 +41,11 @@ export interface ConsignmentRow {
   refined_weight_g: number | null;
   /** Grams credited to the producer at audit validation (see migration 0020). */
   producer_tokens_credited: number | null;
+  /** Advance already delivered in tokens at Dubai arrival (0027). */
+  advance_tokens_g: number | null;
+  advance_cash_xof: number | null;
+  advance_paid_at: string | null;
+  balance_tokens_g: number | null;
   refinery_lot: string | null;
   lbma_certificate: string | null;
   audited_by: string | null;
@@ -300,7 +305,17 @@ export class ConsignmentService {
     // the gold that backs them.
     const share = Math.min(1, Math.max(0, typeof p.producerShare === 'number' ? p.producerShare : 1));
     // Token balances are grams at 0.001 precision.
-    const producerTokens = Math.round(p.refinedWeightG * share * 1000) / 1000;
+    const due = Math.round(p.refinedWeightG * share * 1000) / 1000;
+
+    // Only the BALANCE is paid here: a token advance at Dubai arrival already
+    // delivered part of it, and already allocated its own weight. Paying `due`
+    // again would credit the producer twice and inflate the reserve.
+    const advanceTokens = current.advance_tokens_g ?? 0;
+    const producerTokens = Math.max(0, Math.round((due - advanceTokens) * 1000) / 1000);
+
+    // The advance allocated its share at arrival, so only the remainder of the
+    // refined weight is allocated now.
+    const allocateG = Math.max(0, Math.round((p.refinedWeightG - advanceTokens) * 1000) / 1000);
 
     // The producer may never have transacted, so his wallet may not exist yet.
     // Idempotent, and outside the batch: a spare empty wallet is harmless, while
@@ -339,7 +354,7 @@ export class ConsignmentService {
              WHERE id = ?
                AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
           )
-          .bind(p.refinedWeightG, producerTokens, GOLD_STOCK_ID, id),
+          .bind(allocateG, producerTokens, GOLD_STOCK_ID, id),
         // Pay the producer in tokens.
         ...(producerTokens > 0
           ? [
@@ -372,11 +387,11 @@ export class ConsignmentService {
           .prepare(
             `UPDATE gold_consignments
              SET status = 'AUDIT_VALIDATED', refined_weight_g = ?, refinery_lot = ?, lbma_certificate = ?,
-                 producer_tokens_credited = ?, audited_by = ?, audited_at = datetime('now'),
+                 producer_tokens_credited = ?, balance_tokens_g = ?, audited_by = ?, audited_at = datetime('now'),
                  updated_at = datetime('now')
              WHERE id = ? AND status = 'ARRIVED_DUBAI'`
           )
-          .bind(p.refinedWeightG, p.refineryLot ?? null, p.lbmaCertificate ?? null, producerTokens, admin.id, id),
+          .bind(p.refinedWeightG, p.refineryLot ?? null, p.lbmaCertificate ?? null, producerTokens, producerTokens, admin.id, id),
       ]);
       // The guarded consignment UPDATE must have changed exactly one row.
       const consignmentUpdate = results[results.length - 1] as { meta: { changes: number } };

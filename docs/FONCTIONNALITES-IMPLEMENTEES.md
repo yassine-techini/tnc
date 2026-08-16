@@ -83,6 +83,8 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | Machine à états (transitaire → transit → Dubaï → audit) | ✅ | Transitions gardées, piste d'audit immuable |
 | Rôles dédiés (`TRANSITAIRE`, `DUBAI_VALIDATOR`) | ✅ | |
 | **Paiement du producteur en tokens** | ✅ | À la validation d'audit, atomique. Part configurable |
+| **Règlement en deux temps** | ✅ | Acompte à la réception à Dubaï (défaut 75 %, avec décote de prudence), solde à l'outturn. En tokens ou en XOF. Un acompte en tokens **alloue l'or qu'il émet**, donc l'invariant tient à chaque étape |
+| **Profil raffineur avec corridor** | ⚠️ | Type `REFINER` et corridor origine→destination en base ; écrans non branchés |
 | Traçabilité du montant payé par lot | ✅ | Visible producteur et back-office |
 | Suivi d'état par le producteur | ✅ | Web et mobile |
 
