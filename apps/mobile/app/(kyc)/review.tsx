@@ -32,20 +32,28 @@ export default function ReviewScreen() {
     mutationFn: async () => {
       if (!tokens?.accessToken) throw new Error('Non authentifie');
 
-      // Convert file URIs to base64 would be done here in production
-      // For now, we'll send the URIs (the API would need to handle file uploads)
-      const kycData = {
-        documentType: params.documentType as 'CNIB' | 'PASSPORT' | 'PERMIT' | 'CEDEAO',
-        documentNumber: params.documentNumber,
-        firstName: params.firstName,
-        lastName: params.lastName,
-        dateOfBirth: params.dateOfBirth,
-        frontImage: params.frontImage,
-        backImage: params.backImage || undefined,
-        selfieImage: params.selfieImage,
-      };
+      // The pages are uploaded first, one multipart request each: the KYC form
+      // endpoint does not accept images, and sending file URIs to it — which is
+      // what this screen used to do — could never have worked.
+      await api.uploadKycDocument(params.frontImage, 'front');
+      if (params.backImage) {
+        await api.uploadKycDocument(params.backImage, 'back');
+      }
+      await api.uploadKycDocument(params.selfieImage, 'selfie');
 
-      return api.submitKyc(kycData, tokens.accessToken);
+      return api.submitKyc(
+        {
+          documentType: params.documentType as 'CNIB' | 'PASSPORT' | 'PERMIT' | 'CEDEAO',
+          documentNumber: params.documentNumber || undefined,
+          firstName: params.firstName,
+          lastName: params.lastName,
+          dateOfBirth: params.dateOfBirth,
+          // Mandatory server-side and not collected by this flow; the platform
+          // is Burkina-first, and the account's own country wins when known.
+          nationality: user?.country || 'BF',
+        },
+        tokens.accessToken
+      );
     },
     onSuccess: () => {
       // Update user's KYC status locally

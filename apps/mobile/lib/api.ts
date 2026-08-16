@@ -453,7 +453,7 @@ class MobileApiClient {
     return this.request<{
       items: {
         id: string;
-        type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
+        type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE' | 'CONSIGNMENT';
         status: string;
         tokenAmount: number | null;
         cashAmount: number;
@@ -504,7 +504,87 @@ class MobileApiClient {
       phone: string;
       kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
       kycStatus: string;
+      role: string;
     }>('/api/v1/users/me', { token });
+  }
+
+  // ── Producer: KYB and consignments ──
+  //
+  // Uploads go through multipart, which is what the API reads (c.req.formData).
+  // Content-Type is deliberately NOT set: React Native fills in the multipart
+  // boundary itself, and forcing application/json here would break the parse.
+  private async uploadFile<T>(endpoint: string, file: { uri: string; name: string; type: string }) {
+    const form = new FormData();
+    form.append('file', file as unknown as Blob);
+
+    const token = this.getToken();
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'X-API-Version': '1.0',
+        'X-Platform': 'mobile',
+        'X-Device-Id': this.deviceId || 'unknown',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: form,
+    });
+    const data = await response.json();
+    if (!data?.success) throw new Error(data?.error?.message || "Échec de l'envoi du fichier");
+    return data.data as T;
+  }
+
+  async getProducerProfile() {
+    return this.request<ProducerProfile>('/api/v1/producer/profile');
+  }
+
+  async submitProducerProfile(data: {
+    entityType: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+    legalName: string;
+    registrationNumber?: string;
+    miningAuthorization?: string;
+    representativeName: string;
+    representativePhone?: string;
+    city?: string;
+    region?: string;
+    documents?: string[];
+  }) {
+    return this.request<ProducerProfile>('/api/v1/producer/profile', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  uploadProducerDocument(file: { uri: string; name: string; type: string }) {
+    return this.uploadFile<{ key: string }>('/api/v1/producer/profile/documents', file);
+  }
+
+  uploadConsignmentPhoto(file: { uri: string; name: string; type: string }) {
+    return this.uploadFile<{ key: string }>('/api/v1/producer/consignments/photos', file);
+  }
+
+  async getMyConsignments(page = 1, limit = 20) {
+    return this.request<{
+      items: Consignment[];
+      meta: { page: number; limit: number; total: number };
+    }>(`/api/v1/producer/consignments?page=${page}&limit=${limit}`);
+  }
+
+  async getMyConsignment(id: string) {
+    return this.request<{ consignment: Consignment; events: ConsignmentEvent[] }>(
+      `/api/v1/producer/consignments/${id}`
+    );
+  }
+
+  async submitConsignment(data: {
+    weightGrams: number;
+    purity: number;
+    goldType: 'nuggets' | 'powder' | 'bar';
+    photos?: string[];
+  }) {
+    return this.request<Consignment>('/api/v1/producer/consignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // KYC
@@ -517,26 +597,52 @@ class MobileApiClient {
     }>('/api/v1/users/me/kyc/status', { token });
   }
 
-  async uploadKycDocument(base64Image: string, token: string) {
-    return this.request<{
-      url: string;
-      documentId: string;
-    }>('/api/v1/users/me/kyc/documents', {
+  /**
+   * Upload one KYC document page.
+   *
+   * The API reads multipart (`type` + `file`) and decides the content type from
+   * the bytes. This used to POST `{ image: base64 }` as JSON, which the endpoint
+   * cannot parse — mobile KYC uploads could never have worked.
+   */
+  async uploadKycDocument(uri: string, type: 'front' | 'back' | 'selfie') {
+    const form = new FormData();
+    form.append('type', type);
+    form.append('file', {
+      uri,
+      name: `${type}_${Date.now()}.jpg`,
+      type: 'image/jpeg',
+    } as unknown as Blob);
+
+    const token = this.getToken();
+    const response = await fetch(`${this.baseUrl}/api/v1/users/me/kyc/documents`, {
       method: 'POST',
-      body: JSON.stringify({ image: base64Image }),
-      token,
+      headers: {
+        'X-API-Version': '1.0',
+        'X-Platform': 'mobile',
+        'X-Device-Id': this.deviceId || 'unknown',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: form,
     });
+    const data = await response.json();
+    if (!data?.success) throw new Error(data?.error?.message || "Échec de l'envoi du document");
+    return data.data as { documentId: string; type: string; filename: string };
   }
 
+  /**
+   * Submit the KYC form. Images are NOT part of this payload — they go through
+   * uploadKycDocument first. `nationality` is mandatory server-side; omitting it
+   * failed validation, which is why this call could never succeed.
+   */
   async submitKyc(data: {
     documentType: 'CNIB' | 'PASSPORT' | 'PERMIT' | 'CEDEAO';
-    documentNumber: string;
+    documentNumber?: string;
     firstName: string;
     lastName: string;
     dateOfBirth: string;
-    frontImage: string;
-    backImage?: string;
-    selfieImage: string;
+    nationality: string;
+    address?: string;
+    city?: string;
   }, token: string) {
     return this.request<{
       message: string;
@@ -730,6 +836,54 @@ class MobileApiClient {
       token,
     });
   }
+}
+
+export type ConsignmentStatus =
+  | 'SUBMITTED'
+  | 'FORWARDER_VALIDATED'
+  | 'IN_TRANSIT'
+  | 'ARRIVED_DUBAI'
+  | 'AUDIT_VALIDATED'
+  | 'REJECTED';
+
+export interface Consignment {
+  id: string;
+  reference: string;
+  weight_declared_g: number;
+  purity_declared: number;
+  gold_type: 'nuggets' | 'powder' | 'bar';
+  photos: string | null;
+  status: ConsignmentStatus;
+  refined_weight_g: number | null;
+  producer_tokens_credited: number | null;
+  refinery_lot: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsignmentEvent {
+  id: string;
+  from_status: string | null;
+  to_status: string;
+  actor_role: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface ProducerProfile {
+  id: string;
+  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  legal_name: string;
+  registration_number: string | null;
+  mining_authorization: string | null;
+  representative_name: string;
+  representative_phone: string | null;
+  city: string | null;
+  region: string | null;
+  status: 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
+  rejection_reason: string | null;
+  created_at: string;
 }
 
 export const api = new MobileApiClient(API_URL);

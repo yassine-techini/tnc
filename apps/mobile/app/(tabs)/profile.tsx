@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
 import { useThemeColors } from '../../stores/theme';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { api } from '../../lib/api';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -24,11 +25,31 @@ const MENU_ITEMS: MenuItem[] = [
   { icon: 'information-circle-outline', iconColor: '#6366F1', iconBg: 'rgba(99, 102, 241, 0.12)', label: 'A propos', route: '/(settings)/about' },
 ];
 
+const PRODUCER_ITEMS: MenuItem[] = [
+  { icon: 'cube-outline', iconColor: '#D4AF37', iconBg: 'rgba(212, 175, 55, 0.12)', label: 'Mes lots', route: '/(producer)' },
+  { icon: 'business-outline', iconColor: '#10B981', iconBg: 'rgba(16, 185, 129, 0.12)', label: 'Mon dossier producteur', route: '/(producer)/profile' },
+];
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuthStore();
   const c = useThemeColors();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isProducer, setIsProducer] = useState(false);
+
+  // The role lives on the server profile, not in the auth store.
+  useEffect(() => {
+    let alive = true;
+    api
+      .getProfile('')
+      .then((res) => alive && setIsProducer(res.data?.role === 'producer'))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const menuItems = isProducer ? [...PRODUCER_ITEMS, ...MENU_ITEMS] : MENU_ITEMS;
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -137,10 +158,10 @@ export default function ProfileScreen() {
 
       {/* Menu */}
       <View style={[styles.card, { backgroundColor: c.surface }]}>
-        {MENU_ITEMS.map((item, index) => (
+        {menuItems.map((item, index) => (
           <TouchableOpacity
             key={item.route}
-            style={[styles.menuItem, { borderBottomColor: c.border }, index === MENU_ITEMS.length - 1 && { borderBottomWidth: 0 }]}
+            style={[styles.menuItem, { borderBottomColor: c.border }, index === menuItems.length - 1 && { borderBottomWidth: 0 }]}
             onPress={() => router.push(item.route as any)}
             activeOpacity={0.7}
           >

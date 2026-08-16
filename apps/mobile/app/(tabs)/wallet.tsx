@@ -8,13 +8,18 @@ import { useAuthStore } from '../../stores/auth';
 import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 
-const typeLabels: Record<string, string> = { BUY: 'Achat', SELL: 'Vente', DEPOSIT: 'Depot', WITHDRAWAL: 'Retrait', FEE: 'Frais' };
+const typeLabels: Record<string, string> = { BUY: 'Achat', SELL: 'Vente', DEPOSIT: 'Depot', WITHDRAWAL: 'Retrait', FEE: 'Frais', CONSIGNMENT: 'Lot consigne' };
+
+// Types that ADD to the balance. CONSIGNMENT is the producer being paid for a
+// validated lot — showing it with a minus would tell him he lost the gold.
+const CREDIT_TYPES = ['BUY', 'DEPOSIT', 'CONSIGNMENT'];
 const typeIcons: Record<string, { name: React.ComponentProps<typeof Ionicons>['name']; color: string; bg: string }> = {
   BUY: { name: 'cart', color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' },
   SELL: { name: 'swap-horizontal', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' },
   DEPOSIT: { name: 'arrow-down', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.12)' },
   WITHDRAWAL: { name: 'arrow-up', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
   FEE: { name: 'receipt', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.12)' },
+  CONSIGNMENT: { name: 'cube', color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' },
 };
 
 export default function WalletScreen() {
@@ -141,7 +146,12 @@ export default function WalletScreen() {
 
       {/* Transactions */}
       <View style={[styles.transactionsCard, { backgroundColor: c.surface }]}>
-        <Text style={[styles.sectionTitle, { color: c.text }]}>Transactions recentes</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>Transactions recentes</Text>
+          <TouchableOpacity onPress={() => router.push('/(wallet)/transactions')} activeOpacity={0.7}>
+            <Text style={{ color: c.gold, fontSize: 13, fontWeight: '600' }}>Voir tout</Text>
+          </TouchableOpacity>
+        </View>
         {transactions.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="receipt-outline" size={40} color={c.border} />
@@ -161,8 +171,8 @@ export default function WalletScreen() {
                     <Text style={[styles.txDate, { color: c.textTertiary }]}>{new Date(tx.createdAt).toLocaleDateString('fr-FR')}</Text>
                   </View>
                 </View>
-                <Text style={[styles.txAmount, { color: tx.type === 'BUY' || tx.type === 'DEPOSIT' ? '#10B981' : c.text }]}>
-                  {tx.type === 'BUY' || tx.type === 'DEPOSIT' ? '+' : '-'}
+                <Text style={[styles.txAmount, { color: CREDIT_TYPES.includes(tx.type) ? '#10B981' : c.text }]}>
+                  {CREDIT_TYPES.includes(tx.type) ? '+' : '-'}
                   {tx.tokenAmount ? `${tx.tokenAmount.toFixed(3)} g` : `${tx.cashAmount.toLocaleString()} XOF`}
                 </Text>
               </View>
@@ -178,6 +188,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F1A', padding: 16 },
   pageTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16, paddingTop: 8 },
   goldCard: { backgroundColor: '#1A1A2E', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.2)', marginBottom: 10 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   goldHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   goldLabel: { fontSize: 13, color: '#D4AF37', fontWeight: '600' },
   goldValue: { fontSize: 30, fontWeight: '800', color: '#D4AF37' },

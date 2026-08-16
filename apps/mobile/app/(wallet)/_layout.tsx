@@ -58,6 +58,10 @@ export default function WalletLayout() {
         name="certificate"
         options={{ title: 'Certificat' }}
       />
+      <Stack.Screen
+        name="transactions"
+        options={{ title: 'Historique' }}
+      />
     </Stack>
   );
 }
