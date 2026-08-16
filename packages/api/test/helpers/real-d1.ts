@@ -211,6 +211,46 @@ CREATE TABLE push_tokens (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE lease_positions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  wallet_id TEXT NOT NULL,
+  principal_g REAL NOT NULL CHECK (principal_g > 0),
+  annual_rate REAL NOT NULL CHECK (annual_rate >= 0),
+  accrued_xof REAL NOT NULL DEFAULT 0 CHECK (accrued_xof >= 0),
+  last_accrued_on TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','EXITING','CLOSED')),
+  opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+  closed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE lease_accruals (
+  id TEXT PRIMARY KEY,
+  position_id TEXT NOT NULL,
+  accrual_date TEXT NOT NULL,
+  principal_g REAL NOT NULL,
+  price_per_gram REAL NOT NULL,
+  annual_rate REAL NOT NULL,
+  amount_xof REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (position_id, accrual_date)
+);
+CREATE TABLE lease_exit_orders (
+  id TEXT PRIMARY KEY,
+  position_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
+  principal_g REAL NOT NULL,
+  requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+  settles_on TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','SETTLED','FAILED')),
+  settled_at TEXT,
+  price_per_gram REAL,
+  proceeds_xof REAL,
+  yield_xof REAL,
+  failure_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE gold_loans (
   id TEXT PRIMARY KEY,
   counterparty TEXT NOT NULL,
