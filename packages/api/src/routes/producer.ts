@@ -26,6 +26,10 @@ import {
   attachDocumentSchema,
 } from '../services/consignment-document.service';
 import { EncryptionService } from '../services/encryption.service';
+import {
+  SettlementStatementService,
+  statementFilename,
+} from '../services/settlement-statement.service';
 
 const producer = new Hono<AppEnv>();
 
@@ -257,6 +261,38 @@ producer.get('/consignments/:id', async (c) => {
   const documents = await docService.listForConsignment(id);
   const missingDocuments = await docService.missingRequired(id);
   return c.json({ success: true, data: { consignment, events, documents, missingDocuments }, requestId });
+});
+
+// GET /producer/consignments/:id/statement.pdf — settlement statement for the lot
+//
+// The document that answers the producer's only real question: I sent gold,
+// what did I get and why. Served for any status, not only settled lots — a
+// producer whose lot is still in transit is entitled to see where it stands.
+producer.get('/consignments/:id/statement.pdf', async (c) => {
+  const userId = c.get('userId');
+  const { id } = c.req.param();
+
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment || consignment.producer_id !== userId) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+  }
+
+  const statements = new SettlementStatementService(
+    c.env.DB,
+    new ConfigService(c.env.DB, c.env.CACHE)
+  );
+  const pdf = await statements.pdfFor(id);
+  if (!pdf) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+  }
+
+  return new Response(pdf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${statementFilename(consignment.reference)}"`,
+    },
+  });
 });
 
 // ============================================

@@ -45,7 +45,11 @@ export interface ConsignmentRow {
   advance_tokens_g: number | null;
   advance_cash_xof: number | null;
   advance_paid_at: string | null;
+  /** Rate the cash advance was computed at, kept for the settlement statement. */
+  advance_price_per_gram: number | null;
   balance_tokens_g: number | null;
+  balance_cash_xof: number | null;
+  balance_paid_at: string | null;
   refinery_lot: string | null;
   lbma_certificate: string | null;
   audited_by: string | null;

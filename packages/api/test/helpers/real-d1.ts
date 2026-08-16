@@ -292,10 +292,17 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  description TEXT,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE producer_profiles (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL UNIQUE,
-  entity_type TEXT NOT NULL CHECK (entity_type IN ('INDIVIDUAL','COOPERATIVE','COMPANY')),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('INDIVIDUAL','COOPERATIVE','COMPANY','REFINER')),
   legal_name TEXT NOT NULL,
   registration_number TEXT,
   mining_authorization TEXT,
@@ -304,6 +311,9 @@ CREATE TABLE producer_profiles (
   city TEXT,
   region TEXT,
   country TEXT NOT NULL DEFAULT 'BF',
+  -- Corridor (0027): only meaningful for a REFINER.
+  corridor_origin_country TEXT,
+  corridor_destination_country TEXT,
   representative_name TEXT NOT NULL,
   representative_role TEXT,
   representative_phone TEXT,

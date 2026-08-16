@@ -49,9 +49,28 @@ const FALLBACK: Record<string, string> = {
   '≤': '<=', '≥': '>=', '·': '-', '—': '-', '–': '-', '’': "'", '“': '"', '”': '"',
 };
 
+/**
+ * Group digits with a plain space.
+ *
+ * Deliberately not `toLocaleString`: its separator depends on the ICU build and
+ * is a narrow no-break space that base-14 PDF fonts cannot encode. A document
+ * that states an amount must state the same amount everywhere it is generated.
+ */
+export function groupDigits(value: number): string {
+  const rounded = Math.round(value);
+  const sign = rounded < 0 ? '-' : '';
+  return sign + Math.abs(rounded).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
 function encodeText(input: string): string {
+  // The exotic spaces locale formatting emits: U+202F (the narrow no-break
+  // space French thousands separators use), U+00A0, U+2009. None is encodable
+  // in a base-14 font, so an amount would print as "33?000?000 XOF" on a legal
+  // document. Normalised before encoding rather than left to the fallback.
+  const normalized = input.replace(/[   ]/g, ' ');
+
   let out = '';
-  for (const char of input) {
+  for (const char of normalized) {
     const code = char.codePointAt(0)!;
     if (code < 128) {
       out += char;

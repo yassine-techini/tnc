@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderPdf, type PdfDoc } from './pdf';
+import { renderPdf, groupDigits, type PdfDoc } from './pdf';
 
 const decode = (bytes: Uint8Array) => Array.from(bytes, (b) => String.fromCharCode(b)).join('');
 
@@ -99,5 +99,23 @@ describe('renderPdf', () => {
     const pdf = decode(renderPdf({ title: 'Vide', blocks: [] }));
     expect(pdf.startsWith('%PDF')).toBe(true);
     expect(pdf).toContain('/Count 1');
+  });
+
+  it('prints an amount formatted by a French locale without mangling it', () => {
+    // toLocaleString('fr-FR') separates thousands with U+202F, which a base-14
+    // font cannot encode: unnormalised it printed "33?000?000 XOF" on a legal
+    // document. Kept as a regression test because the character is invisible.
+    const amount = (33_000_000).toLocaleString('fr-FR');
+    const pdf = decode(renderPdf(doc({ blocks: [{ type: 'paragraph', text: `${amount} XOF` }] })));
+    expect(pdf).toContain('33 000 000 XOF');
+    expect(pdf).not.toContain('33?000?000');
+  });
+
+  it('groups digits deterministically, whatever the ICU build', () => {
+    expect(groupDigits(33_000_000)).toBe('33 000 000');
+    expect(groupDigits(999)).toBe('999');
+    expect(groupDigits(1234.6)).toBe('1 235');
+    expect(groupDigits(-1_500)).toBe('-1 500');
+    expect(groupDigits(0)).toBe('0');
   });
 });

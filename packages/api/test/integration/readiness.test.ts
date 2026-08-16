@@ -28,11 +28,8 @@ describe('ReadinessService', () => {
   let db: TestD1;
 
   beforeEach(() => {
+    // `config` now comes from the shared harness schema.
     db = createTestD1();
-    db.exec(`CREATE TABLE config (
-      key TEXT PRIMARY KEY, value TEXT NOT NULL, description TEXT,
-      updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );`);
   });
 
   afterEach(() => {

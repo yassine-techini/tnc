@@ -17,6 +17,10 @@ import { ProducerProfileService } from '../services/producer-profile.service';
 import { ReadinessService } from '../services/readiness.service';
 import { AttestationService } from '../services/attestation.service';
 import { renderPdf, type PdfBlock } from '../lib/pdf';
+import {
+  SettlementStatementService,
+  statementFilename,
+} from '../services/settlement-statement.service';
 import { GOLD_STOCK_ID } from '../services/market.service';
 import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
@@ -3328,6 +3332,32 @@ admin.get('/consignments/:id', requirePermission('consignments', 'view'), async 
   }
   const events = await service.listEvents(id);
   return c.json({ success: true, data: { consignment, events }, requestId });
+});
+
+// GET /admin/consignments/:id/statement.pdf  (settlement statement for the lot)
+//
+// Same document the producer downloads, byte for byte. A back-office that could
+// see a different statement from the one the producer holds would be useless in
+// a dispute, which is the moment it exists for.
+admin.get('/consignments/:id/statement.pdf', requirePermission('consignments', 'view'), async (c) => {
+  const { id } = c.req.param();
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(id);
+  if (!consignment) return c.notFound();
+
+  const statements = new SettlementStatementService(
+    c.env.DB,
+    new ConfigService(c.env.DB, c.env.CACHE)
+  );
+  const pdf = await statements.pdfFor(id);
+  if (!pdf) return c.notFound();
+
+  return new Response(pdf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${statementFilename(consignment.reference)}"`,
+    },
+  });
 });
 
 // GET /admin/consignments/:id/photos/:idx  (stream a lot photo)
