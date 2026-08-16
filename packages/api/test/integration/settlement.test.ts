@@ -139,6 +139,13 @@ describe('Settlement (real D1)', () => {
   });
 
   it('never claws back when the assay comes in under the advance', async () => {
+    // Free stock the platform can draw on. It is now REQUIRED in this case:
+    // the advance allocated 618.3 g on the declared weight, refining confirms
+    // only 500, and the 118.3 g difference has to be backed by real gold the
+    // platform already holds (ADR 006). Without it the audit is refused, which
+    // is the subject of the next test.
+    db.sqlite.prepare("UPDATE gold_stock SET total_allocated = 500 WHERE id = 'main'").run();
+
     const lot = await arrived();
     await settlement.payAdvance(lot.id, TOKEN_TERMS); // 618.300 g
 
@@ -156,6 +163,29 @@ describe('Settlement (real D1)', () => {
 
     const s = stock(db);
     expect(s.tokens_issued).toBeLessThanOrEqual(s.total_allocated);
+    // And the gold refining never confirmed is OUT of the reserve. Previously
+    // the allocation was clamped at zero, so 118.3 phantom grams stayed in
+    // total_allocated and /reserve overstated the physical backing — the
+    // invariant held only because the advance had inflated both sides of it.
+    expect(s.total_allocated).toBeCloseTo(1000, 3);
+  });
+
+  it('refuses the audit when the platform cannot cover a short assay', async () => {
+    // No free stock: honouring the 618.3 g already issued would mean claiming
+    // backing that does not exist.
+    const lot = await arrived();
+    await settlement.payAdvance(lot.id, TOKEN_TERMS);
+
+    const r = await consignments.auditValidate(lot.id, AUDITOR, {
+      refinedWeightG: 500,
+      producerShare: 1,
+    });
+
+    // Fail-closed: claims that cannot be backed are not issued. The admin has
+    // to allocate stock first, and being told so is useful information.
+    expect(r.ok).toBe(false);
+    expect((await consignments.getById(lot.id))!.status).toBe('ARRIVED_DUBAI');
+    expect(wallet(db).token_balance).toBeCloseTo(618.3, 3);
   });
 
   it('a cash advance leaves the full token payout at outturn', async () => {

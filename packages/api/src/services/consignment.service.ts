@@ -319,7 +319,20 @@ export class ConsignmentService {
 
     // The advance allocated its share at arrival, so only the remainder of the
     // refined weight is allocated now.
-    const allocateG = Math.max(0, Math.round((p.refinedWeightG - advanceTokens) * 1000) / 1000);
+    //
+    // DELIBERATELY SIGNED, unlike `producerTokens` above. When the assay comes
+    // in UNDER the advance, the advance allocated gold that refining never
+    // confirmed — 621 g claimed as backing for a lot that yielded 500. Clamping
+    // this at zero left that 121 g phantom in `total_allocated`, so the public
+    // reserve overstated the physical gold and the invariant held only because
+    // the advance had inflated both sides of it.
+    //
+    // Letting it go negative de-allocates the phantom. The producer keeps the
+    // advance — no clawback, that is the commercial decision — so the shortfall
+    // must be covered by the platform's own free stock. If there is none, the
+    // `tokens_issued <= total_allocated` CHECK aborts the batch and the audit is
+    // refused: claims that cannot be backed are not issued (ADR 006).
+    const allocateG = Math.round((p.refinedWeightG - advanceTokens) * 1000) / 1000;
 
     // The producer may never have transacted, so his wallet may not exist yet.
     // Idempotent, and outside the batch: a spare empty wallet is harmless, while
