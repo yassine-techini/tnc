@@ -17,6 +17,7 @@ import { ProducerProfileService } from '../services/producer-profile.service';
 import { ReadinessService } from '../services/readiness.service';
 import { AttestationService } from '../services/attestation.service';
 import { renderPdf, type PdfBlock } from '../lib/pdf';
+import { DispositionService } from '../services/disposition.service';
 import {
   SettlementStatementService,
   statementFilename,
@@ -3331,7 +3332,101 @@ admin.get('/consignments/:id', requirePermission('consignments', 'view'), async 
     return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
   }
   const events = await service.listEvents(id);
-  return c.json({ success: true, data: { consignment, events }, requestId });
+  // La répartition fait partie de l'histoire du lot : sans elle, le support ne
+  // peut pas répondre à « ma location ne s'est pas ouverte ».
+  const disposition = await new DispositionService(c.env.DB).getByConsignment(id);
+  return c.json({ success: true, data: { consignment, events, disposition }, requestId });
+});
+
+// GET /admin/dispositions?status=  (répartitions de lots)
+//
+// Une répartition PARTIAL veut dire qu'une jambe financière a échoué. Le
+// producteur le voit sur son écran s'il regarde ; la plateforme, elle, n'avait
+// aucun moyen de l'apprendre. Un échec d'argent que personne ne surveille finit
+// par se découvrir par un appel au support, ou pas du tout.
+admin.get('/dispositions', requirePermission('consignments', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+  const status = c.req.query('status');
+  const { page, limit, offset } = parsePagination({
+    page: c.req.query('page'),
+    limit: c.req.query('limit') || '50',
+  });
+
+  // Par défaut, seulement ce qui demande une intervention. Lister tout par
+  // défaut noierait les quelques lignes qui comptent.
+  const where = status
+    ? 'WHERE d.status = ?'
+    : "WHERE d.status IN ('PARTIAL', 'FAILED', 'PENDING')";
+  const binds: unknown[] = status ? [status] : [];
+
+  const rows = await c.env.DB.prepare(
+    `SELECT d.*, c.reference, c.producer_id
+     FROM lot_dispositions d
+     LEFT JOIN gold_consignments c ON c.id = d.consignment_id
+     ${where}
+     ORDER BY d.created_at DESC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(...binds, limit, offset)
+    .all();
+
+  const total = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS c FROM lot_dispositions d ${where}`
+  )
+    .bind(...binds)
+    .first<{ c: number }>();
+
+  return c.json({
+    success: true,
+    data: {
+      items: rows.results || [],
+      meta: { page, limit, total: total?.c || 0 },
+      // Dit explicitement, sinon un back-office vide se lit « tout va bien »
+      // alors qu'il veut dire « filtre par défaut ».
+      filter: status || 'PARTIAL, FAILED, PENDING (défaut)',
+    },
+    requestId,
+  });
+});
+
+// GET /admin/storage-fees/outstanding  (arriérés de frais de garde)
+//
+// Aucun recouvrement n'est automatisé (ADR 005) : encore faut-il pouvoir dire
+// qui doit quoi. Sans cette vue, la seule façon de le savoir serait d'interroger
+// la base à la main.
+admin.get('/storage-fees/outstanding', requirePermission('transactions', 'view'), async (c) => {
+  const requestId = crypto.randomUUID();
+
+  const rows = await c.env.DB.prepare(
+    `SELECT f.user_id,
+            COUNT(*) AS days_outstanding,
+            SUM(f.amount_xof) AS total_xof,
+            MIN(f.accrual_date) AS oldest,
+            MAX(f.accrual_date) AS newest,
+            w.cash_balance,
+            w.token_balance
+     FROM storage_fee_accruals f
+     LEFT JOIN wallets w ON w.user_id = f.user_id
+     WHERE f.status = 'OUTSTANDING'
+     GROUP BY f.user_id
+     ORDER BY total_xof DESC
+     LIMIT 200`
+  ).all<{ total_xof: number }>();
+
+  const items = rows.results || [];
+
+  return c.json({
+    success: true,
+    data: {
+      items,
+      totalXof: Math.round(items.reduce((sum, r) => sum + (r.total_xof || 0), 0)),
+      // Le solde espèces est joint volontairement : un arriéré sur un compte
+      // approvisionné signale un prélèvement en panne, pas un débiteur.
+      notice:
+        "Un arriéré sur un compte au solde suffisant n'est pas un impayé commercial : c'est le job de prélèvement qui n'a pas tourné.",
+    },
+    requestId,
+  });
 });
 
 // GET /admin/consignments/:id/statement.pdf  (settlement statement for the lot)
