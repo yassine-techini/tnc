@@ -6,6 +6,7 @@ import { ThemeToggle } from '@tnc-trading/ui';
 const navigation = [
   { name: 'Vue d\'ensemble', href: '/', icon: '📊' },
   { name: 'Stock d\'Or', href: '/stock', icon: '🪙' },
+  { name: 'Traçabilité', href: '/tracabilite', icon: '🔗' },
   { name: 'Rapports', href: '/reports', icon: '📈' },
 ];
 

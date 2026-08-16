@@ -78,7 +78,8 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 |---|---|---|
 | Déclaration d'un lot par le producteur | ✅ | Web et mobile (appareil photo natif) |
 | Photos du lot | ✅ | Chiffrées, cloisonnées par producteur |
-| Géolocalisation de l'origine | 🚫 | Accepté par l'API, non collecté par le mobile (`expo-location` absent) |
+| **Documents d'origine par lot** | ✅ | Certificat d'origine, déclaration minière, transport, essai — typés, avec émetteur et référence. Chiffrés *fail-closed*, espace de clés distinct des photos |
+| Géolocalisation de l'origine | ⚠️ | Stockée et distinguée : `origin_verified` sépare une **position relevée** d'une **zone déclarée**. Collecte mobile en attente de `expo-location` |
 | Machine à états (transitaire → transit → Dubaï → audit) | ✅ | Transitions gardées, piste d'audit immuable |
 | Rôles dédiés (`TRANSITAIRE`, `DUBAI_VALIDATOR`) | ✅ | |
 | **Paiement du producteur en tokens** | ✅ | À la validation d'audit, atomique. Part configurable |
@@ -115,8 +116,8 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 |---|---|---|
 | Accès dédié en lecture seule | ✅ | Authentification séparée, jeton lié au portail |
 | Tableau de bord, stock, rapports | ✅ | 4 écrans, 12 endpoints |
-| **Traçabilité des lots** | 🚫 | Permission RBAC accordée, écran absent |
-| Accès aux attestations de réserve | 🚫 | Aucun lien vers `/reserve` |
+| **Traçabilité des lots** | ✅ | Écran dédié : origine, parcours, pièces justificatives. **N'expose pas l'identité des producteurs** — l'État supervise le flux d'or, pas les personnes |
+| Accès aux attestations de réserve | ✅ | Lien vers la vérification publique `/reserve` |
 
 ## 9. Notifications
 

@@ -251,6 +251,24 @@ class StateApiClient {
   }
 
   // Market
+  // ── Traçabilité des lots ──
+  async getConsignments(status?: string, page = 1, limit = 25) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set('status', status);
+    return this.request<{
+      items: StateConsignment[];
+      meta: { page: number; limit: number; total: number };
+    }>(`/api/v1/state/consignments?${params}`);
+  }
+
+  async getConsignment(id: string) {
+    return this.request<{
+      consignment: StateConsignment;
+      events: Array<{ to_status: string; actor_role: string | null; note: string | null; created_at: string }>;
+      documents: Array<{ doc_type: string; issuer: string | null; reference: string | null; issued_at: string | null }>;
+    }>(`/api/v1/state/consignments/${id}`);
+  }
+
   async getPrice() {
     return this.request<{
       lbmaUsd: number;
@@ -318,6 +336,26 @@ class StateApiClient {
     if (!response.ok) throw new Error('Export failed');
     return response.blob();
   }
+}
+
+export interface StateConsignment {
+  id: string;
+  reference: string;
+  status: string;
+  weight_declared_g: number;
+  purity_declared: number;
+  gold_type: string;
+  origin_country: string | null;
+  origin_zone: string | null;
+  /** 1 when the position came from a device fix, 0 when it was declared. */
+  origin_verified: number;
+  origin_gps_lat: number | null;
+  origin_gps_lng: number | null;
+  refined_weight_g: number | null;
+  refinery_lot?: string | null;
+  audited_at: string | null;
+  created_at: string;
+  document_count?: number;
 }
 
 export const stateApi = new StateApiClient(API_URL);

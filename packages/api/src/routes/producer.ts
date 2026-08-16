@@ -17,8 +17,14 @@ import {
   consignmentPhotoPrefix,
   isOwnedProducerDocumentKey,
   producerDocumentPrefix,
+  isOwnedConsignmentDocumentKey,
+  consignmentDocumentPrefix,
 } from '../lib/image-upload';
 import { ProducerProfileService, kybSchema } from '../services/producer-profile.service';
+import {
+  ConsignmentDocumentService,
+  attachDocumentSchema,
+} from '../services/consignment-document.service';
 import { EncryptionService } from '../services/encryption.service';
 
 const producer = new Hono<AppEnv>();
@@ -238,7 +244,113 @@ producer.get('/consignments/:id', async (c) => {
     return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
   }
   const events = await service.listEvents(id);
-  return c.json({ success: true, data: { consignment, events }, requestId });
+  const docService = new ConsignmentDocumentService(c.env.DB);
+  const documents = await docService.listForConsignment(id);
+  const missingDocuments = await docService.missingRequired(id);
+  return c.json({ success: true, data: { consignment, events, documents, missingDocuments }, requestId });
+});
+
+// ============================================
+// ORIGIN DOCUMENTS — what makes the route "certified"
+// ============================================
+
+// POST /producer/consignments/:id/documents/upload — encrypted upload, returns a key
+producer.post('/consignments/:id/documents/upload', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(c.req.param('id'));
+  if (!consignment || consignment.producer_id !== userId) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+  }
+
+  const formData = await c.req.formData();
+  const file = formData.get('file') as unknown as File;
+  if (!file) {
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+  }
+
+  const cfg = new ConfigService(c.env.DB, c.env.CACHE);
+  const maxSize = await cfg.getNumber('consignment_max_document_bytes', 10 * 1024 * 1024);
+  if (file.size > maxSize) {
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+  }
+
+  const bytes = await file.arrayBuffer();
+  const contentType = sniffDocumentType(bytes);
+  if (!contentType) {
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (PDF, JPEG, PNG, WebP)' }, requestId }, 400);
+  }
+
+  // Same fail-closed rule as KYC and KYB: an origin certificate is a legal
+  // document, it does not land in R2 in the clear because a secret is missing.
+  if (!c.env.ENCRYPTION_KEY) {
+    console.error('Consignment document upload refused: ENCRYPTION_KEY is not configured');
+    return c.json({
+      success: false,
+      error: { code: 'ENCRYPTION_UNAVAILABLE', message: 'Service temporairement indisponible. Veuillez réessayer plus tard.' },
+      requestId,
+    }, 503);
+  }
+  const encrypted = await new EncryptionService(c.env.ENCRYPTION_KEY).encrypt(bytes);
+
+  const key = `${consignmentDocumentPrefix(userId)}${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${extensionFor(contentType)}`;
+  await c.env.STORAGE.put(key, encrypted, {
+    httpMetadata: { contentType: 'application/octet-stream' },
+    customMetadata: {
+      userId,
+      consignmentId: consignment.id,
+      uploadedAt: new Date().toISOString(),
+      encrypted: 'aes-256-gcm',
+      originalContentType: contentType,
+    },
+  });
+
+  return c.json({ success: true, data: { key }, requestId }, 201);
+});
+
+// POST /producer/consignments/:id/documents — attach an uploaded key with its metadata
+producer.post('/consignments/:id/documents', async (c) => {
+  const userId = c.get('userId');
+  const requestId = crypto.randomUUID();
+
+  const service = new ConsignmentService(c.env.DB);
+  const consignment = await service.getById(c.req.param('id'));
+  if (!consignment || consignment.producer_id !== userId) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+  }
+
+  const parsed = attachDocumentSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      requestId,
+    }, 400);
+  }
+
+  // The key comes back through the client, so it is untrusted like every other
+  // R2 reference in this codebase.
+  if (!isOwnedConsignmentDocumentKey(parsed.data.key, userId)) {
+    return c.json({
+      success: false,
+      error: { code: 'INVALID_DOCUMENT_KEY', message: 'Référence de document invalide' },
+      requestId,
+    }, 400);
+  }
+
+  const docService = new ConsignmentDocumentService(c.env.DB);
+  const document = await docService.attach(consignment.id, userId, parsed.data);
+  if (!document) {
+    return c.json({
+      success: false,
+      error: { code: 'ALREADY_ATTACHED', message: 'Ce document est déjà rattaché à un lot' },
+      requestId,
+    }, 409);
+  }
+
+  return c.json({ success: true, data: document, requestId }, 201);
 });
 
 // POST /producer/consignments/photos — upload a lot photo to R2, returns its key

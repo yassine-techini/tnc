@@ -547,6 +547,97 @@ state.get('/stock', async (c) => {
 });
 
 // GET /state/reports/por - Proof of Reserve report
+/**
+ * GET /state/consignments — lot traceability.
+ *
+ * The RBAC map already granted STATE_OPERATOR `consignments: ['view','export']`;
+ * only the endpoint was missing. This is the "certified route" the State is
+ * meant to be able to inspect: where each lot came from, whether its origin was
+ * device-verified or merely declared, and which origin documents back it.
+ *
+ * Deliberately withholds the producer's identity: the State supervises the
+ * gold flow, not the individuals behind it. Aggregates and lot references only.
+ */
+state.get('/consignments', async (c) => {
+  const requestId = crypto.randomUUID();
+  const status = c.req.query('status');
+  const page = Math.max(1, Math.floor(Number(c.req.query('page')) || 1));
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(c.req.query('limit')) || 25)));
+
+  const where = status ? 'WHERE c.status = ?' : '';
+  const binds: unknown[] = status ? [status] : [];
+
+  const count = await c.env.DB
+    .prepare(`SELECT COUNT(*) as c FROM gold_consignments c ${where}`)
+    .bind(...binds)
+    .first<{ c: number }>();
+
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT c.id, c.reference, c.status, c.weight_declared_g, c.purity_declared, c.gold_type,
+              c.origin_country, c.origin_zone, c.origin_verified,
+              c.origin_gps_lat, c.origin_gps_lng,
+              c.refined_weight_g, c.audited_at, c.created_at,
+              (SELECT COUNT(*) FROM consignment_documents d WHERE d.consignment_id = c.id) AS document_count
+       FROM gold_consignments c
+       ${where}
+       ORDER BY c.created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .bind(...binds, limit, (page - 1) * limit)
+    .all();
+
+  return c.json({
+    success: true,
+    data: { items: rows.results || [], meta: { page, limit, total: count?.c || 0 } },
+    requestId,
+  });
+});
+
+// GET /state/consignments/:id — one lot, its trail and its origin documents
+state.get('/consignments/:id', async (c) => {
+  const requestId = crypto.randomUUID();
+  const id = c.req.param('id');
+
+  const consignment = await c.env.DB
+    .prepare(
+      `SELECT id, reference, status, weight_declared_g, purity_declared, gold_type,
+              origin_country, origin_zone, origin_verified, origin_gps_lat, origin_gps_lng,
+              refined_weight_g, refinery_lot, lbma_certificate, audited_at, created_at
+       FROM gold_consignments WHERE id = ?`
+    )
+    .bind(id)
+    .first();
+
+  if (!consignment) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+  }
+
+  const events = await c.env.DB
+    .prepare(
+      `SELECT from_status, to_status, actor_role, note, created_at
+       FROM consignment_events WHERE consignment_id = ? ORDER BY created_at ASC`
+    )
+    .bind(id)
+    .all();
+
+  // Metadata only: the State sees WHICH documents exist and who issued them,
+  // not their contents, which stay encrypted at rest.
+  const documents = await c.env.DB
+    .prepare(
+      `SELECT doc_type, issuer, reference, issued_at, created_at
+       FROM consignment_documents WHERE consignment_id = ? ORDER BY created_at ASC`
+    )
+    .bind(id)
+    .all();
+
+  return c.json({
+    success: true,
+    data: { consignment, events: events.results || [], documents: documents.results || [] },
+    requestId,
+  });
+});
+
 state.get('/reports/por', async (c) => {
   try {
     const stock = await c.env.DB

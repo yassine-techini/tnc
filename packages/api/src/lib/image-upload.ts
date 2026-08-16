@@ -101,6 +101,16 @@ export function isOwnedProducerDocumentKey(key: unknown, producerId: string): ke
   return isOwnedKey(key, producerDocumentPrefix(producerId));
 }
 
+/** The R2 key prefix a producer's lot origin documents must live under. */
+export function consignmentDocumentPrefix(producerId: string): string {
+  return `consignment-docs/${producerId}/`;
+}
+
+/** Whether an R2 key is a lot document this producer may reference or read. */
+export function isOwnedConsignmentDocumentKey(key: unknown, producerId: string): key is string {
+  return isOwnedKey(key, consignmentDocumentPrefix(producerId));
+}
+
 function isOwnedKey(key: unknown, prefix: string): key is string {
   return (
     typeof key === 'string' && key.length <= 256 && key.startsWith(prefix) && !key.includes('..')

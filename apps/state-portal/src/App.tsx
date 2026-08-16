@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Stock = lazy(() => import('./pages/Stock'));
+const Traceability = lazy(() => import('./pages/Traceability'));
 const Reports = lazy(() => import('./pages/Reports'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ export default function App() {
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/stock" element={<Stock />} />
+                    <Route path="/tracabilite" element={<Traceability />} />
                     <Route path="/reports" element={<Reports />} />
                   </Routes>
                   </ErrorBoundary>

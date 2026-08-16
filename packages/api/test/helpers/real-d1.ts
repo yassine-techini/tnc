@@ -167,8 +167,21 @@ CREATE TABLE gold_consignments (
   audited_by TEXT,
   audited_at TEXT,
   rejection_reason TEXT,
+  origin_zone TEXT,
+  origin_verified INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE consignment_documents (
+  id TEXT PRIMARY KEY,
+  consignment_id TEXT NOT NULL,
+  doc_type TEXT NOT NULL CHECK (doc_type IN ('CERTIFICATE_OF_ORIGIN','MINING_DECLARATION','TRANSPORT_DOCUMENT','ASSAY_REPORT','OTHER')),
+  issuer TEXT,
+  reference TEXT,
+  issued_at TEXT,
+  r2_key TEXT NOT NULL UNIQUE,
+  uploaded_by TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE notifications (
   id TEXT PRIMARY KEY,
