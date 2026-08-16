@@ -28,6 +28,9 @@ export interface ConsignmentRow {
   origin_country: string | null;
   origin_gps_lat: number | null;
   origin_gps_lng: number | null;
+  origin_zone: string | null;
+  /** 1 when the position came from a device fix, 0 when declared. */
+  origin_verified: number;
   photos: string | null;
   estimated_value_xof: number | null;
   status: ConsignmentStatus;
@@ -86,6 +89,9 @@ export class ConsignmentService {
     goldType: GoldType;
     originCountry?: string;
     gps?: { lat: number; lng: number } | null;
+    /** True only when the position came from a device fix, never from typing. */
+    gpsVerified?: boolean;
+    originZone?: string | null;
     photos?: string[];
     estimatedValueXof?: number | null;
   }): Promise<ConsignmentRow> {
@@ -96,12 +102,17 @@ export class ConsignmentService {
         .prepare(
           `INSERT INTO gold_consignments
              (id, reference, producer_id, weight_declared_g, purity_declared, gold_type,
-              origin_country, origin_gps_lat, origin_gps_lng, photos, estimated_value_xof, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED')`
+              origin_country, origin_gps_lat, origin_gps_lng, origin_zone, origin_verified,
+              photos, estimated_value_xof, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED')`
         )
         .bind(
           id, reference, p.producerId, p.weightDeclaredG, p.purityDeclared, p.goldType,
           p.originCountry ?? 'BF', p.gps?.lat ?? null, p.gps?.lng ?? null,
+          p.originZone ?? null,
+          // Verified only when a position was actually measured. A declared zone,
+          // or coordinates typed by hand, are never recorded as evidence.
+          p.gps && p.gpsVerified ? 1 : 0,
           p.photos ? JSON.stringify(p.photos) : null, p.estimatedValueXof ?? null
         ),
       this.eventStmt(id, null, 'SUBMITTED', p.producerId, 'producer', 'Lot soumis par le producteur'),

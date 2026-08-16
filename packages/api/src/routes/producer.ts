@@ -163,6 +163,13 @@ const submitSchema = z.object({
   goldType: z.enum(['nuggets', 'powder', 'bar']),
   originCountry: z.string().length(2).optional(),
   gps: z.object({ lat: z.number(), lng: z.number() }).optional(),
+  /**
+   * Whether `gps` came from a device fix. A hand-typed position is a
+   * declaration, not evidence, and the two must not be conflated.
+   */
+  gpsVerified: z.boolean().optional(),
+  /** Free-text mining zone, used when no device position is available. */
+  originZone: z.string().max(150).optional(),
   photos: z.array(z.string().max(256)).max(20).optional(),
   estimatedValueXof: z.number().nonnegative().optional(),
 });
@@ -212,6 +219,8 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
     goldType: body.goldType,
     originCountry: body.originCountry,
     gps: body.gps ? { lat: body.gps.lat, lng: body.gps.lng } : null,
+    gpsVerified: body.gpsVerified,
+    originZone: body.originZone,
     photos: body.photos,
     estimatedValueXof: body.estimatedValueXof ?? null,
   });

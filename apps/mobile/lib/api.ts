@@ -580,6 +580,10 @@ class MobileApiClient {
     purity: number;
     goldType: 'nuggets' | 'powder' | 'bar';
     photos?: string[];
+    gps?: { lat: number; lng: number };
+    /** True only for a device fix — a typed zone goes in originZone. */
+    gpsVerified?: boolean;
+    originZone?: string;
   }) {
     return this.request<Consignment>('/api/v1/producer/consignments', {
       method: 'POST',

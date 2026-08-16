@@ -79,7 +79,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | Déclaration d'un lot par le producteur | ✅ | Web et mobile (appareil photo natif) |
 | Photos du lot | ✅ | Chiffrées, cloisonnées par producteur |
 | **Documents d'origine par lot** | ✅ | Certificat d'origine, déclaration minière, transport, essai — typés, avec émetteur et référence. Chiffrés *fail-closed*, espace de clés distinct des photos |
-| Géolocalisation de l'origine | ⚠️ | Stockée et distinguée : `origin_verified` sépare une **position relevée** d'une **zone déclarée**. Collecte mobile en attente de `expo-location` |
+| **Géolocalisation de l'origine** | ⚠️ | Capture mobile implémentée, avec repli en saisie manuelle. `origin_verified` sépare une **position relevée** d'une **zone déclarée**. Nécessite `pnpm install` (`expo-location` ajouté au manifeste) |
 | Machine à états (transitaire → transit → Dubaï → audit) | ✅ | Transitions gardées, piste d'audit immuable |
 | Rôles dédiés (`TRANSITAIRE`, `DUBAI_VALIDATOR`) | ✅ | |
 | **Paiement du producteur en tokens** | ✅ | À la validation d'audit, atomique. Part configurable |

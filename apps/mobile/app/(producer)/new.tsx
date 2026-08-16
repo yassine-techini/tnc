@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
+import { captureOrigin, formatPosition, type DevicePosition } from '../../lib/geolocation';
 
 const GOLD_TYPES = [
   { value: 'nuggets' as const, label: 'Pépites' },
@@ -36,6 +37,10 @@ export default function NewConsignmentScreen() {
   const [karat, setKarat] = useState('22');
   const [goldType, setGoldType] = useState<'nuggets' | 'powder' | 'bar'>('nuggets');
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
+  const [position, setPosition] = useState<DevicePosition | null>(null);
+  const [originZone, setOriginZone] = useState('');
+  const [locating, setLocating] = useState(false);
+  const [locationNote, setLocationNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +82,26 @@ export default function NewConsignmentScreen() {
     }
   }
 
+  async function locate() {
+    setLocating(true);
+    setLocationNote(null);
+    const outcome = await captureOrigin();
+    setLocating(false);
+
+    if (outcome.status === 'ok') {
+      setPosition(outcome.position);
+      return;
+    }
+    // Refusal and unavailability lead to the same place: declare the zone by
+    // hand. It is recorded as declared, never as a measured position.
+    setPosition(null);
+    setLocationNote(
+      outcome.status === 'denied'
+        ? "Position refusée. Indiquez la zone d'extraction ci-dessous — elle sera enregistrée comme déclarée."
+        : `${outcome.reason}. Indiquez la zone d'extraction ci-dessous.`
+    );
+  }
+
   async function submit() {
     setSubmitting(true);
     setError(null);
@@ -94,6 +119,11 @@ export default function NewConsignmentScreen() {
         purity: karatValue / 24,
         goldType,
         photos: keys.length ? keys : undefined,
+        // gpsVerified is true ONLY for a device fix. The typed zone travels
+        // separately and is stored as a declaration.
+        gps: position ? { lat: position.lat, lng: position.lng } : undefined,
+        gpsVerified: position ? true : undefined,
+        originZone: originZone.trim() || undefined,
       });
 
       router.back();
@@ -147,6 +177,40 @@ export default function NewConsignmentScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <Text style={[styles.label, { color: c.textSecondary }]}>Origine du lot</Text>
+      <TouchableOpacity
+        style={[styles.photoButton, { backgroundColor: c.surface, borderColor: c.border }]}
+        onPress={locate}
+        disabled={locating}
+      >
+        <Ionicons name="location-outline" size={20} color={c.gold} />
+        <Text style={{ color: c.text, marginLeft: 8 }}>
+          {locating ? 'Localisation…' : position ? 'Actualiser la position' : 'Relever la position'}
+        </Text>
+      </TouchableOpacity>
+
+      {position && (
+        <Text style={{ color: c.success, fontSize: 12, marginTop: 8 }}>
+          Position relevée : {formatPosition(position)}
+        </Text>
+      )}
+      {locationNote && (
+        <Text style={{ color: c.textTertiary, fontSize: 12, marginTop: 8, lineHeight: 17 }}>
+          {locationNote}
+        </Text>
+      )}
+
+      <TextInput
+        style={[
+          styles.input,
+          { backgroundColor: c.surface, borderColor: c.border, color: c.text, marginTop: 10 },
+        ]}
+        value={originZone}
+        onChangeText={setOriginZone}
+        placeholder="Zone d'extraction (site, commune)"
+        placeholderTextColor={c.textTertiary}
+      />
 
       <Text style={[styles.label, { color: c.textSecondary }]}>
         Photos du lot ({photos.length}/{MAX_PHOTOS})
