@@ -12,6 +12,11 @@ import { AttestationService } from '../services/attestation.service';
 import { verifyAttestationSignature } from '../lib/attestation-signing';
 import { ConfigService } from '../services/config.service';
 import { CHAINS } from '../lib/anchoring';
+import {
+  CountryConfigService,
+  enabledPaymentMethods,
+  isServiceable,
+} from '../services/country-config.service';
 
 const publicRoutes = new Hono<AppEnv>();
 
@@ -164,5 +169,50 @@ function full(a: AttestationLike) {
     signingKeyId: a.signing_key_id,
   };
 }
+
+/**
+ * Countries the platform is configured for.
+ *
+ * Public because the registration form needs it before anyone has an account:
+ * the dialling code, the accepted identity documents and the payment providers
+ * all depend on the country being chosen.
+ *
+ * `serviceable` is the flag that matters, and it is stricter than `enabled`: a
+ * country with no working payment adapter is listed but cannot be signed up
+ * for, because a holder who could open an account and then not put money in
+ * would have been misled by the list itself.
+ */
+publicRoutes.get('/countries', async (c) => {
+  const requestId = crypto.randomUUID();
+  const countries = await new CountryConfigService(c.env.DB).list();
+
+  return c.json({
+    success: true,
+    data: {
+      countries: countries.map((country) => ({
+        code: country.code,
+        name: country.name,
+        currency: country.currency,
+        currencySymbol: country.currencySymbol,
+        currencyDecimals: country.currencyDecimals,
+        phonePrefix: country.phonePrefix,
+        idDocumentTypes: country.idDocumentTypes,
+        locale: country.locale,
+        // Only providers that can actually take a payment. Listing the others
+        // as available is how a demo discovers the gap in front of a client.
+        paymentMethods: enabledPaymentMethods(country).map((m) => ({
+          id: m.id,
+          label: m.label,
+        })),
+        plannedPaymentMethods: country.paymentMethods
+          .filter((m) => !m.implemented)
+          .map((m) => ({ id: m.id, label: m.label })),
+        enabled: country.enabled,
+        serviceable: isServiceable(country),
+      })),
+    },
+    requestId,
+  });
+});
 
 export const publicVerificationRoutes = publicRoutes;

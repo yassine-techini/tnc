@@ -15,6 +15,8 @@ export interface CertificateData {
   equivalentGrams: number;
   /** Grams currently in a lease: owned by the holder, lent out, not in the wallet. */
   leasedBalance: number;
+  /** ISO country of the holder — decides the verification-code prefix. */
+  countryCode?: string | null;
   issuedAt: string;
 }
 
@@ -52,6 +54,7 @@ export interface VerificationResult {
 }
 
 import { ConfigService } from './config.service';
+import { CountryConfigService } from './country-config.service';
 import { renderPdf } from '../lib/pdf';
 import { buildCertificateDocument, totalOwnedGrams } from '../lib/certificate-document';
 
@@ -70,7 +73,7 @@ export class CertificateService {
   /**
    * Generate a unique 12-character verification code: BF-XXXX-XXXX
    */
-  private generateVerificationCode(): string {
+  private generateVerificationCode(prefix = 'BF'): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No ambiguous chars (0/O, 1/I)
     let code = '';
     const bytes = new Uint8Array(8);
@@ -78,7 +81,9 @@ export class CertificateService {
     for (let i = 0; i < 8; i++) {
       code += chars[bytes[i] % chars.length];
     }
-    return `BF-${code.slice(0, 4)}-${code.slice(4, 8)}`;
+    // The prefix comes from the holder's country: two countries sharing one
+    // would make verification codes ambiguous the day a second opens.
+    return `${prefix}-${code.slice(0, 4)}-${code.slice(4, 8)}`;
   }
 
   /**
@@ -93,7 +98,8 @@ export class CertificateService {
       .randomUUID()
       .slice(0, 8)
       .toUpperCase()}`;
-    const verificationCode = this.generateVerificationCode();
+    const country = await new CountryConfigService(this.db).forUser(data.countryCode);
+    const verificationCode = this.generateVerificationCode(country.certificatePrefix);
     const issuedAt = new Date().toISOString();
 
     const certData: CertificateData = {

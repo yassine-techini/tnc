@@ -191,4 +191,37 @@ describe('CertificateService (real D1)', () => {
   it('returns null for a certificate that has no PDF stored', async () => {
     expect(await svc.getCertificatePdf('CERT-does-not-exist')).toBeNull();
   });
+
+  it('prefixes the verification code with the holder country', async () => {
+    db.sqlite
+      .prepare(
+        `INSERT INTO country_config
+           (code, name, currency, currency_symbol, phone_prefix, certificate_prefix,
+            id_document_types, payment_methods, locale, timezone, enabled)
+         VALUES ('UG', 'Uganda', 'UGX', 'USh', '+256', 'UG', '[]', '[]', 'en-UG', 'Africa/Kampala', 0)`
+      )
+      .run();
+
+    const cert = await svc.issueCertificate({
+      ...holder,
+      tokenBalance: 10,
+      equivalentGrams: 10,
+      leasedBalance: 0,
+      countryCode: 'UG',
+    });
+
+    // Two countries sharing a prefix would make verification codes ambiguous.
+    expect(cert.verificationCode.startsWith('UG-')).toBe(true);
+  });
+
+  it('falls back to the default prefix for a holder with no country', async () => {
+    const cert = await svc.issueCertificate({
+      ...holder,
+      tokenBalance: 10,
+      equivalentGrams: 10,
+      leasedBalance: 0,
+      countryCode: null,
+    });
+    expect(cert.verificationCode.startsWith('BF-')).toBe(true);
+  });
 });

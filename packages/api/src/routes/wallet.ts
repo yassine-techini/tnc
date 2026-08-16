@@ -570,6 +570,7 @@ wallet.get('/certificate', async (c) => {
     tokenBalance: walletBalance,
     equivalentGrams: walletBalance,
     leasedBalance,
+    countryCode: user?.country || null,
   });
 
   return c.json({

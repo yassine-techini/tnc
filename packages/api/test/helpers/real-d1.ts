@@ -292,6 +292,22 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE country_config (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  currency_symbol TEXT NOT NULL,
+  currency_decimals INTEGER NOT NULL DEFAULT 0,
+  phone_prefix TEXT NOT NULL,
+  certificate_prefix TEXT NOT NULL,
+  id_document_types TEXT NOT NULL,
+  payment_methods TEXT NOT NULL,
+  locale TEXT NOT NULL DEFAULT 'fr-FR',
+  timezone TEXT NOT NULL DEFAULT 'Africa/Ouagadougou',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE certificates (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

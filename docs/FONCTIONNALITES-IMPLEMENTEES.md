@@ -133,6 +133,19 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 | Enregistrement des appareils | ✅ | Un jeton = une installation |
 | Fil de notifications in-app | ✅ | Réparé le 16/08 — n'avait **jamais écrit une ligne** |
 
+## 9 bis. Multi-pays
+
+| Fonctionnalité | Statut | Détail |
+|---|---|---|
+| **Configuration par pays** | ✅ | Table `country_config` : devise et symbole, décimales, indicatif, documents d'identité, moyens de paiement, préfixe de certificat, locale, fuseau. Endpoint public `/public/countries` pour le formulaire d'inscription |
+| Burkina Faso | ✅ | Seul pays **ouvert** aujourd'hui : XOF, +226, CNIB, Orange Money / Moov / virement |
+| UEMOA (CI, ML, SN) | ⚙️ | Déclarés et désactivés. Même devise et mêmes documents, donc une ligne chacun — mais partager une devise n'est pas détenir les agréments |
+| Ouganda | ⚙️ | Déclaré et désactivé : UGX/USh, +256, pièces ougandaises (National ID, passeport, permis, carte de réfugié). **MTN MoMo et Airtel Money sont déclarés non implémentés** — aucun adaptateur n'existe, et `serviceable` est faux tant que c'est le cas |
+
+> Un pays n'est *ouvert* que s'il a au moins un moyen de paiement réellement branché. Le contrôle est volontairement plus strict que le drapeau `enabled` : basculer la colonne à la main n'ouvre pas un pays qui ne peut pas être payé.
+
+---
+
 ## 10. Applications
 
 | Application | Statut | Détail |
