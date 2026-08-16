@@ -25,6 +25,16 @@ export interface ApiRequestEvent {
   country?: string;
   userAgent?: string;
   kycLevel?: string;
+  /**
+   * Taille du corps en octets, d'après `Content-Length`.
+   *
+   * `undefined` quand l'en-tête est absent — cas d'une réponse en flux. Écrit
+   * alors `0`, et le commentaire du point de données le dit : 0 signifie
+   * INCONNU, pas « zéro octet ». Sans cette précision une moyenne de tailles
+   * serait fausse vers le bas sans que personne s'en aperçoive.
+   */
+  requestSize?: number;
+  responseSize?: number;
 }
 
 export interface TransactionEvent {
@@ -177,10 +187,14 @@ export class AnalyticsService {
         doubles: [
           data.statusCode,                  // double1: status_code
           data.durationMs,                  // double2: latency_ms
-          0,                                // double3: request_size (placeholder)
-          0,                                // double4: response_size (placeholder)
+          // 0 = taille inconnue (en-tête absent), jamais « zéro octet ».
+          data.requestSize ?? 0,            // double3: request_size
+          data.responseSize ?? 0,           // double4: response_size
           isError,                          // double5: is_error
-          0,                                // double6: is_rate_limited
+          // Dérivé du statut : c'est le rate limiter lui-même qui répond 429.
+          // Écrit en dur à 0 jusqu'ici, ce qui faisait conclure à un tableau de
+          // bord qu'aucune requête n'était jamais limitée.
+          data.statusCode === 429 ? 1 : 0,  // double6: is_rate_limited
           getHourOfDay(),                   // double7: hour_of_day
         ],
         indexes: [routePattern],

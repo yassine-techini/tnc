@@ -1,127 +1,120 @@
-# Ce qui reste à implémenter — 16 août 2026
+# Ce qui reste à implémenter — 17 août 2026
 
-Audit d'état après la session de remédiation. Complète [AUDIT-2026-08-15.md](../AUDIT-2026-08-15.md)
-(défauts) : ce document-ci recense les **manques fonctionnels**, pas les bugs.
+Ce document recense les **manques fonctionnels**, pas les bugs. Il est réécrit après les
+phases 0 à 5 : la version précédente datait d'avant et aurait envoyé quelqu'un refaire du
+travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tient pas.
 
 ## État par application
 
 | Application | Surface | Verdict |
 |---|---|---|
-| `packages/api` | 13 modules de routes | Le plus mature — c'est l'inverse de la répartition habituelle |
-| `apps/admin` | 18 écrans | Complet |
-| `apps/web` | 12 pages + auth + landing | Complet |
-| `apps/mobile` | 4 onglets, KYC, sécurité, portefeuille | **Incomplet — voir 1 et 2** |
-| `apps/state-portal` | **4 écrans** (Login, Dashboard, Stock, Reports) | **Le plus pauvre — voir 3** |
-
-Le déséquilibre est net : le backend sait faire des choses que deux frontends sur quatre
-n'exposent pas.
+| `packages/api` | 13 modules de routes, 616 tests | Le plus mature |
+| `apps/admin` | 19 écrans | Complet |
+| `apps/web` | 13 pages + auth + vitrine | Complet |
+| `apps/mobile` | 4 onglets + producteur + location + répartition, 29 tests | Fonctionnellement complet ; **aucun test de composant** |
+| `apps/state-portal` | 5 écrans | Suffisant pour l'usage ; **aucun test d'écran** |
 
 ---
 
-## 1. Filière producteur absente du mobile 🔴
+## 1. Paiements hors zone franc 🔴
 
-`apps/web` a `ProducerConsignments` et `ProducerProfile`. `apps/mobile` n'a **aucun** écran
-producteur. Un orpailleur ou une coopérative doit donc passer par un navigateur pour déclarer
-un lot.
+**Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
+pièces d'identité — mais **MTN MoMo et Airtel Money sont déclarés non implémentés**, et
+`isServiceable()` marque le pays non ouvrable tant que c'est le cas.
 
-C'est le manque le plus contradictoire du produit : la consignation est le cas d'usage
-**terrain** par excellence — photos du lot, GPS de l'origine, connectivité faible, souvent hors
-d'un bureau. C'est précisément là que le mobile a un avantage sur le web, et c'est le seul
-endroit où il n'existe pas.
+Ce qu'il faut réellement : un adaptateur par prestataire (initiation, webhook de confirmation,
+réconciliation), et la conversion de devise — le flux de prix est en USD et converti, donc un
+pays en UGX a besoin de son propre taux, pas d'un FCFA relabellisé.
 
-À construire : dépôt de dossier KYB, soumission de lot avec appareil photo natif et GPS, suivi
-d'état, et le crédit en tokens à la validation d'audit.
+C'est autant une décision produit qu'un travail technique : ouvrir un pays engage des
+agréments, pas seulement du code.
 
-## 2. Écrans manquants sur mobile 🟠
+## 2. Tests d'interface 🟠
 
-Présents sur le web, absents du mobile : historique des **transactions**, **analytics**,
-vérification de **certificat**, vérification de la **réserve**. Le mobile s'arrête à quatre
-onglets (accueil, marché, portefeuille, profil).
+Deux applications n'ont aucun test d'écran :
 
-L'historique des transactions est le plus gênant : c'est là qu'un producteur verrait sa ligne
-`CONSIGNMENT`.
+- `apps/state-portal` — l'**API** qui l'alimente est couverte (17 tests : lecture seule,
+  cloisonnement, confidentialité), c'est-à-dire là où se jouent les propriétés de sécurité.
+  Les 5 écrans eux-mêmes ne le sont pas.
+- `apps/mobile` — 29 tests sur la logique pure (formatage, règles d'épinglage, garde de
+  publication). Les composants et le bout-en-bout sur appareil (Detox ou Maestro) manquent.
 
-## 3. Portail État squelettique 🟠
+Prérequis : installer `jsdom` et `@testing-library/*`, donc une modification du lockfile.
 
-Quatre écrans, dont un login. Deux manques concrets :
+## 3. Alertes opérationnelles sans destinataire 🟠
 
-- **Aucune traçabilité des lots**, alors que le RBAC accorde déjà `consignments: ['view','export']`
-  au rôle `STATE_OPERATOR`. La permission existe, l'écran non — l'État peut voir le stock agrégé
-  mais pas d'où il vient.
-- **Aucun lien vers `/reserve`**, la page de vérification publique des attestations. C'est
-  pourtant l'audience naturelle de cette page : un ministère qui veut vérifier la couverture.
+`durable-objects/analytics-hub.ts` déclenche des alertes, les diffuse en WebSocket et les
+journalise. Aucune n'est envoyée par email, SMS ou webhook — donc **personne n'est prévenu
+quand aucun tableau de bord n'est ouvert**.
 
-## 4. Certificat en HTML, export PoR en JSON 🟡
+Le blocage n'est pas la plomberie : `NotificationService` existe. C'est qu'**aucun destinataire
+d'alerte d'exploitation n'est configuré**. Câbler l'envoi sans savoir vers qui produirait une
+fonctionnalité morte de plus, exactement le motif que cet audit a déjà trouvé trois fois (push
+mort, notifications in-app mortes, crons jamais déclarés).
 
-`certificate.service.ts:111` sert du `text/html`. Un certificat de propriété d'or destiné à être
-imprimé, archivé ou présenté à un tiers devrait être un PDF signé. Même remarque pour l'export
-Proof of Reserve, aujourd'hui du JSON.
+À décider avant de coder : qui reçoit, par quel canal, et à partir de quelle sévérité.
 
-## 5. Pins SSL de production vides 🟡
+## 4. Recouvrement des frais de garde 🟡
 
-`apps/mobile/lib/ssl-pinning.ts` : le tableau de `bf-api.tnc.trading` ne contient que des
-commentaires. Staging et dev ont de vrais pins Cloudflare. **Bloquant avant tout build mobile
-public** — sans pins, le pinning ne protège rien.
+Un arriéré n'empêche ni de vendre ni de retirer. Aucune relance, aucune pénalité, aucun
+blocage ([ADR 005](adr/005-frais-de-garde-impayes.md)). Le back-office sait désormais qui doit
+quoi (`/admin/storage-fees/outstanding`), ce qui est le minimum ; la suite est une décision à
+prendre avec le juridique, pas dans un job.
 
-## 6. Ancrage on-chain des attestations 🟡
+## 5. Volume de l'export État 🟡
 
-Phase 1 de l'[ADR 002](adr/002-smart-contracts.md) livrée sauf l'ancrage lui-même, en attente de
-la décision de chaîne. `recordAnchor()` est prêt et idempotent, l'endpoint public expose déjà les
-champs. Il ne manque que l'adaptateur.
+`/state/reports/data/export` est plafonné à 100 000 lignes et désormais tracé
+(`action=STATE_EXPORT`). Tracer rend l'exfiltration visible ; **borner** est un autre débat, et
+il est maintenant instruit : on sait qui exporte combien.
 
-## 7. Doublon probable de landing page 🔵
+## 6. Doublon de vitrine 🔵
 
-`apps/landing` (4 fichiers) et `apps/web/src/pages/landing/` coexistent. À trancher : deux
-vitrines à maintenir, ou une seule.
+`apps/landing` et `apps/web/src/pages/landing/` coexistent. À trancher : deux vitrines à
+maintenir, ou une seule.
 
-## 8. Restes ponctuels 🔵
+## 7. Restes ponctuels 🔵
 
-- `durable-objects/analytics-hub.ts:563` — TODO : file de notification jamais câblée.
-- `services/analytics.service.ts:180-181` — tailles de requête/réponse codées à `0`.
+- `services/analytics.service.ts` — les tailles de requête et de réponse valent `0` quand
+  `Content-Length` est absent (réponse en flux). Documenté comme « inconnu », pas comme
+  « zéro octet ».
+- Le portail État ne voit pas ses propres traces d'export. Défendable — on ne laisse pas un
+  audité tenir son journal — mais c'est une décision de gouvernance, pas un manque technique.
+
+---
+
+## Ce qui a été livré depuis la version précédente de ce document
+
+Pour éviter qu'on les reprenne : filière producteur sur mobile (dépôt KYB, lot, photos, GPS,
+suivi), écrans de transactions et de vérification, traçabilité et lien `/reserve` au portail
+État, certificat en **PDF**, export Proof of Reserve en PDF, pins SSL de production déclarés une
+seule fois avec garde de publication, ancrage on-chain des attestations, location d'or complète,
+répartition d'un lot, frais de garde, multi-pays.
 
 ---
 
 ## Tests
 
-| Périmètre | État |
-|---|---|
-| `packages/api` | 387 tests — solide |
-| `packages/shared` | 285 tests — solide |
-| `apps/web` / `apps/admin` | 2 fichiers chacun + E2E Playwright (auth, kyc, marketplace, profile) |
-| `apps/state-portal` | **0 test** |
-| `apps/mobile` | **0 test**, et aucun harnais E2E (ni Detox ni Maestro) |
-| `packages/ui` | **0 test** |
+| Paquet | Tests | Couvre |
+|---|---|---|
+| `packages/api` | 616 | Services métier, atomicité, invariants, routes privilégiées |
+| `packages/shared` | 310 | Validateurs, calculs, règles de location et de répartition |
+| `apps/web` | 34 | Hooks et vérification d'attestation |
+| `apps/mobile` | 29 | Formatage, épinglage SSL, garde de publication |
+| `apps/state-portal` | 0 | — |
 
-Les parcours ajoutés récemment — consignation, KYB, paiement producteur — **n'ont pas de test
-E2E**. Ils sont couverts au niveau service, pas au niveau parcours utilisateur.
-
-## Dette technique
-
-| # | Sujet |
-|---|---|
-| D1 | Dérive de version Biome : le dépôt n'est pas *format-clean* sous la version installée, l'étape « Format check » de la CI échoue. À traiter en épinglant la version puis en reformatant dans un commit dédié |
-| D2 | `packages/api/tsconfig.json` déclare `"strict": true` puis le neutralise avec `"strictNullChecks": false`. Dans un code financier, c'est la vérification la plus utile qui est désactivée |
-| D3 | `packages/api` n'a **aucun script `lint`** — il n'est jamais passé par `turbo lint` |
-| D4 | `pnpm audit` non bloquant. Recommandation : bloquant sur les dépendances de production uniquement |
-
-## Configuration — rend des fonctionnalités inertes
-
-Ce n'est pas du développement, mais sans ça le code livré ne sert à rien.
-
-| Clé | Sans elle |
-|---|---|
-| `admin_ip_allowlist`, `state_ip_allowlist` | **Aucun rempart réseau** devant les portails (Access n'est pas utilisé) |
-| `fcm_service_account` | Push inerte |
-| `ATTESTATION_SIGNING_JWK` + cron `30 0 * * *` | Aucune attestation publiée |
-| Clés providers (paiement, KYC, prix) | Chaque intégration reste désactivée |
-| `SENTRY_DSN` + canal d'alerte | Aucune remontée d'incident |
+26 tests d'`auth.service.test.ts` ne s'exécutent pas : le binding wasm d'argon2 fait tomber le
+worker de test sous Node 24. Problème d'environnement de test, pas de code de production.
 
 ---
 
-## Ordre proposé
+## Configuration — rend des fonctionnalités inertes
 
-1. **Configuration** — le moins de travail pour le plus d'effet : elle active des fonctionnalités déjà écrites et testées.
-2. **Filière producteur sur mobile** (1 et 2) — le seul gros morceau produit restant, et le cas d'usage qui justifie le projet.
-3. **Portail État** (3) — après avoir des consignations réelles à montrer, comme convenu.
-4. **Pins SSL** (5) — avant tout build mobile public, donc juste avant la mise en magasin.
-5. **Dette technique** (D1–D4) et **certificats PDF** (4) — quand le produit est stabilisé.
+Inchangé : les mentions ⚙️ de [FONCTIONNALITES-IMPLEMENTEES.md](FONCTIONNALITES-IMPLEMENTEES.md)
+ne sont pas du développement restant. Pour savoir où en est un déploiement donné :
+
+```bash
+node scripts/readiness.mjs --url <api> --token <jwt admin>
+```
+
+Le rapport couvre désormais l'ancrage, les trois jobs quotidiens, les pays ouvrables et la
+fraîcheur du prix — il avait décroché du produit et ne le fait plus.

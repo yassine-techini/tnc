@@ -560,7 +560,16 @@ export class AnalyticsHub extends DurableObject {
         // Broadcast new alert
         this.broadcast({ type: 'alert', data: alert });
 
-        // TODO: Queue notification (email/SMS/webhook)
+        // Diffusée aux tableaux de bord connectés et journalisée — mais AUCUN
+        // envoi email/SMS/webhook. Personne n'est donc prévenu quand aucun
+        // tableau de bord n'est ouvert.
+        //
+        // Le blocage n'est pas la plomberie : NotificationService existe. C'est
+        // qu'aucun DESTINATAIRE d'alerte d'exploitation n'est configuré. Câbler
+        // l'envoi sans savoir vers qui produirait une fonctionnalité morte de
+        // plus — le motif exact déjà trouvé trois fois dans ce dépôt.
+        // À décider avant de coder : qui reçoit, par quel canal, à partir de
+        // quelle sévérité. Suivi dans docs/RESTE-A-FAIRE.md § 3.
         console.log(`[Alert] ${rule.severity.toUpperCase()}: ${alert.message}`);
       } else if (!triggered && this.activeAlerts.has(rule.id)) {
         // Resolve alert

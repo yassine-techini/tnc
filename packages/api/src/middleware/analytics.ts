@@ -46,6 +46,17 @@ export const analyticsMiddleware = async (c: Context<AppEnv>, next: Next) => {
     }
   }
 
+  // Tailles d'après Content-Length. Absent sur une réponse en flux : on
+  // n'invente rien et le point de données porte 0 = inconnu. Lire le corps pour
+  // le mesurer coûterait un tampon sur chaque requête, y compris les exports.
+  const parseSize = (value: string | null | undefined): number | undefined => {
+    if (!value) return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const requestSize = parseSize(c.req.header('Content-Length'));
+  const responseSize = parseSize(c.res.headers.get('Content-Length'));
+
   // Track the request (fire-and-forget)
   try {
     const analytics = new AnalyticsService(c.env.ANALYTICS, c.env.ENVIRONMENT || 'development');
@@ -61,6 +72,8 @@ export const analyticsMiddleware = async (c: Context<AppEnv>, next: Next) => {
       country,
       userAgent,
       kycLevel,
+      requestSize,
+      responseSize,
     }).catch((err) => {
       console.error('[Analytics Middleware] Failed to track request:', err);
     });
