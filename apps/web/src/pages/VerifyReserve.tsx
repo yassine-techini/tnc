@@ -11,8 +11,12 @@ interface ReservePayload {
     totalAllocatedG: string;
     tokensIssuedG: string;
     freeStockG: string;
+    vaultedG: string;
+    onLoanG: string;
     invariantHolds: boolean;
+    fullyVaulted: boolean;
   };
+  activeLoans: Array<{ counterparty: string; weightG: string; dueAt: string | null }>;
   lotsAuditedSincePrevious: Array<{
     reference: string;
     refinedWeightG: string;
@@ -152,6 +156,7 @@ function AttestationDetail({ digest, publicJwk }: { digest: string; publicJwk: J
               ? `${record.anchorChain} · ${record.anchorTxHash}`
               : 'Pas encore ancrée — la chaîne de hachage reste vérifiable'
           }
+          href={record.anchorUrl}
         />
       </div>
 
@@ -165,13 +170,47 @@ function AttestationDetail({ digest, publicJwk }: { digest: string; publicJwk: J
               <Row label="Or alloué" value={`${payload.reserve.totalAllocatedG} g`} />
               <Row label="Tokens émis" value={`${payload.reserve.tokensIssuedG} g`} />
               <Row label="Stock libre" value={`${payload.reserve.freeStockG} g`} />
+              <Row label="Dont en coffre" value={`${payload.reserve.vaultedG} g`} />
+              <Row
+                label="Dont prêté"
+                value={`${payload.reserve.onLoanG} g`}
+                alert={payload.reserve.onLoanG !== '0.000'}
+              />
               <Row
                 label="Tokens émis ≤ or alloué"
                 value={payload.reserve.invariantHolds ? 'Oui' : 'NON'}
                 alert={!payload.reserve.invariantHolds}
               />
+              <Row
+                label="Tokens émis ≤ or en coffre"
+                value={payload.reserve.fullyVaulted ? 'Oui' : 'Non'}
+                alert={!payload.reserve.fullyVaulted}
+              />
             </dl>
+            {!payload.reserve.fullyVaulted && (
+              <p className="text-xs text-amber-400 bg-amber-500/10 rounded-lg p-3">
+                Une partie de la réserve est prêtée à une contrepartie. L'or reste dû à la
+                plateforme, mais il n'est pas physiquement présent&nbsp;: la couverture dépend du
+                remboursement. Les contreparties sont listées ci-dessous.
+              </p>
+            )}
           </div>
+
+          {payload.activeLoans.length > 0 && (
+            <div className="space-y-2">
+              <h2 className="text-xs uppercase tracking-wider text-slate-500">Or prêté</h2>
+              <ul className="space-y-1 text-sm">
+                {payload.activeLoans.map((l) => (
+                  <li key={l.counterparty} className="flex justify-between gap-3 text-slate-300">
+                    <span>{l.counterparty}</span>
+                    <span className="text-slate-400">
+                      {l.weightG} g{l.dueAt ? ` · échéance ${l.dueAt}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {payload.lotsAuditedSincePrevious.length > 0 && (
             <div className="space-y-2">
@@ -214,15 +253,38 @@ function AttestationDetail({ digest, publicJwk }: { digest: string; publicJwk: J
   );
 }
 
-function Check({ ok, label, detail }: { ok: boolean | null | undefined; label: string; detail: string }) {
+function Check({
+  ok,
+  label,
+  detail,
+  href,
+}: {
+  ok: boolean | null | undefined;
+  label: string;
+  detail: string;
+  href?: string | null;
+}) {
   const icon = ok === true ? '✓' : ok === false ? '✕' : '•';
   const color = ok === true ? 'text-emerald-400' : ok === false ? 'text-red-400' : 'text-slate-500';
   return (
     <div className="flex gap-3 items-start">
       <span className={`${color} font-bold`}>{icon}</span>
-      <div>
+      <div className="min-w-0">
         <div className={`text-sm ${ok === false ? 'text-red-400' : 'text-slate-200'}`}>{label}</div>
-        <div className="text-xs text-slate-500">{detail}</div>
+        {href ? (
+          // The explorer shows the digest in the transaction's calldata, so the
+          // anchor is checkable without trusting this page.
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-gold-400 hover:underline break-all"
+          >
+            {detail}
+          </a>
+        ) : (
+          <div className="text-xs text-slate-500 break-all">{detail}</div>
+        )}
       </div>
     </div>
   );

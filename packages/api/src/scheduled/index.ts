@@ -10,6 +10,7 @@ import { cleanupExpiredSessions } from './jobs/session-cleanup';
 import { cleanupExpiredQuotes } from './jobs/quote-cleanup';
 import { generateMonthlyReport } from './jobs/monthly-report';
 import { publishReserveAttestation } from './jobs/reserve-attestation';
+import { anchorLatestAttestation } from './jobs/anchor-attestation';
 // NOTE: price alerts are delivered inline by refreshGoldPrice()
 // (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
 // The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
@@ -51,6 +52,12 @@ export async function handleScheduled(
       // Reserve attestation - 00:30 UTC, after reconciliation has settled
       case '30 0 * * *':
         await publishReserveAttestation(env, ctx);
+        break;
+
+      // Anchor the latest attestation - 01:00 UTC, after it has been published.
+      // Separate on purpose: an attestation verifies without an anchor.
+      case '0 1 * * *':
+        await anchorLatestAttestation(env, ctx);
         break;
 
       // Session cleanup - 2 AM UTC

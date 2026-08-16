@@ -99,6 +99,7 @@ CREATE TABLE gold_stock (
   id TEXT PRIMARY KEY DEFAULT 'main',
   total_allocated REAL NOT NULL DEFAULT 0,
   tokens_issued REAL NOT NULL DEFAULT 0,
+  gold_on_loan REAL NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (tokens_issued <= total_allocated)
 );
@@ -187,6 +188,18 @@ CREATE TABLE push_tokens (
   platform TEXT NOT NULL CHECK (platform IN ('ios','android','web')),
   device_id TEXT,
   active INTEGER DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE gold_loans (
+  id TEXT PRIMARY KEY,
+  counterparty TEXT NOT NULL,
+  weight_g REAL NOT NULL CHECK (weight_g > 0),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  due_at TEXT,
+  returned_at TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','RETURNED','DEFAULTED')),
+  reference TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -91,9 +91,10 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 |---|---|---|
 | Rapport Proof of Reserve | ✅ | Statut dérivé de la couverture réelle |
 | Export du rapport | ⚠️ | **JSON**, pas de PDF |
-| **Attestations signées et chaînées** | ⚙️ | Inertes sans `ATTESTATION_SIGNING_JWK` et sans le cron `30 0 * * *` |
+| **Attestations signées et chaînées** | ⚙️ | Pipeline vérifié de bout en bout avec une vraie clé ES256. Inertes sans `ATTESTATION_SIGNING_JWK` et sans le cron `30 0 * * *` |
+| **Divulgation or en coffre / or prêté** | ✅ | La location étant financée par le prêt de l'or, l'attestation distingue `vaultedG` de `onLoanG`, expose `fullyVaulted` et **nomme les contreparties** |
 | Vérification publique indépendante | ✅ | Page `/reserve` : SHA-256 et signature ECDSA recalculés **dans le navigateur** |
-| Ancrage sur chaîne publique | 🚫 | En attente du choix de chaîne ([ADR 002](adr/002-smart-contracts.md)) |
+| **Ancrage sur chaîne publique** | ⚙️ | Implémenté ([ADR 003](adr/003-ancrage-attestations.md)) : empreinte en calldata, sans smart contract. Testnet par défaut, mainnet sur opt-in explicite. Inerte sans `ANCHOR_RPC_URL` / `ANCHOR_PRIVATE_KEY` |
 
 ## 7. Administration (back-office)
 
@@ -152,6 +153,12 @@ de signature, et l'ancrage sur chaîne publique n'est pas fait.
 **« Blockchain / smart contracts »** — le token est **comptable en base**, pas on-chain. C'est un
 choix documenté ([ADR 002](adr/002-smart-contracts.md)), et la phase 1 livrée apporte
 l'auditabilité sans registre on-chain. Si le deck promet un token transférable, l'écart est réel.
+
+**« Preuve de réserve » face au produit de location** — le rendement étant financé par le **prêt
+de l'or**, une partie de la réserve peut être détenue et absente. L'attestation le dit désormais
+explicitement (`vaultedG`, `onLoanG`, `fullyVaulted`, contreparties nommées), et la page `/reserve`
+affiche un avertissement dès qu'une partie est prêtée. Un deck qui promettrait « or intégralement
+détenu en coffre » entrerait en contradiction directe avec ce que la preuve publie.
 
 Plus généralement : les mentions ⚙️ ne sont pas du développement restant, mais de la
 configuration. C'est le meilleur rapport effort/effet du projet — et tant qu'elle n'est pas faite,

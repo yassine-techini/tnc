@@ -48,7 +48,12 @@ describe('Reserve attestations (real D1)', () => {
       totalAllocatedG: '10000.000',
       tokensIssuedG: '175.500',
       freeStockG: '9824.500',
+      // Since 0025 the payload also discloses how much of the reserve is
+      // physically present, because the lease product lends gold out.
+      vaultedG: '10000.000',
+      onLoanG: '0.000',
       invariantHolds: true,
+      fullyVaulted: true,
     });
     // The digest is the hash of exactly those bytes.
     expect(await sha256Hex(r.attestation.payload)).toBe(r.attestation.digest);

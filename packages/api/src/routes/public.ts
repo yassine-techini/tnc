@@ -11,6 +11,7 @@ import type { AppEnv } from '../types/env';
 import { AttestationService } from '../services/attestation.service';
 import { verifyAttestationSignature } from '../lib/attestation-signing';
 import { ConfigService } from '../services/config.service';
+import { CHAINS } from '../lib/anchoring';
 
 const publicRoutes = new Hono<AppEnv>();
 
@@ -141,8 +142,17 @@ function summarize(a: AttestationLike) {
     anchorChain: a.anchor_chain,
     anchorTxHash: a.anchor_tx_hash,
     anchoredAt: a.anchored_at,
+    // Public explorer link, so a verifier can read the digest straight from the
+    // transaction's calldata without trusting this API.
+    anchorUrl: anchorUrl(a.anchor_chain, a.anchor_tx_hash),
     createdAt: a.created_at,
   };
+}
+
+function anchorUrl(chain: string | null, txHash: string | null): string | null {
+  if (!chain || !txHash) return null;
+  const spec = CHAINS[chain];
+  return spec ? `${spec.explorer}${txHash}` : null;
 }
 
 function full(a: AttestationLike) {

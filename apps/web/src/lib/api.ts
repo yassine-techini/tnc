@@ -928,6 +928,7 @@ export interface ReserveAttestation {
   anchorChain: string | null;
   anchorTxHash: string | null;
   anchoredAt: string | null;
+  anchorUrl: string | null;
   createdAt: string;
   verification?: {
     digestMatches: boolean;

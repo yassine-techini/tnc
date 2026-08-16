@@ -44,6 +44,16 @@ export interface Env {
    * Absent means no attestation is produced at all (fail-closed).
    */
   ATTESTATION_SIGNING_JWK?: string;
+  /**
+   * On-chain anchoring (ADR 003). ANCHOR_PRIVATE_KEY is a secp256k1 wallet key
+   * holding only enough to pay fees — deliberately NOT the attestation signing
+   * key: mixing them would let a hot wallet key forge the reserve itself.
+   */
+  ANCHOR_CHAIN?: string;
+  ANCHOR_RPC_URL?: string;
+  ANCHOR_PRIVATE_KEY?: string;
+  /** Must be exactly 'true' to allow anchoring on a mainnet. */
+  ANCHOR_ALLOW_MAINNET?: string;
   SETUP_ADMIN_PASSWORD?: string;
   SETUP_STATE_PASSWORD?: string;
   SETUP_DEMO_PASSWORD?: string;

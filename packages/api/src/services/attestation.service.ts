@@ -45,6 +45,7 @@ export type CreateResult =
 interface StockRow {
   total_allocated: number;
   tokens_issued: number;
+  gold_on_loan: number | null;
 }
 
 interface AuditedLot {
@@ -93,7 +94,7 @@ export class AttestationService {
    */
   async buildPayload(previousDigest: string | null, generatedAt: string): Promise<CanonicalValue | null> {
     const stock = await this.db
-      .prepare('SELECT total_allocated, tokens_issued FROM gold_stock WHERE id = ?')
+      .prepare('SELECT total_allocated, tokens_issued, gold_on_loan FROM gold_stock WHERE id = ?')
       .bind(GOLD_STOCK_ID)
       .first<StockRow>();
     if (!stock) return null;
@@ -121,6 +122,18 @@ export class AttestationService {
       .all<AuditedLot>();
 
     const free = stock.total_allocated - stock.tokens_issued;
+    const onLoan = stock.gold_on_loan ?? 0;
+    const vaulted = stock.total_allocated - onLoan;
+
+    // Counterparties currently holding lent gold. Disclosed by name and weight:
+    // an attestation that reported full coverage while part of the reserve sat
+    // with a borrower would be materially incomplete.
+    const loans = await this.db
+      .prepare(
+        `SELECT counterparty, weight_g, due_at FROM gold_loans
+         WHERE status = 'ACTIVE' ORDER BY started_at ASC, counterparty ASC`
+      )
+      .all<{ counterparty: string; weight_g: number; due_at: string | null }>();
 
     return {
       version: ATTESTATION_VERSION,
@@ -130,10 +143,23 @@ export class AttestationService {
         totalAllocatedG: grams(stock.total_allocated),
         tokensIssuedG: grams(stock.tokens_issued),
         freeStockG: grams(free),
+        // The split that tells a reader what is actually THERE. Lent gold is
+        // owned but absent, and depends on a counterparty returning it.
+        vaultedG: grams(vaulted),
+        onLoanG: grams(onLoan),
         // The invariant this platform rests on, stated explicitly so a reader
         // does not have to trust our arithmetic.
         invariantHolds: stock.tokens_issued <= stock.total_allocated,
+        // Stronger statement: claims covered by gold physically in the vault,
+        // with no counterparty risk in between. FALSE is not necessarily a
+        // fault — it is the lease product working — but it must be visible.
+        fullyVaulted: stock.tokens_issued <= vaulted,
       },
+      activeLoans: (loans.results || []).map((l) => ({
+        counterparty: l.counterparty,
+        weightG: grams(l.weight_g),
+        dueAt: l.due_at,
+      })),
       lotsAuditedSincePrevious: (lots.results || []).map((l) => ({
         reference: l.reference,
         refinedWeightG: grams(l.refined_weight_g),
