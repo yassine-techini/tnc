@@ -152,7 +152,7 @@ planifiés, 4 Durable Objects, 4 applications front, 706 tests automatisés (387
 |---|---|---|
 | Web (PWA) | ✅ | 12 pages + authentification + vitrine |
 | Back-office | ✅ | 18 écrans |
-| Mobile (iOS/Android) | ⚠️ | Complet côté investisseur et producteur ; **aucun test**, pins SSL de production vides |
+| Mobile (iOS/Android) | ⚠️ | Complet côté investisseur, producteur et location. **29 tests** sur la logique pure (formatage, règles d'épinglage). Pins SSL de production **déclarés une seule fois** dans `expo.extra.sslPinning`, vérifiés avant chaque build par `pnpm check:pins`. Reste : tests de composants et bout-en-bout sur appareil (Detox/Maestro) |
 | Portail État | ⚠️ | 4 écrans seulement |
 
 ---

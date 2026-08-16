@@ -142,12 +142,17 @@ import com.facebook.react.modules.network.OkHttpClientProvider;`
  * Main plugin function
  */
 function withSSLPinning(config, props = {}) {
-  const domains = props.domains || {};
+  // `expo.extra.sslPinning.domains` is the single declaration: the JS runtime
+  // (lib/ssl-pinning.ts) reads the same object. They used to be declared twice
+  // and had already drifted — the production host was pinned natively and left
+  // unpinned in JS. Props still win, so a build can override without editing
+  // the shared config.
+  const domains = props.domains || config.extra?.sslPinning?.domains || {};
 
   if (Object.keys(domains).length === 0) {
     console.warn(
       '[withSSLPinning] No domains configured for SSL pinning. ' +
-        'Add domains in app.json plugins configuration.'
+        'Set expo.extra.sslPinning.domains in app.json.'
     );
     return config;
   }
