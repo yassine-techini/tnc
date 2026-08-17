@@ -336,10 +336,23 @@ Un retrait client ne peut donc être ni approuvé ni rejeté depuis le back-offi
 
 ### M. Valider un dossier KYC depuis l'écran de revue échoue 🔴
 
-Trois colonnes inexistantes — `verification_status`, `verification_job_id`,
-`verification_result` — sont utilisées dans **douze instructions SQL vivantes**
-(`admin.ts`, `kyc.service.ts`, `webhooks.ts`). La table `kyc_documents` porte `status`,
-`provider_job_id` et `provider_result`.
+**Quatre** colonnes inexistantes — `verification_status`, `verification_job_id`,
+`verification_result` et `verified_at` — sont utilisées dans **douze instructions SQL
+vivantes** (`admin.ts`, `kyc.service.ts`, `webhooks.ts`).
+
+La table `kyc_documents` porte en réalité :
+
+| Colonne utilisée par le code | Colonne réelle |
+|---|---|
+| `verification_status` | `status` |
+| `verification_job_id` | `provider_job_id` |
+| `verification_result` | `provider_result` |
+| `verified_at` | `reviewed_at` |
+
+`verified_at` existe bien dans le schéma, mais sur `recovery_codes` — une table voisine
+dans le même fichier de migration. Le premier passage de cet audit l'avait classée
+« présente » pour cette raison ; la relecture l'a corrigé. Elle apparaît dans les mêmes
+`UPDATE` que `verification_status`, donc le correctif porte sur quatre noms, pas trois.
 
 Les deux plus graves : `POST /admin/kyc/:id/review` (validation et rejet) et
 `GET /admin/kyc/:id` (détail d'un dossier). `KycReview.tsx` appelle les deux.
