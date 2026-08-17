@@ -9,10 +9,10 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 | Application | Surface | Verdict |
 |---|---|---|
 | `packages/api` | 13 modules de routes, 616 tests | Le plus mature |
-| `apps/admin` | 19 écrans | Complet |
-| `apps/web` | 13 pages + auth + vitrine | Complet |
-| `apps/mobile` | 4 onglets + producteur + location + répartition, 29 tests | Fonctionnellement complet ; **aucun test de composant** |
-| `apps/state-portal` | 5 écrans | Suffisant pour l'usage ; **aucun test d'écran** |
+| `apps/admin` | 19 écrans, 53 tests | Complet |
+| `apps/web` | 13 pages + auth + vitrine, 34 tests | Complet |
+| `apps/mobile` | 4 onglets + producteur + location + répartition, 50 tests | Complet ; bout-en-bout sur appareil manquant |
+| `apps/state-portal` | 5 écrans, 33 tests | Complet |
 
 ---
 
@@ -29,17 +29,24 @@ pays en UGX a besoin de son propre taux, pas d'un FCFA relabellisé.
 C'est autant une décision produit qu'un travail technique : ouvrir un pays engage des
 agréments, pas seulement du code.
 
-## 2. Tests d'interface 🟠
+## 2. Tests d'interface — bout-en-bout mobile 🟠
 
-Deux applications n'ont aucun test d'écran :
+Les trois applications web sont couvertes en jsdom, rendu de composants compris ;
+`apps/mobile` l'est sur sa logique. Le partage est décidé dans
+[ADR 007](./adr/007-tests-d-interface.md) : rendre du React Native sous vitest
+demanderait d'ajouter **jest** à côté, pour une seule application, afin de vérifier
+qu'un composant affiche une valeur déjà vérifiée ailleurs.
 
-- `apps/state-portal` — l'**API** qui l'alimente est couverte (17 tests : lecture seule,
-  cloisonnement, confidentialité), c'est-à-dire là où se jouent les propriétés de sécurité.
-  Les 5 écrans eux-mêmes ne le sont pas.
-- `apps/mobile` — 29 tests sur la logique pure (formatage, règles d'épinglage, garde de
-  publication). Les composants et le bout-en-bout sur appareil (Detox ou Maestro) manquent.
+| Application | Tests | Portée |
+|---|---|---|
+| `apps/web` | 34 | hook de formulaire, vérification d'attestation |
+| `apps/admin` | 53 | client API, magasin de session |
+| `apps/state-portal` | 33 | client API, session, écrans Stock / Tableau de bord / Connexion |
+| `apps/mobile` | 50 | session et jetons, validation de saisie, épinglage SSL, formatage |
 
-Prérequis : installer `jsdom` et `@testing-library/*`, donc une modification du lockfile.
+**Ce qui reste** : le bout-en-bout mobile sur appareil ou émulateur (Detox ou
+Maestro). C'est la seule chose qu'un rendu simulé n'apporterait pas — et elle ne
+se ferme pas en simulant un appareil de plus.
 
 ## 3. Contrats de réponse — catégorie fermée ✅
 
@@ -109,12 +116,27 @@ prendre avec le juridique, pas dans un job.
 (`action=STATE_EXPORT`). Tracer rend l'exfiltration visible ; **borner** est un autre débat, et
 il est maintenant instruit : on sait qui exporte combien.
 
-## 7. Doublon de vitrine 🔵
+## 7. QR du certificat mobile rendu par un tiers 🟡
+
+`apps/mobile/app/(wallet)/certificate.tsx` fait dessiner le QR du certificat par
+`api.qrserver.com`, en lui transmettant l'URL de vérification — donc le code de
+vérification du certificat. Les trois écrans d'enrôlement à double facteur, qui
+faisaient la même chose avec la **graine TOTP**, ont été corrigés ; celui-ci ne
+l'a pas été, et c'est délibéré :
+
+- ce qui fuit est un code de vérification public, pas un secret d'authentification ;
+- retirer l'image dégraderait une vraie fonctionnalité — un certificat imprimé a
+  besoin d'un code scannable, là où un lien `otpauth://` suffisait pour la 2FA.
+
+Le corriger demande une bibliothèque de rendu QR embarquée (`react-native-qrcode-svg`
+ou équivalent), donc une dépendance de plus : à arbitrer, pas à trancher en passant.
+
+## 8. Doublon de vitrine 🔵
 
 `apps/landing` et `apps/web/src/pages/landing/` coexistent. À trancher : deux vitrines à
 maintenir, ou une seule.
 
-## 8. Restes ponctuels 🔵
+## 9. Restes ponctuels 🔵
 
 - `services/analytics.service.ts` — les tailles de requête et de réponse valent `0` quand
   `Content-Length` est absent (réponse en flux). Documenté comme « inconnu », pas comme

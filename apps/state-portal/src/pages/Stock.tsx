@@ -25,6 +25,14 @@ export default function Stock() {
   // route n'expose pas de série, on ne prétend pas en avoir une.
   const stockHistory: Array<{ date: string; allocated: number; issued: number }> = [];
 
+  /**
+   * Un chiffre absent n'est PAS zéro — même règle que sur le tableau de bord.
+   * Une panne d'API affichait ici « 0 g » de réserve nationale, ce qu'un
+   * ministère lit comme une mesure et non comme une absence de mesure.
+   */
+  const num = (value: number | undefined): string =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('fr-FR') : '—';
+
   const stockValue = (stock?.totalAllocated || 0) * (price?.priceXof || 0);
   const issuedValue = (stock?.tokensIssued || 0) * (price?.priceXof || 0);
   const availableValue = (stock?.availableStock || 0) * (price?.priceXof || 0);
@@ -41,6 +49,24 @@ export default function Stock() {
         <p className="text-slate-400 mt-1">Suivi de la réserve d'or allouée à la tokenisation</p>
       </div>
 
+      {/* L'or prêté n'est pas en coffre. Le tableau de bord le disait, cet
+          écran — dont la réserve EST le sujet — ne le disait pas. L'avertissement
+          vient de l'API et s'affiche tel quel, jamais reformulé. */}
+      {stock && !stock.fullyVaulted && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          <strong>{num(stock.goldOnLoan)} g</strong> de la réserve sont actuellement
+          <strong> prêtés</strong> : cet or reste dû à la plateforme mais n'est pas
+          physiquement en coffre.
+          <span className="block mt-1 text-amber-300/80">
+            Effectivement en coffre : {num(stock.goldVaulted)} g sur{' '}
+            {num(stock.totalAllocated)} g alloués.
+          </span>
+          {stock.lendingNotice && (
+            <span className="block mt-2 text-amber-300/80">{stock.lendingNotice}</span>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[1, 2, 3, 4].map((i) => (
@@ -56,7 +82,7 @@ export default function Stock() {
             <div className="card-state">
               <p className="text-sm text-slate-400">Or Total Alloué</p>
               <p className="text-3xl font-bold text-gold-500 mt-2">
-                {stock?.totalAllocated?.toLocaleString() || '0'} g
+                {num(stock?.totalAllocated)} g
               </p>
               <p className="text-sm text-slate-400 mt-1">
                 = {((stock?.totalAllocated || 0) / 1000).toFixed(3)} kg
@@ -76,7 +102,7 @@ export default function Stock() {
             <div className="card">
               <p className="text-sm text-slate-400">Tokens en Circulation</p>
               <p className="text-3xl font-bold text-blue-400 mt-2">
-                {stock?.tokensIssued?.toLocaleString() || '0'} g
+                {num(stock?.tokensIssued)} g
               </p>
               <p className="text-sm text-slate-400 mt-1">
                 = {issuedValue.toLocaleString()} FCFA
@@ -86,7 +112,7 @@ export default function Stock() {
             <div className="card">
               <p className="text-sm text-slate-400">Stock Disponible</p>
               <p className="text-3xl font-bold text-green-400 mt-2">
-                {stock?.availableStock?.toLocaleString() || '0'} g
+                {num(stock?.availableStock)} g
               </p>
               <p className="text-sm text-slate-400 mt-1">
                 = {availableValue.toLocaleString()} FCFA
@@ -116,19 +142,19 @@ export default function Stock() {
               <div className="text-center p-4 bg-slate-900/50 rounded-lg">
                 <div className="w-4 h-4 bg-gold-500 rounded mx-auto mb-2"></div>
                 <p className="text-sm text-slate-400">Tokens Émis</p>
-                <p className="font-semibold">{stock?.tokensIssued?.toLocaleString()} g</p>
+                <p className="font-semibold">{num(stock?.tokensIssued)} g</p>
                 <p className="text-xs text-slate-500">{utilizationRate.toFixed(1)}% du stock</p>
               </div>
               <div className="text-center p-4 bg-slate-900/50 rounded-lg">
                 <div className="w-4 h-4 bg-green-500 rounded mx-auto mb-2"></div>
                 <p className="text-sm text-slate-400">Disponible</p>
-                <p className="font-semibold">{stock?.availableStock?.toLocaleString()} g</p>
+                <p className="font-semibold">{num(stock?.availableStock)} g</p>
                 <p className="text-xs text-slate-500">{(100 - utilizationRate).toFixed(1)}% du stock</p>
               </div>
               <div className="text-center p-4 bg-slate-900/50 rounded-lg">
                 <div className="w-4 h-4 bg-slate-500 rounded mx-auto mb-2"></div>
                 <p className="text-sm text-slate-400">Total Alloué</p>
-                <p className="font-semibold">{stock?.totalAllocated?.toLocaleString()} g</p>
+                <p className="font-semibold">{num(stock?.totalAllocated)} g</p>
                 <p className="text-xs text-slate-500">100%</p>
               </div>
               <div className="text-center p-4 bg-slate-900/50 rounded-lg">

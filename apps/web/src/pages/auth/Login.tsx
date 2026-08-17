@@ -191,10 +191,6 @@ export default function Login() {
     setFormData({ ...formData, password: '', totpCode: '', otpCode: '' });
   };
 
-  const generateQRCodeUrl = (uri: string) => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}`;
-  };
-
   const getTitle = () => {
     switch (step) {
       case 'credentials': return 'Connexion';
@@ -559,17 +555,21 @@ export default function Login() {
                   <span className="text-xs text-amber-400 font-medium">Configuration obligatoire</span>
                 </div>
                 <p className="text-sm text-slate-400 mb-4">
-                  Scannez ce QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)
+                  Ajoutez ce compte a votre application d'authentification (Google Authenticator, Authy, etc.).
                 </p>
-                <div className="bg-white p-4 rounded-xl inline-block mb-4">
-                  <img
-                    src={generateQRCodeUrl(setupData.uri)}
-                    alt="QR Code 2FA"
-                    className="w-48 h-48"
-                  />
-                </div>
+                {/* Pas d'image de QR : la faire dessiner par un service externe
+                    enverrait la graine TOTP a un tiers, ce qui revient a lui
+                    confier le second facteur. Le lien otpauth:// enrole
+                    directement quand une application est installee, et la cle
+                    ci-dessous couvre les autres cas. */}
+                <a
+                  href={setupData.uri}
+                  className="block text-center px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 mb-4"
+                >
+                  Ouvrir dans mon application d'authentification
+                </a>
                 <div className="bg-slate-800/50 p-3 rounded-lg mb-4">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Clé secrète (si QR code indisponible)</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Clé secrète (si vous ne pouvez pas ouvrir le lien)</p>
                   <code className="text-sm text-gold-400 font-mono break-all">{setupData.secret}</code>
                 </div>
               </div>
