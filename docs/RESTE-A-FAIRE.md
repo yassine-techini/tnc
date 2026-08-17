@@ -107,6 +107,85 @@ format NDJSON se réimporte par script, mais l'exercice reste à faire.
 
 ---
 
+## Second audit — 17 août 2026, angle « qui appelle quoi »
+
+Le premier audit comparait la spécification aux routes. Celui-ci prend l'angle inverse :
+**quels endpoints l'API sert-elle que personne n'appelle ?** C'est la veine qui avait
+déjà livré la boîte de réception.
+
+Méthode : 173 chemins servis confrontés aux appels des quatre clients, puis
+**vérification manuelle de chaque candidat**. Nécessaire — un premier passage désignait
+`POST /admin/consignments/:id/transit` comme injoignable, ce qui aurait signalé un
+blocage du flux producteur. C'était faux : le client construit ce chemin par une
+fonction utilitaire (`consignmentAction(id, 'transit')`), invisible à une recherche
+textuelle. Les constats ci-dessous ont tous été vérifiés un par un.
+
+### E. Le module de réconciliation est servi, permissionné, et injoignable 🟠
+
+Six endpoints (`/admin/reconciliation/daily`, `/pending`, `/discrepancies`, `/report`,
+`/transaction/:id`, `/bulk`), un module RBAC à part entière (`reconciliation:
+view / update / export`, accordé à des rôles), et **aucune méthode de réconciliation
+dans le client admin**.
+
+`Reconciliation.tsx` existe, mais **recalcule l'équilibre dans le navigateur** à partir
+de `getStock()` et `getDashboard()`, avec une interface `ReconciliationData` déclarée
+localement — la forme de défaut que les contrats partagés ont éliminée partout ailleurs.
+
+Deux conséquences :
+
+- **Deux sources de vérité** sur « les comptes sont-ils équilibrés », sur une plateforme
+  adossée à de l'or. Le cron nocturne écrit `reconciliation:<date>` en KV avec le nombre
+  d'écarts constatés ; l'écran ne le lit pas.
+- **Aucune action possible.** Résoudre un écart ou traiter un lot d'écarts existe côté
+  API et n'est atteignable par personne. Un administrateur peut recevoir
+  `reconciliation:update` sans aucun moyen de l'exercer.
+
+### F. Le cycle de vie d'un dépôt s'arrête à sa création 🟠
+
+`GET /wallet/deposits/pending`, `GET /wallet/deposit/status/:id` et
+`POST /wallet/deposit/:id/cancel` sont servis. Les quatre clients n'exposent que
+`deposit()` — la création.
+
+Un dépôt mobile-money qui reste bloqué chez l'opérateur est donc **invisible et non
+annulable** par l'utilisateur, alors que l'API sait répondre aux trois questions.
+
+### G. La configuration pays n'atteint pas l'écran d'inscription 🟡
+
+La table `country_config` et `GET /public/countries` existent (phase 4.2, UEMOA +
+Ouganda). `apps/mobile/app/(auth)/register.tsx` code **huit pays en dur**.
+
+Conséquence : activer un pays en base ne le fait pas apparaître à l'inscription. La
+configuration construite pour ouvrir un pays ne commande pas l'écran qui en dépend.
+
+### H. Capacités d'administration sans écran 🟡
+
+- `POST /admin/bulk/kyc-approve` — validation KYC en lot
+- `GET /admin/suspended-users` — liste des comptes suspendus
+- `GET /admin/reports/por.pdf` — preuve de réserve en PDF côté back-office (le portail
+  État a son propre export ; l'écran admin n'en propose pas)
+
+### I. Surface redondante — nettoyage, pas manque 🔵
+
+- `POST /users/me/password` fait double emploi avec `/auth/change-password`, seul utilisé
+- `/users/me/kyc/resubmit` et `/users/me/kyc/history` inutilisés : l'écran de refus
+  renvoie l'utilisateur vers le formulaire normal
+- `/auth/resend-code`, `/producer/consignments/:id/documents/upload`
+
+`GET /market/price/health` et `POST /market/price/refresh` sont des points
+d'exploitation : leur absence d'écran est normale, comme `/admin/readiness` qui a bien
+un consommateur (`scripts/readiness.mjs`).
+
+### Ce que cet audit a confirmé de sain
+
+Le **modèle de données** de `CLAUDE.md` est aligné sur le schéma : aucun champ promis ne
+manque. Deux écarts de nommage seulement (`KycDocument.verificationStatus` et
+`verificationResult` s'appellent `status` et `provider_result`) — de la dérive de
+documentation, pas une fonctionnalité absente.
+
+Les **files d'attente** et les **trois Durable Objects** déclarés sont tous consommés.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
