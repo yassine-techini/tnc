@@ -1,5 +1,9 @@
 import * as Application from 'expo-application';
 import type {
+  RefreshData,
+  RegisterData,
+} from '@tnc-trading/shared/contracts';
+import type {
   KycStatusData,
   PriceAlertsData,
   UserProfileData,
@@ -344,7 +348,7 @@ class MobileApiClient {
 
   // Auth
   async register(email: string, phone: string, password: string, country = 'BF') {
-    return this.request<{ message: string; userId: string }>('/api/v1/auth/register', {
+    return this.request<RegisterData>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, phone, password, country }),
     });
@@ -373,11 +377,7 @@ class MobileApiClient {
   }
 
   async refreshToken(refreshToken: string) {
-    return this.request<{
-      accessToken: string;
-      refreshToken: string;
-      expiresIn: number;
-    }>('/api/v1/auth/refresh', {
+    return this.request<RefreshData>('/api/v1/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     });

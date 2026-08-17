@@ -4,6 +4,11 @@
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
 import type {
+  RefreshData,
+  RegisterData,
+  SessionsData,
+} from '@tnc-trading/shared/contracts';
+import type {
   KycStatusData,
   NotificationPreferencesData,
   PriceAlertsData,
@@ -163,7 +168,7 @@ class ApiClient {
 
   // Auth
   async register(email: string, phone: string, password: string, country = 'BF', firstName?: string, lastName?: string) {
-    return this.request<{ message: string; userId: string }>('/api/v1/auth/register', {
+    return this.request<RegisterData>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, phone, password, country, firstName, lastName }),
     });
@@ -262,11 +267,7 @@ class ApiClient {
   }
 
   async refreshToken(refreshToken: string) {
-    return this.request<{
-      accessToken: string;
-      refreshToken: string;
-      expiresIn: number;
-    }>('/api/v1/auth/refresh', {
+    return this.request<RefreshData>('/api/v1/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
     });
@@ -716,16 +717,7 @@ class ApiClient {
 
   // Sessions
   async getSessions(authToken?: string) {
-    return this.request<{
-      sessions: {
-        id: string;
-        userAgent: string;
-        ipAddress: string;
-        lastUsed: string;
-        createdAt: string;
-        isCurrent: boolean;
-      }[];
-    }>('/api/v1/auth/sessions', { token: authToken });
+    return this.request<SessionsData>('/api/v1/auth/sessions', { token: authToken });
   }
 
   async revokeSession(sessionId: string, authToken?: string) {

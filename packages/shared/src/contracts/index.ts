@@ -461,6 +461,82 @@ export interface TwoFactorSetupData {
   message: string;
 }
 
+/** L'utilisateur tel que la connexion le renvoie. */
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  phone: string;
+  country: string;
+  kycLevel: KycLevelName;
+  kycStatus: KycStatusName;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  twoFactorEnabled: boolean;
+}
+
+/**
+ * `POST /api/v1/auth/login`
+ *
+ * Les jetons sont AUSSI posés en cookies httpOnly. Ils restent dans le corps
+ * pour le mobile, qui n'a pas de magasin de cookies partagé avec le navigateur.
+ */
+export interface LoginData {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: AuthenticatedUser;
+  sessionId: string;
+}
+
+/**
+ * `POST /api/v1/auth/2fa/setup-complete`
+ *
+ * Une connexion, plus une confirmation. Exprime en extension plutot que d
+ * alourdir `LoginData` : les deux autres chemins de connexion n ont pas de
+ * message, et un client ne devrait pas avoir a se demander lequel en porte un.
+ */
+export interface TwoFactorSetupCompleteData extends LoginData {
+  message: string;
+}
+
+/** `POST /api/v1/auth/refresh` */
+export interface RefreshData {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+/** `POST /api/v1/auth/register` */
+export interface RegisterData {
+  message: string;
+  userId: string;
+  /** Évaluation de la robustesse du mot de passe choisi. */
+  passwordStrength: string;
+}
+
+export interface SessionView {
+  id: string;
+  /** Colonnes reellement nullables en base — le contrat le dit plutot que de
+   *  laisser un ecran supposer une chaine et afficher "undefined". */
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceType: string | null;
+  location: string | null;
+  lastUsed: string | null;
+  createdAt: string;
+  /**
+   * La session qui fait la requete. Determinee par la revendication `sid` du
+   * jeton, avec repli sur l IP pour les jetons anterieurs a cette revendication.
+   * C est l information qui dit laquelle on peut revoquer sans se deconnecter.
+   */
+  isCurrent: boolean;
+}
+
+/** `GET /api/v1/auth/sessions` */
+export interface SessionsData {
+  sessions: SessionView[];
+}
+
 // ─────────────────────────────────────────────────────────────
 // Marché
 // ─────────────────────────────────────────────────────────────

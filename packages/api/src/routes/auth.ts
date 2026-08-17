@@ -1,7 +1,14 @@
 import { Hono } from 'hono';
 // Contrats partagés : `satisfies` ci-dessous fait échouer la compilation si
 // la forme émise s'écarte de ce que les clients importent.
-import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
+import type {
+  TwoFactorSetupData,
+  LoginData,
+  RefreshData,
+  RegisterData,
+  SessionsData,
+  TwoFactorSetupCompleteData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -319,7 +326,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         message: 'Compte créé avec succès. Vérifiez votre email.',
         userId: user.id,
         passwordStrength: passwordValidation.strength,
-      },
+      } satisfies RegisterData,
       requestId,
     }, 201);
   } catch (error) {
@@ -610,7 +617,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
           twoFactorEnabled: Boolean(user.two_factor_enabled),
         },
         sessionId,
-      },
+      } satisfies LoginData,
       requestId,
     });
   } catch (error) {
@@ -703,7 +710,7 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresIn: tokens.expiresIn,
-      },
+      } satisfies RefreshData,
       requestId,
     });
   } catch (error) {
@@ -1628,7 +1635,7 @@ auth.get('/sessions', async (c) => {
             isCurrent,
           };
         }) || [],
-      },
+      } satisfies SessionsData,
       requestId,
     });
   } catch (error) {
@@ -2081,7 +2088,7 @@ auth.post('/2fa/setup-complete', async (c) => {
           twoFactorEnabled: true,
         },
         sessionId,
-      },
+      } satisfies TwoFactorSetupCompleteData,
       requestId,
     });
   } catch (error) {
@@ -2452,7 +2459,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
           twoFactorEnabled: Boolean(user.two_factor_enabled),
         },
         sessionId,
-      },
+      } satisfies LoginData,
       requestId,
     });
   } catch (error) {

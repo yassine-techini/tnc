@@ -57,12 +57,12 @@ this.request<StateStockData>('/api/v1/state/stock');
 `satisfies` fait échouer la compilation de l'API si un champ manque ou change de nom ; le client
 importe le **même** type. Vérifié en renommant volontairement un champ : l'API ne compile plus.
 
-**Couvert (27 endpoints)** : tout le **chemin de l'argent** — portefeuille, transactions, dépôt,
+**Couvert (33 endpoints)** : tout le **chemin de l'argent** — portefeuille, transactions, dépôt,
 retrait, cours, devis, achat, vente ; la **location** — conditions, positions, relevé quotidien,
 sortie ; les **frais de garde** ; le **portail État** — tableau de bord, stock, preuve de réserve,
-rapport mensuel ; la **configuration 2FA** et l'**historique de prix** ; le **profil utilisateur**, le **statut KYC**, les **préférences de notification** et les **alertes de prix** ; le **back-office** — tableau de bord, stock et permissions.
+rapport mensuel ; la **configuration 2FA** et l'**historique de prix** ; le **profil utilisateur**, le **statut KYC**, les **préférences de notification** et les **alertes de prix** ; le **back-office** — tableau de bord, stock et permissions ; l **authentification** — inscription, connexion (les trois chemins), rafraichissement, sessions.
 
-**Reste** : le gros du module `auth` (inscription, connexion, rafraîchissement, vérifications) et les sous-modules `admin/analytics`. Étendre est une **addition** — déclarer le contrat, ajouter `satisfies` côté route, remplacer le type en ligne côté client.
+**Reste** : les sous-modules `admin/analytics`, dont les charges utiles viennent d un Durable Object plutot que d une route et demandent d etre lues pour elles-memes.
 
 > Hono expose un client typé (`hc<AppType>`) qui supprimerait la déclaration manuelle. Il exige
 > des routes **chaînées** (`app.get().post()`) pour inférer ; celles-ci sont écrites en

@@ -1,13 +1,9 @@
 import { formatDate, formatTime } from '../../lib/formatters';
+import type { SessionView } from '@tnc-trading/shared/contracts';
 
-export interface Session {
-  id: string;
-  userAgent: string;
-  ipAddress: string;
-  lastUsed: string;
-  createdAt: string;
-  isCurrent: boolean;
-}
+// La forme vient du contrat partage : ces colonnes sont reellement nullables
+// en base, et supposer une chaine ici afficherait "undefined" a l ecran.
+export type Session = SessionView;
 
 export interface SessionCardProps {
   session: Session;
@@ -95,7 +91,7 @@ function DeviceIcon({ device }: { device: 'mobile' | 'tablet' | 'desktop' }) {
  * Session Card Component
  */
 export function SessionCard({ session, onRevoke, isRevoking = false }: SessionCardProps) {
-  const { device, browser, os } = parseUserAgent(session.userAgent);
+  const { device, browser, os } = parseUserAgent(session.userAgent ?? '');
 
   return (
     <div
@@ -137,13 +133,13 @@ export function SessionCard({ session, onRevoke, isRevoking = false }: SessionCa
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                 </svg>
-                {session.ipAddress}
+                {session.ipAddress ?? 'IP inconnue'}
               </p>
               <p className="flex items-center gap-1">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Dernière activité: {formatDate(session.lastUsed, 'datetime')}
+                Dernière activité: {session.lastUsed ? formatDate(session.lastUsed, 'datetime') : 'inconnue'}
               </p>
               <p className="flex items-center gap-1">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
