@@ -10,6 +10,8 @@
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
+    "check:sql": "node scripts/check-sql-schema.mjs",
+    "pretest": "pnpm check:sql",
     "test": "vitest",
     "test:watch": "vitest watch",
     "db:migrate": "wrangler d1 execute tnc-trading-db --local --file=../../specs/db/schema.sql",

@@ -1071,7 +1071,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         .bind(userId)
         .run(),
       c.env.DB
-        .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+        .prepare('DELETE FROM sessions WHERE user_id = ?')
         .bind(userId)
         .run(),
     ]);
@@ -1543,7 +1543,7 @@ users.delete('/me', async (c) => {
       c.env.DB.prepare('DELETE FROM notification_preferences WHERE user_id = ?').bind(userId),
       c.env.DB.prepare('DELETE FROM notifications WHERE user_id = ?').bind(userId),
       c.env.DB.prepare('DELETE FROM active_sessions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
       c.env.DB.prepare('DELETE FROM kyc_documents WHERE user_id = ?').bind(userId),
       c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
       c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(userId),

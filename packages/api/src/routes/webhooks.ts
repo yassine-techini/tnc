@@ -629,7 +629,7 @@ webhooks.post('/kyc', async (c) => {
         .first<any>();
 
       const kycDoc = await c.env.DB
-        .prepare('SELECT first_name FROM kyc_documents WHERE verification_job_id = ?')
+        .prepare('SELECT first_name FROM kyc_documents WHERE provider_job_id = ?')
         .bind(body.job_id)
         .first<any>();
 

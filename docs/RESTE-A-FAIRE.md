@@ -317,7 +317,7 @@ Trois écarts, tous **bloquants**, tous sur des écrans câblés.
 > environnement non reproductible depuis les migrations — ce qui est un défaut d'une
 > autre nature, pas une absence de défaut.
 
-### L. Traiter un retrait échoue 🔴
+### L. Traiter un retrait échouait ✅
 
 `PATCH /admin/withdrawals/:id` exécute deux `UPDATE` :
 
@@ -334,7 +334,7 @@ statuts autorisés par sa contrainte `CHECK` (`PENDING`, `APPROVED`, `PROCESSING
 Les boutons **Approuver** et **Rejeter** de l'écran Retraits sont câblés à cette route.
 Un retrait client ne peut donc être ni approuvé ni rejeté depuis le back-office.
 
-### M. Valider un dossier KYC depuis l'écran de revue échoue 🔴
+### M. Valider un dossier KYC depuis l'écran de revue échouait ✅
 
 **Quatre** colonnes inexistantes — `verification_status`, `verification_job_id`,
 `verification_result` et `verified_at` — sont utilisées dans **douze instructions SQL
@@ -361,7 +361,7 @@ Un chemin parallèle fonctionne — `PATCH /users/:id/kyc` écrit `users.kyc_sta
 les bonnes colonnes — donc la plateforme n'est pas entièrement bloquée. Mais **l'écran
 dédié à la revue KYC l'est**, ainsi que le rappel du fournisseur d'identité.
 
-### N. La connexion sans mot de passe échoue 🔴
+### N. La connexion sans mot de passe échouait ✅
 
 `auth.ts` écrit dans une table `refresh_tokens` **qui n'existe dans aucune migration** :
 
@@ -372,6 +372,33 @@ dédié à la revue KYC l'est**, ainsi que le rappel du fournisseur d'identité.
 
 L'insertion est inconditionnelle et se situe avant la création de session : la connexion
 sans mot de passe ne peut pas aboutir.
+
+### O. `transactions.external_reference` n'existait pas ✅
+
+Trouvé non par l'audit mais par le **garde-fou** écrit pour le corriger. Six écritures
+renseignaient cette colonne. La pire : `POST /wallet/deposit` l'écrit **après** avoir
+initié le paiement chez l'opérateur — la requête échouait une fois le client engagé, et
+la référence du fournisseur était perdue avec elle.
+
+Ajoutée par migration plutôt que réécrite : `payment_reference` porte NOTRE référence,
+`external_reference` celle du fournisseur. Les confondre reviendrait à ne plus pouvoir
+rapprocher un mouvement de son homologue chez l'opérateur.
+
+### Le vrai correctif : `pnpm check:sql`
+
+`packages/api/scripts/check-sql-schema.mjs` reconstitue le schéma final depuis les 29
+migrations et y confronte chaque `INSERT`, `UPDATE`, `DELETE` et `SELECT` mono-table. Il
+tourne avant `pnpm test` (`pretest`), comme `check:pins` garde la publication mobile.
+
+Il s'est trompé **trois fois** pendant sa construction — instructions rejouées groupées
+par type, découpage avant retrait des commentaires de ligne, commentaires de bloc lus
+comme des colonnes. Chaque erreur a été trouvée en comparant sa sortie à des listes de
+colonnes lues à la main. Un garde-fou faux est pire qu'aucun : il rassure.
+
+**Limite assumée** : il n'est pas écrit en test vitest. Charger ce module dans le
+transformateur de vitest échoue pour une raison d'outillage non élucidée, et un
+garde-fou qu'on n'arrive pas à charger ne garde rien. Le lancer en amont de la suite
+donne la même garantie sans dépendre de cette chaîne.
 
 ### Pourquoi trois audits ne l'avaient pas vu
 

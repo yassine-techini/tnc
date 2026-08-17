@@ -747,7 +747,7 @@ admin.get('/users/:id', requirePermission('users', 'view'), async (c) => {
           id: d.id,
           documentType: d.document_type,
           documentNumber: d.document_number,
-          verificationStatus: d.verification_status,
+          verificationStatus: d.status,
           createdAt: d.created_at,
         })),
       },
@@ -916,7 +916,7 @@ admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
 
     // Get previous submissions
     const previousDocs = await c.env.DB
-      .prepare('SELECT id, verification_status, rejection_reason, created_at, verified_at FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT id, status, rejection_reason, created_at, reviewed_at FROM kyc_documents WHERE user_id = ? ORDER BY created_at DESC')
       .bind(doc.user_id)
       .all<any>();
 
@@ -939,10 +939,10 @@ admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
         currentKycLevel: user?.kyc_level || 'BASIC',
         previousSubmissions: (previousDocs.results || []).map((d: any) => ({
           id: d.id,
-          status: d.verification_status,
+          status: d.status,
           rejectionReason: d.rejection_reason,
           submittedAt: d.created_at,
-          reviewedAt: d.verified_at,
+          reviewedAt: d.reviewed_at,
         })),
       },
       requestId,
@@ -1008,7 +1008,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
 
       // Update document status
       await c.env.DB
-        .prepare(`UPDATE kyc_documents SET verification_status = 'VERIFIED', verified_at = datetime('now') WHERE id = ?`)
+        .prepare(`UPDATE kyc_documents SET status = 'VERIFIED', reviewed_at = datetime('now') WHERE id = ?`)
         .bind(doc.id)
         .run();
     } else {
@@ -1019,7 +1019,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
         .run();
 
       await c.env.DB
-        .prepare(`UPDATE kyc_documents SET verification_status = 'REJECTED', rejection_reason = ?, verified_at = datetime('now') WHERE id = ?`)
+        .prepare(`UPDATE kyc_documents SET status = 'REJECTED', rejection_reason = ?, reviewed_at = datetime('now') WHERE id = ?`)
         .bind(rejectionReason || '', doc.id)
         .run();
     }
@@ -1877,7 +1877,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       await c.env.DB
         .prepare(`
           UPDATE withdrawals
-          SET status = ?, provider_reference = ?, processed_at = datetime('now')
+          SET status = ?, provider_reference = ?, completed_at = datetime('now')
           WHERE transaction_id = ?
         `)
         .bind(newStatus, payoutResult?.transactionId || 'MANUAL', id)
@@ -1920,7 +1920,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       await c.env.DB
         .prepare(`
           UPDATE withdrawals
-          SET status = 'CANCELLED', rejection_reason = ?, processed_at = datetime('now')
+          SET status = 'REJECTED', failure_reason = ?, completed_at = datetime('now')
           WHERE transaction_id = ?
         `)
         .bind(reason || 'Rejeté', id)

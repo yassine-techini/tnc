@@ -373,8 +373,8 @@ export class KycService {
       await this.db
         .prepare(`
           UPDATE kyc_documents
-          SET verification_job_id = ?,
-              verification_status = 'PROCESSING',
+          SET provider_job_id = ?,
+              status = 'PROCESSING',
               updated_at = datetime('now')
           WHERE id = ?
         `)
@@ -422,7 +422,7 @@ export class KycService {
 
       // Find the KYC document by job ID
       const kycDoc = await this.db
-        .prepare('SELECT * FROM kyc_documents WHERE verification_job_id = ?')
+        .prepare('SELECT * FROM kyc_documents WHERE provider_job_id = ?')
         .bind(job_id)
         .first<any>();
 
@@ -452,10 +452,10 @@ export class KycService {
       await this.db
         .prepare(`
           UPDATE kyc_documents
-          SET verification_status = ?,
-              verification_result = ?,
+          SET status = ?,
+              provider_result = ?,
               rejection_reason = ?,
-              verified_at = CASE WHEN ? = 'VERIFIED' THEN datetime('now') ELSE NULL END,
+              reviewed_at = CASE WHEN ? = 'VERIFIED' THEN datetime('now') ELSE NULL END,
               updated_at = datetime('now')
           WHERE id = ?
         `)
@@ -752,7 +752,7 @@ export class KycService {
     // Get documents
     const documents = await this.db
       .prepare(`
-        SELECT id, document_type, verification_status, created_at, verified_at, rejection_reason
+        SELECT id, document_type, status, created_at, reviewed_at, rejection_reason
         FROM kyc_documents
         WHERE user_id = ?
         ORDER BY created_at DESC
@@ -769,9 +769,9 @@ export class KycService {
       documents: (documents.results || []).map((d: any) => ({
         id: d.id,
         type: d.document_type,
-        status: d.verification_status,
+        status: d.status,
         submittedAt: d.created_at,
-        verifiedAt: d.verified_at,
+        verifiedAt: d.reviewed_at,
         rejectionReason: d.rejection_reason,
       })),
       limits: limits[user.kyc_level] || limits.BASIC,
@@ -814,10 +814,10 @@ export class KycService {
     // Check document expiration
     const latestDoc = await this.db
       .prepare(`
-        SELECT id, document_type, document_expiry_date, verification_status
+        SELECT id, document_type, document_expiry_date, status
         FROM kyc_documents
-        WHERE user_id = ? AND verification_status = 'VERIFIED'
-        ORDER BY verified_at DESC
+        WHERE user_id = ? AND status = 'VERIFIED'
+        ORDER BY reviewed_at DESC
         LIMIT 1
       `)
       .bind(userId)
@@ -825,7 +825,7 @@ export class KycService {
         id: string;
         document_type: string;
         document_expiry_date: string | null;
-        verification_status: string;
+        status: string;
       }>();
 
     if (!latestDoc) {

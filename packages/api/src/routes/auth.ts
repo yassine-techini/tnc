@@ -749,7 +749,7 @@ auth.post('/logout', async (c) => {
             .bind(payload.sub)
             .run(),
           c.env.DB
-            .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+            .prepare('DELETE FROM sessions WHERE user_id = ?')
             .bind(payload.sub)
             .run(),
           c.env.DB
@@ -1205,7 +1205,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
         .bind(storedData.userId)
         .run(),
       c.env.DB
-        .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+        .prepare('DELETE FROM sessions WHERE user_id = ?')
         .bind(storedData.userId)
         .run(),
       c.env.DB
@@ -2408,9 +2408,9 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
     const refreshTokenHash = await authService.hashPassword(tokens.refreshToken);
     const refreshTokenExpiry = await configService.getNumber('refresh_token_expiry_days', 30);
     await c.env.DB
-      .prepare(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-                VALUES (?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'))`)
-      .bind(crypto.randomUUID(), user.id, refreshTokenHash, refreshTokenExpiry)
+      .prepare(`INSERT INTO sessions (id, user_id, refresh_token_hash, ip_address, user_agent, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' days'), datetime('now'))`)
+      .bind(crypto.randomUUID(), user.id, refreshTokenHash, ipAddress, userAgent, refreshTokenExpiry)
       .run();
 
     // Create session
