@@ -479,6 +479,90 @@ export interface RealtimeMetricsData {
   transactionFailureRate: number;
 }
 
+/** Un point de mesure horodaté, tel que le Durable Object les conserve. */
+export interface MetricDataPoint {
+  /** Millisecondes epoch — pas une chaîne ISO. */
+  timestamp: number;
+  value: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * `GET /api/v1/admin/analytics/history`
+ *
+ * Quatre séries brutes, pas des instantanés agrégés. Le client admin déclarait
+ * `{ snapshots: Array<{ timestamp: string; metrics: Record<string, number> }> }`
+ * — une forme qui n'a jamais existé.
+ */
+export interface AnalyticsHistoryData {
+  transactions: MetricDataPoint[];
+  requests: MetricDataPoint[];
+  errors: MetricDataPoint[];
+  latencies: MetricDataPoint[];
+}
+
+export interface AlertRuleRow {
+  id: string;
+  name: string;
+  metric: string;
+  operator: string;
+  threshold: number;
+  severity: string;
+  cooldown_minutes: number;
+  notify_email: number;
+  notify_sms: number;
+  notify_webhook: string | null;
+  enabled: number;
+  last_triggered_at: string | null;
+  created_at: string;
+}
+
+/** `GET /api/v1/admin/analytics/alerts/rules` */
+export interface AlertRulesData {
+  rules: AlertRuleRow[];
+}
+
+export interface AlertRow {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  severity: string;
+  message: string;
+  current_value: number;
+  threshold: number;
+  triggered_at: string;
+  acknowledged: number;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  resolved: number;
+  resolved_at: string | null;
+}
+
+/** `GET /api/v1/admin/analytics/alerts` */
+export interface AlertsData {
+  alerts: AlertRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Réponses d'action : ce que la route confirme avoir fait. */
+export interface AlertRuleCreatedData {
+  id: string;
+}
+
+export interface AlertAcknowledgedData {
+  acknowledged: true;
+}
+
+export interface AlertResolvedData {
+  resolved: true;
+}
+
+export interface AlertRuleDeletedData {
+  deleted: true;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Authentification
 // ─────────────────────────────────────────────────────────────

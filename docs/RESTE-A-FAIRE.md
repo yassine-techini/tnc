@@ -57,17 +57,18 @@ this.request<StateStockData>('/api/v1/state/stock');
 `satisfies` fait échouer la compilation de l'API si un champ manque ou change de nom ; le client
 importe le **même** type. Vérifié en renommant volontairement un champ : l'API ne compile plus.
 
-**Couvert (34 endpoints)** : tout le **chemin de l'argent** — portefeuille, transactions, dépôt,
+**Couvert (41 endpoints)** : tout le **chemin de l'argent** — portefeuille, transactions, dépôt,
 retrait, cours, devis, achat, vente ; la **location** — conditions, positions, relevé quotidien,
 sortie ; les **frais de garde** ; le **portail État** — tableau de bord, stock, preuve de réserve,
 rapport mensuel ; la **configuration 2FA** et l'**historique de prix** ; le **profil utilisateur**, le **statut KYC**, les **préférences de notification** et les **alertes de prix** ; le **back-office** — tableau de bord, stock et permissions ; l **authentification** — inscription, connexion (les trois chemins), rafraichissement, sessions.
 
-**Reste** : dans `admin/analytics`, les endpoints `/history`, `/logs` et `/alerts`.
+**Reste** : `/admin/analytics/logs`, qui relaie le resultat d un service de journalisation — sa forme appartient a ce service et merite d etre lue pour elle-meme plutot que typee a la hate.
 
-> **Cas particulier des relais.** `/analytics/realtime` et `/analytics/history` ne construisent
-> pas leur reponse : elles relaient celle d un Durable Object. Y mettre `satisfies` ne prouverait
-> rien. Le contrat s applique a la SOURCE — l interface du Durable Object EST le type partage —
-> et la route se contente de ne pas blanchir un `unknown`.
+> **Cas particulier des relais.** Une route qui fait `await response.json()` ne construit pas sa
+> reponse : `satisfies` n y prouverait rien. Deux consequences apprises a nos depens : le contrat
+> s applique a la SOURCE (l interface du Durable Object EST le type partage), et la route doit
+> **deplier l enveloppe** que la source ajoute — un cast `as Contrat` sur la reponse entiere fait
+> acquiescer le compilateur a une contre-verite.
 
 > Hono expose un client typé (`hc<AppType>`) qui supprimerait la déclaration manuelle. Il exige
 > des routes **chaînées** (`app.get().post()`) pour inférer ; celles-ci sont écrites en

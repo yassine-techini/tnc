@@ -4,7 +4,18 @@
  */
 
 import { Hono } from 'hono';
-import type { RealtimeMetricsData } from '@tnc-trading/shared/contracts';
+import type {
+  RealtimeMetricsData,
+  AnalyticsHistoryData,
+  AlertRulesData,
+  AlertsData,
+  AlertRuleCreatedData,
+  AlertAcknowledgedData,
+  AlertResolvedData,
+  AlertRuleDeletedData,
+  AlertRuleRow,
+  AlertRow,
+} from '@tnc-trading/shared/contracts';
 import type { AppEnv } from '../../types/env';
 import { requirePermission } from '../../middleware/rbac';
 import { LogArchiverService } from '../../services/log-archiver.service';
@@ -38,10 +49,15 @@ analytics.get('/realtime', requirePermission('analytics', 'view'), async (c) => 
       }, 500);
     }
 
-    // Typee plutot que relayee en `unknown` : la route ne construit pas cette
-    // forme, mais elle ne doit pas la blanchir non plus. Le Durable Object la
-    // verifie a la source (voir computeMetrics).
-    const data = (await response.json()) as RealtimeMetricsData;
+    // Le Durable Object enveloppe DEJA sa reponse dans { success, data }. Sans
+    // ce depliage, la route renvoyait { data: { success, data: metrics } } et
+    // un client lisant data.requestsLast5Min tombait sur undefined.
+    //
+    // Un cast direct `as RealtimeMetricsData` sur la reponse entiere ferait
+    // acquiescer TypeScript a une contre-verite : c est exactement la faute que
+    // ces contrats servent a empecher.
+    const envelope = (await response.json()) as { data: RealtimeMetricsData };
+    const data = envelope.data;
 
     return c.json({
       success: true,
@@ -88,7 +104,9 @@ analytics.get('/history', requirePermission('analytics', 'view'), async (c) => {
       }, 500);
     }
 
-    const data = await response.json();
+    // Meme depliage que ci-dessus : le Durable Object enveloppe sa reponse.
+    const envelope = (await response.json()) as { data: AnalyticsHistoryData };
+    const data = envelope.data;
 
     return c.json({
       success: true,
@@ -252,13 +270,13 @@ analytics.get('/alerts/rules', requirePermission('alerts', 'view'), async (c) =>
         FROM alert_rules
         ORDER BY created_at DESC
       `)
-      .all();
+      .all<AlertRuleRow>();
 
     return c.json({
       success: true,
       data: {
         rules: result.results || [],
-      },
+      } satisfies AlertRulesData,
       requestId,
     });
   } catch (error) {
@@ -347,7 +365,7 @@ analytics.post('/alerts/rules', requirePermission('alerts', 'create'), async (c)
 
     return c.json({
       success: true,
-      data: { id: ruleId },
+      data: { id: ruleId } satisfies AlertRuleCreatedData,
       requestId,
     }, 201);
   } catch (error) {
@@ -430,7 +448,7 @@ analytics.patch('/alerts/rules/:id', requirePermission('alerts', 'update'), asyn
 
     return c.json({
       success: true,
-      data: { id: ruleId },
+      data: { id: ruleId } satisfies AlertRuleCreatedData,
       requestId,
     });
   } catch (error) {
@@ -467,7 +485,7 @@ analytics.delete('/alerts/rules/:id', requirePermission('alerts', 'delete'), asy
 
     return c.json({
       success: true,
-      data: { deleted: true },
+      data: { deleted: true } satisfies AlertRuleDeletedData,
       requestId,
     });
   } catch (error) {
@@ -532,7 +550,7 @@ analytics.get('/alerts', requirePermission('alerts', 'view'), async (c) => {
         LIMIT ? OFFSET ?
       `)
       .bind(...params, limit, offset)
-      .all();
+      .all<AlertRow>();
 
     return c.json({
       success: true,
@@ -541,7 +559,7 @@ analytics.get('/alerts', requirePermission('alerts', 'view'), async (c) => {
         total: countResult?.count || 0,
         limit,
         offset,
-      },
+      } satisfies AlertsData,
       requestId,
     });
   } catch (error) {
@@ -583,7 +601,7 @@ analytics.post('/alerts/:id/acknowledge', requirePermission('alerts', 'update'),
 
     return c.json({
       success: true,
-      data: { acknowledged: true },
+      data: { acknowledged: true } satisfies AlertAcknowledgedData,
       requestId,
     });
   } catch (error) {
@@ -624,7 +642,7 @@ analytics.post('/alerts/:id/resolve', requirePermission('alerts', 'update'), asy
 
     return c.json({
       success: true,
-      data: { resolved: true },
+      data: { resolved: true } satisfies AlertResolvedData,
       requestId,
     });
   } catch (error) {

@@ -3,6 +3,8 @@ const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://l
 import type {
   AdminDashboardData,
   RealtimeMetricsData,
+  AlertRulesData,
+  AnalyticsHistoryData,
   AdminPermissionsData,
   AdminStockData,
 } from '@tnc-trading/shared/contracts';
@@ -633,12 +635,7 @@ class AdminApiClient {
   }
 
   async getAnalyticsHistory(period: '24h' | '7d' | '30d' = '24h', token?: string) {
-    return this.request<{
-      snapshots: Array<{
-        timestamp: string;
-        metrics: Record<string, number>;
-      }>;
-    }>(`/api/v1/admin/analytics/history?period=${period}`, { token });
+    return this.request<AnalyticsHistoryData>(`/api/v1/admin/analytics/history?period=${period}`, { token });
   }
 
   async searchLogs(filters: {
@@ -709,25 +706,7 @@ class AdminApiClient {
   }
 
   async getAlertRules(token?: string) {
-    return this.request<{
-      rules: Array<{
-        id: string;
-        name: string;
-        description: string | null;
-        metric: string;
-        operator: string;
-        threshold: number;
-        severity: string;
-        cooldown_minutes: number;
-        notify_email: number;
-        notify_sms: number;
-        notify_webhook: string | null;
-        enabled: number;
-        last_triggered_at: string | null;
-        created_at: string;
-        updated_at: string;
-      }>;
-    }>('/api/v1/admin/analytics/alerts/rules', { token });
+    return this.request<AlertRulesData>('/api/v1/admin/analytics/alerts/rules', { token });
   }
 
   async createAlertRule(data: {
