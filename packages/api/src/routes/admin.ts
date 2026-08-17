@@ -23,6 +23,7 @@ import { NotificationService } from '../services/notification.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
+import { verifierAjustementStock } from '../lib/stock-invariant';
 import { resolvePermissions, ROLE_DEFAULTS } from '../lib/rbac';
 import { isPortalToken, canAccessAdminPortal } from '../lib/portal';
 import { ConfigService } from '../services/config.service';
@@ -1647,41 +1648,44 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
     const body = await c.req.json();
     const { amount, reason } = body;
 
-    if (typeof amount !== 'number') {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_INPUT',
-          message: 'Montant invalide',
-        },
-        requestId: crypto.randomUUID(),
-      }, 400);
-    }
-
     // Get current stock
     let stock = await c.env.DB
       .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    const newTotal = (stock?.total_allocated || 0) + amount;
-
-    if (stock) {
-      await c.env.DB
-        .prepare('UPDATE gold_stock SET total_allocated = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .bind(newTotal, stock.id)
-        .run();
-    } else {
-      await c.env.DB
-        .prepare('INSERT INTO gold_stock (id, total_allocated, tokens_issued, updated_at) VALUES (?, ?, 0, datetime(\'now\'))')
-        .bind('main', newTotal)
-        .run();
+    // La regle vit dans `lib/stock-invariant` : elle y est testee contre un vrai
+    // SQLite, plutot que reproduite dans un test qui prouverait sa copie.
+    const verdict = verifierAjustementStock(amount, stock);
+    if (!verdict.ok) {
+      return c.json({
+        success: false,
+        error: { code: verdict.code, message: verdict.message, details: verdict.details },
+        requestId: crypto.randomUUID(),
+      }, verdict.status);
     }
 
-    // Log admin action
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId'), 'STOCK_ADJUST', 'stock', 'main', JSON.stringify({ amount, reason }))
-      .run();
+    const newTotal = verdict.newTotal;
+
+    /**
+     * Ecriture et trace dans le MEME lot.
+     *
+     * C'etaient deux `.run()` successifs : un echec entre les deux ajustait la
+     * reserve nationale sans laisser de trace de qui l'avait fait.
+     */
+    const ajustement = stock
+      ? c.env.DB
+          .prepare("UPDATE gold_stock SET total_allocated = ?, updated_at = datetime('now') WHERE id = ?")
+          .bind(newTotal, stock.id)
+      : c.env.DB
+          .prepare("INSERT INTO gold_stock (id, total_allocated, tokens_issued, updated_at) VALUES (?, ?, 0, datetime('now'))")
+          .bind('main', newTotal);
+
+    await c.env.DB.batch([
+      ajustement,
+      c.env.DB
+        .prepare("INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))")
+        .bind(crypto.randomUUID(), c.get('adminId'), 'STOCK_ADJUST', 'stock', 'main', JSON.stringify({ amount, reason, newTotal })),
+    ]);
 
     return c.json({
       success: true,

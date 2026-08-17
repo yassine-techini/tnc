@@ -166,7 +166,9 @@ export default function Profile() {
 
   // Verify phone mutation
   const verifyPhoneMutation = useMutation({
-    mutationFn: () => api.verifyPhone(verificationCode),
+    // La route exige le numero autant que le code : le seul code ne suffit pas
+    // a identifier la demande de verification.
+    mutationFn: () => api.verifyPhone(user?.phone ?? '', verificationCode),
     onSuccess: () => {
       if (user) {
         setUser({ ...user, phoneVerified: true });

@@ -694,33 +694,42 @@ class ApiClient {
   }
 
   // Email verification
-  async verifyEmail(token: string) {
+  /**
+   * Verification de l'email.
+   *
+   * Envoyait `{ token }` : le schema exige `{ email, code }`, et le courriel
+   * porte un code a six chiffres, pas un lien. L'appel echouait a la validation.
+   */
+  async verifyEmail(email: string, code: string) {
     return this.request<{ message: string }>('/api/v1/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ email, code }),
     });
   }
 
+  /** `/auth/resend-verification` n'existe pas ; la route est `/auth/resend-code`. */
   async resendVerificationEmail(email: string) {
-    return this.request<{ message: string }>('/api/v1/auth/resend-verification', {
+    return this.request<{ message: string }>('/api/v1/auth/resend-code', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ type: 'email', identifier: email }),
     });
   }
 
   // Phone verification
+  /** `/auth/verify-phone/send` n'existe pas ; l'envoi passe par `/auth/resend-code`. */
   async sendPhoneVerification(phone: string, authToken?: string) {
-    return this.request<{ message: string }>('/api/v1/auth/verify-phone/send', {
+    return this.request<{ message: string }>('/api/v1/auth/resend-code', {
       method: 'POST',
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ type: 'phone', identifier: phone }),
       token: authToken,
     });
   }
 
-  async verifyPhone(code: string, authToken?: string) {
+  /** Le schema exige `{ phone, code }` : envoyer le seul code echouait. */
+  async verifyPhone(phone: string, code: string, authToken?: string) {
     return this.request<{ message: string }>('/api/v1/auth/verify-phone', {
       method: 'POST',
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ phone, code }),
       token: authToken,
     });
   }

@@ -1,193 +1,148 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api } from '../../lib/api';
+import { api, ApiRequestError } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
 
-type VerificationState = 'loading' | 'success' | 'error' | 'no-token';
+/**
+ * Vérification de l'adresse email.
+ *
+ * Cet écran attendait un lien `?token=…`. L'API n'envoie pas de lien : le
+ * courriel porte un **code à six chiffres** (`Code de vérification TNC
+ * Trading: 123456`), et la route exige `{ email, code }`. Le désaccord n'était
+ * donc pas dans la charge utile mais dans le parcours lui-même — l'écran
+ * attendait quelque chose qui n'a jamais été envoyé.
+ *
+ * Il demande maintenant l'email et le code. L'email est pré-rempli quand il
+ * arrive en paramètre d'URL, ce qui évite de le retaper après l'inscription.
+ */
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
-  const [state, setState] = useState<VerificationState>('loading');
-  const [error, setError] = useState('');
-  const [resendEmail, setResendEmail] = useState('');
-  const [resendLoading, setResendLoading] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false);
+  const [email, setEmail] = useState(searchParams.get('email') ?? '');
+  const [code, setCode] = useState('');
+  const [erreur, setErreur] = useState('');
+  const [succes, setSucces] = useState(false);
+  const [enCours, setEnCours] = useState(false);
+  const [renvoiFait, setRenvoiFait] = useState(false);
 
-  const token = searchParams.get('token');
-
-  useEffect(() => {
-    if (!token) {
-      setState('no-token');
-      return;
-    }
-
-    const verifyEmail = async () => {
-      try {
-        await api.verifyEmail(token);
-        setState('success');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Erreur de vérification');
-        setState('error');
-      }
-    };
-
-    verifyEmail();
-  }, [token]);
-
-  const handleResend = async (e: React.FormEvent) => {
+  const verifier = async (e: React.FormEvent) => {
     e.preventDefault();
-    setResendLoading(true);
-    setResendSuccess(false);
-
+    setEnCours(true);
+    setErreur('');
     try {
-      await api.resendVerificationEmail(resendEmail);
-      setResendSuccess(true);
-    } catch {
-      setError('Erreur lors de l\'envoi. Vérifiez votre email.');
+      await api.verifyEmail(email, code);
+      setSucces(true);
+    } catch (err) {
+      setErreur(
+        err instanceof ApiRequestError || err instanceof Error
+          ? err.message
+          : 'La vérification a échoué'
+      );
     } finally {
-      setResendLoading(false);
+      setEnCours(false);
     }
   };
 
-  if (state === 'loading') {
+  const renvoyer = async () => {
+    setErreur('');
+    setRenvoiFait(false);
+    try {
+      await api.resendVerificationEmail(email);
+      setRenvoiFait(true);
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : "Le code n'a pas pu être renvoyé");
+    }
+  };
+
+  if (succes) {
     return (
-      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4">
-        <div className="w-full max-w-md text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gold-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Vérification en cours...</p>
+      <div className="max-w-md mx-auto card text-center space-y-4">
+        <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
+          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
         </div>
+        <h1 className="text-xl font-semibold text-white">Adresse vérifiée</h1>
+        <p className="text-sm text-slate-400">Vous pouvez maintenant vous connecter.</p>
+        <Link to="/login" className="btn-primary inline-block">
+          Se connecter
+        </Link>
       </div>
     );
   }
 
-  if (state === 'success') {
-    return (
-      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <div className="card text-center">
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold mb-4">Email vérifié !</h1>
-            <p className="text-slate-400 mb-6">
-              Votre adresse email a été vérifiée avec succès. Vous pouvez maintenant accéder à toutes les fonctionnalités de TNC Trading.
-            </p>
-            <Link to="/login">
-              <Button variant="primary">Se connecter</Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (state === 'no-token') {
-    return (
-      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <div className="card">
-            <h1 className="text-2xl font-bold text-center mb-4">Vérifier votre email</h1>
-            <p className="text-slate-400 text-center mb-6">
-              Entrez votre adresse email pour recevoir un nouveau lien de vérification.
-            </p>
-
-            {resendSuccess ? (
-              <div className="p-4 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-center">
-                Email envoyé ! Vérifiez votre boîte de réception.
-              </div>
-            ) : (
-              <form onSubmit={handleResend} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    className="input"
-                    placeholder="email@example.com"
-                    value={resendEmail}
-                    onChange={(e) => setResendEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  isLoading={resendLoading}
-                  loadingText="Envoi..."
-                >
-                  Renvoyer le lien
-                </Button>
-              </form>
-            )}
-
-            <p className="mt-6 text-center text-sm text-slate-400">
-              <Link to="/login" className="link">
-                ← Retour à la connexion
-              </Link>
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
   return (
-    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="card">
-          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-center mb-4">Échec de la vérification</h1>
-          <p className="text-slate-400 text-center mb-6">
-            {error || 'Le lien de vérification est invalide ou a expiré.'}
-          </p>
+    <div className="max-w-md mx-auto card space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold text-white">Vérification de l'email</h1>
+        <p className="text-sm text-slate-400 mt-1">
+          Saisissez le code à six chiffres reçu par email.
+        </p>
+      </div>
 
-          <div className="space-y-3">
-            <p className="text-sm text-slate-400 text-center">
-              Besoin d'un nouveau lien ?
-            </p>
-            {resendSuccess ? (
-              <div className="p-4 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-center text-sm">
-                Email envoyé ! Vérifiez votre boîte de réception.
-              </div>
-            ) : (
-              <form onSubmit={handleResend} className="space-y-3">
-                <input
-                  type="email"
-                  className="input"
-                  placeholder="Votre email"
-                  value={resendEmail}
-                  onChange={(e) => setResendEmail(e.target.value)}
-                  required
-                />
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  fullWidth
-                  isLoading={resendLoading}
-                  loadingText="Envoi..."
-                >
-                  Renvoyer le lien
-                </Button>
-              </form>
-            )}
-          </div>
-
-          <p className="mt-6 text-center text-sm text-slate-400">
-            <Link to="/login" className="link">
-              ← Retour à la connexion
-            </Link>
-          </p>
+      {erreur && (
+        <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+          {erreur}
         </div>
+      )}
+
+      {renvoiFait && (
+        <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-sm text-emerald-300">
+          Un nouveau code vient d'être envoyé.
+        </div>
+      )}
+
+      <form onSubmit={verifier} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2" htmlFor="verif-email">
+            Adresse email
+          </label>
+          <input
+            id="verif-email"
+            className="input w-full"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2" htmlFor="verif-code">
+            Code de vérification
+          </label>
+          <input
+            id="verif-code"
+            className="input w-full tracking-[0.4em] text-center"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="000000"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
+            required
+          />
+        </div>
+
+        <Button
+          type="submit"
+          variant="primary"
+          fullWidth
+          isLoading={enCours}
+          disabled={!email || code.length !== 6}
+        >
+          Vérifier
+        </Button>
+      </form>
+
+      <div className="flex items-center justify-between text-sm">
+        <button type="button" className="text-slate-400 underline" onClick={renvoyer} disabled={!email}>
+          Renvoyer le code
+        </button>
+        <Link to="/login" className="text-slate-400 underline">
+          Retour à la connexion
+        </Link>
       </div>
     </div>
   );

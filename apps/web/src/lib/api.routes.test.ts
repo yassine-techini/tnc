@@ -70,3 +70,43 @@ describe('Cycle de vie du depot', () => {
     expect(fetchMock.mock.calls[0][1]?.method).toBe('POST');
   });
 });
+
+describe('Verification de compte', () => {
+  /**
+   * Les cinq appels de cette famille visaient soit une route inexistante, soit
+   * la bonne route avec une charge que la validation refuse. Aucun ne pouvait
+   * aboutir, et rien dans le typage ne le montrait.
+   */
+
+  it('verifie un email avec la charge que le schema exige', async () => {
+    await api.verifyEmail('client@example.bf', '123456');
+
+    expect(cheminAppele()).toBe('/api/v1/auth/verify-email');
+    // Envoyait `{ token }` : le courriel porte un code, pas un lien.
+    expect(corpsAppele()).toEqual({ email: 'client@example.bf', code: '123456' });
+  });
+
+  it('renvoie un code email par la seule route qui existe', async () => {
+    await api.resendVerificationEmail('client@example.bf');
+
+    // `/auth/resend-verification` n'existe pas.
+    expect(cheminAppele()).toBe('/api/v1/auth/resend-code');
+    expect(corpsAppele()).toEqual({ type: 'email', identifier: 'client@example.bf' });
+  });
+
+  it('envoie un code telephone par la meme route, avec son type', async () => {
+    await api.sendPhoneVerification('+22670123456');
+
+    // `/auth/verify-phone/send` n'existe pas.
+    expect(cheminAppele()).toBe('/api/v1/auth/resend-code');
+    expect(corpsAppele()).toEqual({ type: 'phone', identifier: '+22670123456' });
+  });
+
+  it('confirme un telephone avec le numero ET le code', async () => {
+    await api.verifyPhone('+22670123456', '123456');
+
+    expect(cheminAppele()).toBe('/api/v1/auth/verify-phone');
+    // Le seul code ne suffit pas a identifier la demande.
+    expect(corpsAppele()).toEqual({ phone: '+22670123456', code: '123456' });
+  });
+});

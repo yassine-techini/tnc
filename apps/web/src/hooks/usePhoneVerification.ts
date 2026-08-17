@@ -66,14 +66,15 @@ export function usePhoneVerification(
           error: null,
         }));
 
-        // API call to send verification code (auth via httpOnly cookie)
-        const response = await fetch('/api/v1/auth/verify-phone/send', {
+        // `/auth/verify-phone/send` n'existe pas : l'envoi passe par
+        // `/auth/resend-code`, qui distingue email et telephone par son `type`.
+        const response = await fetch('/api/v1/auth/resend-code', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           credentials: 'include',
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify({ type: 'phone', identifier: phone }),
         });
 
         const data = await response.json();
@@ -129,8 +130,9 @@ export function usePhoneVerification(
           error: null,
         }));
 
-        // API call to verify code (auth via httpOnly cookie)
-        const response = await fetch('/api/v1/auth/verify-phone/confirm', {
+        // `/auth/verify-phone/confirm` n'existe pas : la route est
+        // `/auth/verify-phone`, et elle attend deja `{ phone, code }`.
+        const response = await fetch('/api/v1/auth/verify-phone', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
