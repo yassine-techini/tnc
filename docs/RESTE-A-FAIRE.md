@@ -509,7 +509,7 @@ Deux vérifications complémentaires, également propres :
   l'appartenance du lot, *puis* revalide la clé R2 contre le préfixe du producteur — avec
   un commentaire qui explique pourquoi : les documents KYC vivent dans le même seau.
 
-### Ce que l'audit signale quand même : une convention, pas un mécanisme 🔵
+### Ce que l'audit signalait : une convention, devenue un mécanisme ✅
 
 Il n'existe pas d'équivalent de `requirePermission` pour la propriété d'un objet. Chaque
 route s'en souvient — quinze fois sur quinze aujourd'hui — mais rien ne l'y oblige. Une
@@ -520,10 +520,32 @@ successifs pour voir toutes les formes en usage (filtre SQL, comparaison JavaScr
 `user_id`, comparaison avec `producer_id`, délégation à un service). Quatre idiomes pour
 une même règle, c'est une règle qu'on applique de mémoire.
 
-Ce n'est pas un défaut aujourd'hui. C'est une fragilité, du même genre que celle qui a
-produit les constats du quatrième audit — et le remède serait du même ordre : soit un
-utilitaire unique (`assertOwnership(ressource, userId)`), soit un contrôle statique qui
-refuse une route à paramètre sans filtre reconnaissable.
+**Posé.** Les deux moitiés :
+
+- `src/lib/ownership.ts` donne une forme canonique au nouveau code. `refusSiEtranger()`
+  traite une ressource **absente** et une ressource **étrangère** de façon identique :
+  répondre 403 sur l'une et 404 sur l'autre confirmerait l'existence de ce qu'on refuse
+  de montrer, et ferait de la route un oracle qui énumère les identifiants.
+- `pnpm check:ownership` refuse une route utilisateur à paramètre sans contrôle
+  reconnaissable. Il accepte **délibérément** les quatre formes existantes plutôt que
+  d'imposer la réécriture de quinze routes qui fonctionnent : remuer du code correct
+  achète du risque, pas de la sûreté.
+
+**Les exceptions sont des décisions.** Deux listes, chacune exigeant une raison écrite —
+même forme que les tables exclues de la sauvegarde : `/verify/:code` (le code *est* le
+justificatif) et `POST /positions/:id/exit` (la garantie vit dans `LeaseService.requestExit`,
+nommé). Sans cette seconde liste, « le service s'en charge » est une croyance ; en la
+nommant, elle devient vérifiable. Un test refuse une entrée sans justification réelle.
+
+Vérifié par mutation : retirer la comparaison `producer_id` de `GET /consignments/:id`
+fait échouer le contrôle, avec fichier et ligne.
+
+**Et une limite documentée s'est révélée être un correctif d'une ligne.** J'avais écrit
+que `check-sql-schema.mjs` ne pouvait pas être chargé par vitest. Construire ce
+second garde-fou — qui se charge, lui — a montré que le format n'était pas en cause. La
+bissection a trouvé : un shebang combiné à des fins de ligne CRLF, introduites par mes
+propres éditions. Le script s'invoque par `node scripts/…`, jamais en exécutable : la
+ligne était décorative. Ses 16 tests sont rétablis.
 
 ---
 
