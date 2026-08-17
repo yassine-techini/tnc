@@ -158,25 +158,23 @@ export default function MarketScreen() {
 
   const { data: priceHistoryData } = useQuery({
     queryKey: ['priceHistory'],
-    queryFn: async () => {
-      try {
-        return await api.getPriceHistory('24h');
-      } catch {
-        // Fallback with simulated data if API not available
-        const basePrice = priceData?.data?.priceXof || 50000;
-        const prices = Array.from({ length: 24 }, (_, i) => ({
-          timestamp: new Date(Date.now() - (23 - i) * 3600000).toISOString(),
-          priceXof: basePrice * (1 + (Math.random() - 0.5) * 0.04),
-        }));
-        return { success: true as const, data: { prices, period: '24h' }, requestId: 'local' };
-      }
-    },
+    // Aucun repli fabriqué.
+    //
+    // Cette requête inventait 24 points de prix aléatoires quand l'API ne
+    // répondait pas (`basePrice * (1 + (Math.random() - 0.5) * 0.04)`) et les
+    // affichait comme une vraie courbe. Un utilisateur voyait donc une
+    // évolution du cours de l'or entièrement simulée, sans rien pour l'en
+    // avertir — sur une application où l'on décide d'acheter ou de vendre.
+    //
+    // En cas d'échec, la requête échoue : le graphique ne s'affiche pas, ce qui
+    // est la seule chose honnête à montrer quand on ne connaît pas le cours.
+    queryFn: () => api.getPriceHistory('24h'),
     // No polling — relies on staleTime (10 min) + pull-to-refresh to save battery
   });
 
   const chartData = useMemo(() => {
-    if (!priceHistoryData?.data?.prices) return [];
-    return priceHistoryData.data.prices.map(p => p.priceXof);
+    if (!priceHistoryData?.data?.items) return [];
+    return priceHistoryData.data.items.map((p) => p.priceXof);
   }, [priceHistoryData]);
 
   const { data: walletData } = useQuery({

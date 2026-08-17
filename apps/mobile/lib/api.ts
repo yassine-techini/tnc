@@ -382,8 +382,11 @@ class MobileApiClient {
   }
 
   async getPriceHistory(period: '24h' | '7d' | '30d' = '24h') {
+    // `items`, pas `prices` : le champ déclaré n'existait pas, donc le
+    // graphique de prix de l'écran Marché était vide en permanence — sans
+    // erreur, sans état vide explicite, juste une courbe absente.
     return this.request<{
-      prices: { timestamp: string; priceXof: number }[];
+      items: { timestamp: string; priceXof: number }[];
       period: string;
     }>(`/api/v1/market/price/history?period=${period}`);
   }

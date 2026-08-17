@@ -80,6 +80,50 @@ describe('charge utile du portail État', () => {
     });
   });
 
+  describe('/state/reports/por', () => {
+    const payload = () => payloadOf("state.get('/reports/por'");
+
+    it('émet les champs que l’écran de rapport lit', () => {
+      // Le client déclarait totalAllocatedGold, totalTokensIssued, auditStatus
+      // et auditor. Aucun n'existait : le rapport de preuve de réserve montrait
+      // à un ministère 0 g alloué, 0 g émis et un audit « En attente »
+      // permanent.
+      for (const f of ['goldAllocated', 'tokensInCirculation', 'certificationStatus']) {
+        expect(emits(payload(), f), f).toBe(true);
+      }
+    });
+
+    it('n’annonce pas d’auditeur nommé', () => {
+      // Le champ n'a jamais existé ; c'est le RÉSULTAT du dernier audit qui est
+      // envoyé, et c'est lui que l'écran affiche désormais.
+      expect(emits(payload(), 'auditor')).toBe(false);
+      expect(emits(payload(), 'lastAuditResult'), 'lastAuditResult').toBe(true);
+    });
+  });
+
+  describe('/state/reports/monthly', () => {
+    const payload = () => payloadOf("state.get('/reports/monthly'");
+
+    it('émet les agrégats que l’écran utilise', () => {
+      for (const f of ['transactionStats', 'newUsers', 'activeUsers', 'averagePrice']) {
+        expect(emits(payload(), f), f).toBe(true);
+      }
+    });
+
+    it('ne pré-calcule pas de totaux — ils se dérivent', () => {
+      // Le client prétendait recevoir totalTransactions / totalVolume /
+      // buyVolume / sellVolume / fees : l’écran affichait donc zéro partout.
+      for (const f of ['totalTransactions', 'totalVolume', 'buyVolume', 'sellVolume']) {
+        expect(emits(payload(), f), f).toBe(false);
+      }
+    });
+
+    it('compte les détenteurs actifs sans les nommer', () => {
+      // COUNT(DISTINCT …) : un agrégat, jamais une liste.
+      expect(SOURCE).toContain('COUNT(DISTINCT user_id)');
+    });
+  });
+
   it('ne renvoie jamais `coverage` tout court', () => {
     // Le nom exact compte : c'est la confusion coverage / coverageRatio qui a
     // fait afficher 0 % au ministère.

@@ -98,6 +98,28 @@ export default function Reports() {
 
   const por = porData?.data;
   const monthly = monthlyData?.data;
+
+  /**
+   * La route renvoie `transactionStats` groupé par type, pas des totaux. Le
+   * client prétendait recevoir totalTransactions / totalVolume / buyVolume /
+   * sellVolume / fees : aucun n'existait, donc l'écran affichait zéro partout.
+   * On les dérive de ce qui est réellement envoyé.
+   */
+  const monthlyStats = monthly?.transactionStats ?? [];
+  const sumBy = (
+    key: 'count' | 'total_cash' | 'total_fees',
+    type?: string
+  ): number =>
+    monthlyStats
+      .filter((t) => (type ? t.type === type : true))
+      .reduce((acc, t) => acc + (Number(t[key]) || 0), 0);
+
+  const totalTransactions = sumBy('count');
+  const totalVolume = sumBy('total_cash');
+  const buyVolume = sumBy('total_cash', 'BUY');
+  const sellVolume = sumBy('total_cash', 'SELL');
+  const totalFees = sumBy('total_fees');
+
   const priceHistory = priceHistoryData?.data?.items || [];
   const txStats = txStatsData?.data?.items || [];
 
@@ -145,11 +167,12 @@ export default function Reports() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold">Proof of Reserve (PoR)</h2>
           <span className={`badge ${
-            por?.auditStatus === 'VERIFIED' ? 'badge-success' :
-            por?.auditStatus === 'EXPIRED' ? 'badge-error' : 'badge-warning'
+            por?.certificationStatus === 'CERTIFIED' ? 'badge-success' :
+            por?.certificationStatus === 'UNDER_COLLATERALIZED' ? 'badge-error' : 'badge-warning'
           }`}>
-            {por?.auditStatus === 'VERIFIED' ? 'Vérifié' :
-             por?.auditStatus === 'EXPIRED' ? 'Expiré' : 'En attente'}
+            {por?.certificationStatus === 'CERTIFIED' ? 'Certifié' :
+             por?.certificationStatus === 'UNDER_COLLATERALIZED' ? 'Sous-collatéralisé' :
+             por ? 'Audit en attente' : '—'}
           </span>
         </div>
 
@@ -165,13 +188,13 @@ export default function Reports() {
               <div className="stat-card">
                 <p className="text-sm text-slate-400">Or Physique</p>
                 <p className="text-2xl font-bold text-gold-500">
-                  {por?.totalAllocatedGold?.toLocaleString() || '0'} g
+                  {por?.goldAllocated?.toLocaleString() || '0'} g
                 </p>
               </div>
               <div className="stat-card">
                 <p className="text-sm text-slate-400">Tokens Émis</p>
                 <p className="text-2xl font-bold">
-                  {por?.totalTokensIssued?.toLocaleString() || '0'} g
+                  {por?.tokensInCirculation?.toLocaleString() || '0'} g
                 </p>
               </div>
               <div className="stat-card">
@@ -203,17 +226,17 @@ export default function Reports() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Auditeur</p>
-                  <p className="font-medium">{por?.auditor || '—'}</p>
+                  <p className="text-slate-400">Résultat du dernier audit</p>
+                  <p className="font-medium">{por?.lastAuditResult || '—'}</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Surplus/Déficit</p>
                   <p className={`font-medium ${
-                    (por?.totalAllocatedGold || 0) >= (por?.totalTokensIssued || 0)
+                    (por?.goldAllocated || 0) >= (por?.tokensInCirculation || 0)
                       ? 'text-green-400'
                       : 'text-red-400'
                   }`}>
-                    {((por?.totalAllocatedGold || 0) - (por?.totalTokensIssued || 0)).toLocaleString()} g
+                    {((por?.goldAllocated || 0) - (por?.tokensInCirculation || 0)).toLocaleString()} g
                   </p>
                 </div>
               </div>
@@ -251,11 +274,11 @@ export default function Reports() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
               <div className="stat-card">
                 <p className="text-sm text-slate-400">Transactions</p>
-                <p className="text-2xl font-bold">{monthly?.totalTransactions || 0}</p>
+                <p className="text-2xl font-bold">{totalTransactions}</p>
               </div>
               <div className="stat-card">
                 <p className="text-sm text-slate-400">Volume Total</p>
-                <p className="text-2xl font-bold">{monthly?.totalVolume?.toLocaleString() || 0} FCFA</p>
+                <p className="text-2xl font-bold">{totalVolume.toLocaleString()} FCFA</p>
               </div>
               <div className="stat-card">
                 <p className="text-sm text-slate-400">Nouveaux Utilisateurs</p>
@@ -271,13 +294,13 @@ export default function Reports() {
               <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                 <p className="text-sm text-slate-400">Volume Achats</p>
                 <p className="text-xl font-bold text-green-400">
-                  {monthly?.buyVolume?.toLocaleString() || 0} FCFA
+                  {buyVolume.toLocaleString()} FCFA
                 </p>
               </div>
               <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <p className="text-sm text-slate-400">Volume Ventes</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {monthly?.sellVolume?.toLocaleString() || 0} FCFA
+                  {sellVolume.toLocaleString()} FCFA
                 </p>
               </div>
             </div>
@@ -290,14 +313,12 @@ export default function Reports() {
                 </div>
                 <div>
                   <p className="text-slate-400">Frais Collectés</p>
-                  <p className="font-medium">{monthly?.fees?.toLocaleString() || '—'} FCFA</p>
+                  <p className="font-medium">{totalFees.toLocaleString()} FCFA</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Ratio Achat/Vente</p>
                   <p className="font-medium">
-                    {monthly?.buyVolume && monthly?.sellVolume
-                      ? (monthly.buyVolume / monthly.sellVolume).toFixed(2)
-                      : '—'}
+                    {buyVolume > 0 && sellVolume > 0 ? (buyVolume / sellVolume).toFixed(2) : '—'}
                   </p>
                 </div>
                 <div>

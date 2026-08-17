@@ -236,29 +236,47 @@ class StateApiClient {
 
   // Reports
   async getProofOfReserve(token?: string) {
+    // Noms réels de la route. La déclaration précédente annonçait
+    // totalAllocatedGold, totalTokensIssued, auditStatus et auditor — aucun
+    // n'existait, si bien que le rapport de preuve de réserve montrait à un
+    // ministère 0 g alloué, 0 g émis et un audit « En attente » permanent.
     return this.request<{
       reportDate: string;
-      totalAllocatedGold: number;
-      totalTokensIssued: number;
+      goldAllocated: number;
+      tokensInCirculation: number;
       coverageRatio: number;
-      auditStatus: 'VERIFIED' | 'PENDING' | 'EXPIRED';
       lastAuditDate: string | null;
-      auditor: string | null;
+      lastAuditResult: string | null;
+      certificationStatus: string;
+      walletDistribution: Array<{ range: string; count: number }>;
+      transactionSummary: Array<{ type: string; count: number; total: number }>;
     }>('/api/v1/state/reports/por', { token });
   }
 
   async getMonthlyReport(month?: string, token?: string) {
     const params = month ? `?month=${month}` : '';
+    // Les totaux se DÉRIVENT de `transactionStats`, groupé par type : la route
+    // ne les pré-calcule pas, et le client prétendait les recevoir.
     return this.request<{
       month: string;
-      totalTransactions: number;
-      totalVolume: number;
-      buyVolume: number;
-      sellVolume: number;
+      reportGeneratedAt: string;
+      transactionStats: Array<{
+        type: string;
+        count: number;
+        total_cash: number;
+        total_tokens: number;
+        total_fees: number;
+      }>;
       newUsers: number;
       activeUsers: number;
-      averagePrice: number;
-      fees: number;
+      /** null quand aucun prix n'a été relevé ce mois-là. */
+      averagePrice: number | null;
+      kycStats: Array<{ kyc_level: string; count: number }>;
+      stockStatus: {
+        goldAllocated: number;
+        tokensInCirculation: number;
+        coverageRatio: number;
+      };
     }>(`/api/v1/state/reports/monthly${params}`, { token });
   }
 

@@ -764,6 +764,27 @@ state.get('/reports/monthly', async (c) => {
       .bind(month)
       .all<any>();
 
+    // Détenteurs ayant transigé dans le mois. Agrégat : un COMPTE de comptes
+    // distincts, jamais une liste — le portail État ne voit pas qui.
+    const activeUsersResult = await c.env.DB
+      .prepare(`
+        SELECT COUNT(DISTINCT user_id) as count
+        FROM transactions
+        WHERE status = 'COMPLETED' AND strftime('%Y-%m', created_at) = ?
+      `)
+      .bind(month)
+      .first<{ count: number }>();
+
+    // Cours moyen du mois, au comptant.
+    const averagePriceResult = await c.env.DB
+      .prepare(`
+        SELECT AVG(price_xof) as avg
+        FROM gold_prices
+        WHERE strftime('%Y-%m', timestamp) = ?
+      `)
+      .bind(month)
+      .first<{ avg: number | null }>();
+
     // Get current stock status
     const stock = await c.env.DB
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
@@ -780,6 +801,10 @@ state.get('/reports/monthly', async (c) => {
         reportGeneratedAt: new Date().toISOString(),
         transactionStats: txStats.results || [],
         newUsers: newUsersResult?.count || 0,
+        activeUsers: activeUsersResult?.count || 0,
+        // null quand aucun prix n'a été relevé ce mois-là : l'écran affiche
+        // « — », il n'invente pas un cours moyen de zéro.
+        averagePrice: averagePriceResult?.avg ?? null,
         kycStats: kycStats.results || [],
         stockStatus: {
           goldAllocated: stock?.total_allocated || 0,
