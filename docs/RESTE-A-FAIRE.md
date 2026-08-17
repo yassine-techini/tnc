@@ -230,7 +230,7 @@ vers les clients. Refaire l'un des deux n'aurait rien dit. Quatre angles inédit
 **les clients vers l'API** (l'inverse du deuxième), les **gardes d'autorisation**, la
 **validation des entrées**, et l'**intégrité du schéma**.
 
-### J. La vérification de compte ne fonctionne pas sur le web 🟠
+### J. La vérification de compte ne fonctionnait pas sur le web ✅
 
 Cinq points d'appel, **aucun ne peut aboutir**. C'est l'angle « clients vers API » qui
 les révèle : le compilateur ne lit pas une chaîne de caractères, et un chemin faux ne
@@ -256,7 +256,7 @@ c'est la route que ces fonctions auraient dû appeler.
 une fonctionnalité promise qui reste inopérante, et un drapeau qui ne passera jamais à
 vrai dans la fiche que consulte un administrateur.
 
-### K. Un ajustement de stock refusé se lit « Erreur interne » 🟡
+### K. Un ajustement de stock refusé se lisait « Erreur interne » ✅
 
 `POST /admin/stock/adjust` calcule `total_allocated + amount` et écrit sans vérifier que
 le total reste supérieur aux tokens émis.
@@ -273,6 +273,19 @@ manque.
 Second point : l'écriture du stock et celle de la piste d'audit sont deux `.run()`
 successifs, pas un `db.batch`. Un échec entre les deux ajuste le stock sans laisser de
 trace — l'inverse du motif retenu partout ailleurs.
+
+**Corrigé (J).** Le désaccord n'était pas dans la charge utile mais dans le **parcours** :
+`VerifyEmail.tsx` attendait un lien `?token=`, alors que le courriel porte un code à six
+chiffres. L'écran demande maintenant l'email et le code. Les quatre autres appels visent
+les vraies routes avec les vraies charges. Les tests de chemin ajoutés pour le 404 du mot
+de passe couvrent désormais cette famille — ils vérifient le chemin **et** le corps.
+
+**Corrigé (K).** La règle vit dans `lib/stock-invariant`, pas en ligne dans la route : un
+test d'intégration qui reproduirait l'arithmétique prouverait la copie. Il appelle la
+vraie fonction contre un vrai SQLite. L'ajustement et sa trace d'audit sont désormais dans
+un seul `db.batch`, avec un test vérifiant qu'une trace impossible à écrire annule
+l'ajustement.
+
 
 ### Ce que cet audit a confirmé de sain
 
