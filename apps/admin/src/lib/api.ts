@@ -3,6 +3,9 @@ const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://l
 import type {
   AdminDashboardData,
   RealtimeMetricsData,
+  LogSearchData,
+  StructuredLogData,
+  LogStatsData,
   AlertRulesData,
   AnalyticsHistoryData,
   AdminPermissionsData,
@@ -661,48 +664,18 @@ class AdminApiClient {
     if (filters.search) params.set('search', filters.search);
     if (filters.limit) params.set('limit', String(filters.limit));
     if (filters.offset) params.set('offset', String(filters.offset));
-    return this.request<{
-      logs: Array<{
-        id: string;
-        timestamp: string;
-        level: string;
-        category: string;
-        action: string | null;
-        userId: string | null;
-        requestId: string | null;
-        messagePreview: string;
-      }>;
-      total: number;
-    }>(`/api/v1/admin/analytics/logs?${params}`, { token });
+    return this.request<LogSearchData>(`/api/v1/admin/analytics/logs?${params}`, { token });
   }
 
   async getLogDetail(logId: string, token?: string) {
-    return this.request<{
-      id: string;
-      timestamp: string;
-      level: string;
-      category: string;
-      action?: string;
-      message: string;
-      userId?: string;
-      requestId?: string;
-      entityType?: string;
-      entityId?: string;
-      metadata?: Record<string, unknown>;
-      stack?: string;
-    }>(`/api/v1/admin/analytics/logs/${logId}`, { token });
+    return this.request<StructuredLogData>(`/api/v1/admin/analytics/logs/${logId}`, { token });
   }
 
   async getLogStats(startDate?: string, endDate?: string, token?: string) {
     const params = new URLSearchParams();
     if (startDate) params.set('startDate', startDate);
     if (endDate) params.set('endDate', endDate);
-    return this.request<{
-      totalLogs: number;
-      byLevel: Record<string, number>;
-      byCategory: Record<string, number>;
-      recentErrors: number;
-    }>(`/api/v1/admin/analytics/logs/stats?${params}`, { token });
+    return this.request<LogStatsData>(`/api/v1/admin/analytics/logs/stats?${params}`, { token });
   }
 
   async getAlertRules(token?: string) {

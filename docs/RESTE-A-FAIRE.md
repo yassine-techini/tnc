@@ -41,11 +41,11 @@ Deux applications n'ont aucun test d'écran :
 
 Prérequis : installer `jsdom` et `@testing-library/*`, donc une modification du lockfile.
 
-## 3. Contrats de réponse — étendre la couverture 🟠
+## 3. Contrats de réponse — catégorie fermée ✅
 
 Les quatre clients déclaraient à la main ce qu'ils croyaient recevoir, sans lien de compilation
-avec les routes. Cinq défauts en sont sortis, tous invisibles au compilateur. Le mécanisme qui
-ferme la catégorie est en place dans `packages/shared/src/contracts/` :
+avec les routes. Le mécanisme qui ferme la catégorie est en place dans
+`packages/shared/src/contracts/` :
 
 ```ts
 // route
@@ -57,12 +57,20 @@ this.request<StateStockData>('/api/v1/state/stock');
 `satisfies` fait échouer la compilation de l'API si un champ manque ou change de nom ; le client
 importe le **même** type. Vérifié en renommant volontairement un champ : l'API ne compile plus.
 
-**Couvert (41 endpoints)** : tout le **chemin de l'argent** — portefeuille, transactions, dépôt,
-retrait, cours, devis, achat, vente ; la **location** — conditions, positions, relevé quotidien,
-sortie ; les **frais de garde** ; le **portail État** — tableau de bord, stock, preuve de réserve,
-rapport mensuel ; la **configuration 2FA** et l'**historique de prix** ; le **profil utilisateur**, le **statut KYC**, les **préférences de notification** et les **alertes de prix** ; le **back-office** — tableau de bord, stock et permissions ; l **authentification** — inscription, connexion (les trois chemins), rafraichissement, sessions.
+**Couvert (44 endpoints)** — tous ceux dont un écran lit la réponse : le **chemin de l'argent**
+(portefeuille, transactions, dépôt, retrait, cours, devis, achat, vente) ; la **location**
+(conditions, positions, relevé quotidien, sortie) ; les **frais de garde** ; le **portail État**
+(tableau de bord, stock, preuve de réserve, rapport mensuel) ; le **profil utilisateur**, le
+**statut KYC**, les **préférences de notification** et les **alertes de prix** ; le **back-office**
+(tableau de bord, stock, permissions) ; l'**authentification** (inscription, connexion par les
+trois chemins, rafraîchissement, sessions, configuration 2FA) ; l'**analytique**
+(temps réel, historique, règles d'alerte, alertes) et les **journaux** (recherche, détail,
+statistiques).
 
-**Reste** : `/admin/analytics/logs`, qui relaie le resultat d un service de journalisation — sa forme appartient a ce service et merite d etre lue pour elle-meme plutot que typee a la hate.
+Sept défauts réels sont sortis de cette couverture, tous invisibles au compilateur avant elle.
+Les journaux, eux, étaient déjà justes : leur service déclarait ses formes de retour, et le client
+les avait recopiées fidèlement. Le gain n'y est pas une correction mais la suppression de la
+recopie — trois formes de moins qui puissent diverger plus tard.
 
 > **Cas particulier des relais.** Une route qui fait `await response.json()` ne construit pas sa
 > reponse : `satisfies` n y prouverait rien. Deux consequences apprises a nos depens : le contrat

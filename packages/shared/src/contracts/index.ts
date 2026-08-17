@@ -501,6 +501,52 @@ export interface AnalyticsHistoryData {
   latencies: MetricDataPoint[];
 }
 
+export interface LogIndexEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  category: string;
+  action: string | null;
+  userId: string | null;
+  requestId: string | null;
+  messagePreview: string;
+}
+
+/** `GET /api/v1/admin/analytics/logs` */
+export interface LogSearchData {
+  logs: LogIndexEntry[];
+  total: number;
+}
+
+/**
+ * `GET /api/v1/admin/analytics/logs/:id` — le journal complet.
+ *
+ * Meme forme que celle ecrite par le service de journalisation : c est le
+ * dossier lui-meme, pas une projection pour l ecran.
+ */
+export interface StructuredLogData {
+  id: string;
+  timestamp: string;
+  level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+  category: string;
+  action?: string;
+  message: string;
+  userId?: string;
+  requestId?: string;
+  entityType?: string;
+  entityId?: string;
+  metadata?: Record<string, unknown>;
+  stack?: string;
+}
+
+/** `GET /api/v1/admin/analytics/logs/stats` */
+export interface LogStatsData {
+  totalLogs: number;
+  byLevel: Record<string, number>;
+  byCategory: Record<string, number>;
+  recentErrors: number;
+}
+
 export interface AlertRuleRow {
   id: string;
   name: string;

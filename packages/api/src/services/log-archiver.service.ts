@@ -4,21 +4,11 @@
  */
 
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
+import type { StructuredLogData } from '@tnc-trading/shared/contracts';
 
-export interface StructuredLog {
-  id: string;
-  timestamp: string;
-  level: 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-  category: string;
-  action?: string;
-  message: string;
-  userId?: string;
-  requestId?: string;
-  entityType?: string;
-  entityId?: string;
-  metadata?: Record<string, unknown>;
-  stack?: string;
-}
+// La forme d un journal vient du contrat partage : elle est ecrite ici et lue
+// par le back-office, donc les deux doivent parler du meme type.
+export type StructuredLog = StructuredLogData;
 
 export interface LogBatch {
   logs: StructuredLog[];

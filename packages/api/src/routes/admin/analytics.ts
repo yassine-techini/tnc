@@ -15,6 +15,9 @@ import type {
   AlertRuleDeletedData,
   AlertRuleRow,
   AlertRow,
+  LogSearchData,
+  StructuredLogData,
+  LogStatsData,
 } from '@tnc-trading/shared/contracts';
 import type { AppEnv } from '../../types/env';
 import { requirePermission } from '../../middleware/rbac';
@@ -163,7 +166,7 @@ analytics.get('/logs', requirePermission('logs', 'view'), async (c) => {
 
     return c.json({
       success: true,
-      data: result,
+      data: result satisfies LogSearchData,
       requestId,
     });
   } catch (error) {
@@ -203,7 +206,7 @@ analytics.get('/logs/:id', requirePermission('logs', 'view'), async (c) => {
 
     return c.json({
       success: true,
-      data: log,
+      data: log satisfies StructuredLogData,
       requestId,
     });
   } catch (error) {
@@ -237,7 +240,7 @@ analytics.get('/logs/stats', requirePermission('logs', 'view'), async (c) => {
 
     return c.json({
       success: true,
-      data: stats,
+      data: stats satisfies LogStatsData,
       requestId,
     });
   } catch (error) {
