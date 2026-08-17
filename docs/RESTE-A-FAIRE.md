@@ -549,6 +549,64 @@ ligne était décorative. Ses 16 tests sont rétablis.
 
 ---
 
+## Septième audit — 17 août 2026, les travaux de nuit sont-ils rejouables ?
+
+Angle propre au domaine : onze crons tournent chaque nuit, et trois déplacent de l'argent
+— rendement de location, sortie de location, frais de garde. Un travail qui refire, ou
+qui échoue à mi-parcours, ne doit ni payer deux fois ni oublier quelqu'un.
+
+### Ce que l'audit a confirmé de sain — et c'est remarquable
+
+**L'idempotence n'est pas laissée au code : elle est dans la base**, au même endroit dans
+les trois cas, avec la raison écrite à côté :
+
+| Table | Protection |
+|---|---|
+| `lease_accruals` | `UNIQUE (position_id, accrual_date)` — « ce UNIQUE est ce qui rend le job rejouable » |
+| `storage_fee_accruals` | `UNIQUE (user_id, accrual_date)` — « rejouer le job ne facture pas deux fois » |
+| `reserve_attestations` | `sequence INTEGER UNIQUE` — « ce UNIQUE fait échouer une double émission concurrente » |
+
+`LeaseService.settleExit` va plus loin : une constante `guard` unique
+(`EXISTS (… status = 'PENDING')`) est appliquée à **chacune** de ses instructions. C'est
+le contrat de lot gardé appliqué à la lettre.
+
+### R. Une défaillance en cours de boucle interrompt le reste — et le jour est perdu 🟠
+
+`lease-accrual` et `storage-fee` parcourent leurs bénéficiaires sans **aucune gestion
+d'erreur par élément** :
+
+```ts
+for (const position of positions) {
+  const result = await service.accrueDay(position, date, price.price_xof);
+  ...
+}
+```
+
+Si `accrueDay` **lève** — une erreur D1 passagère suffit — l'exception remonte, la boucle
+s'arrête, et toutes les positions suivantes ne sont jamais traitées ce jour-là.
+
+Et le jour manqué n'est pas rattrapé. `positionsToAccrue` sélectionne
+`last_accrued_on < ?` avec la date **du jour courant** : au passage suivant, la position
+est bien reprise, mais créditée pour la nouvelle date, au prix de la nouvelle date. Le
+rendement du jour perdu n'est jamais versé ; le frais de garde du jour perdu n'est jamais
+facturé.
+
+La perte est **silencieuse et permanente**, et elle est asymétrique : ce sont les
+détenteurs qui perdent leur rendement.
+
+**Le motif correct existe dans le même dossier.** `lease-settlement` attrape par élément,
+consigne l'échec via `failExit`, et continue :
+
+```ts
+try { result = await service.settleExit(order, pricePerGram); }
+catch (error) { await service.failExit(order.id, String(error)); continue; }
+```
+
+Il ne manque que de l'appliquer aux deux autres — et de rendre l'écart visible, parce
+qu'aujourd'hui la seule trace est une ligne de journal `booked/total` que personne ne lit.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
