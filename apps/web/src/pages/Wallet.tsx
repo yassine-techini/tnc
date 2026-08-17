@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth';
-import { api } from '../lib/api';
+import { api, ApiRequestError } from '../lib/api';
 import { QUICK_AMOUNTS, type PaymentMethodId } from '../lib/constants';
 import { formatCurrency, formatGrams } from '../lib/formatters';
 import { Button } from '../components/ui/Button';
@@ -41,6 +41,11 @@ export default function Wallet() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodId>('orange_money');
   const [error, setError] = useState('');
+  // Second facteur au-dessus du seuil (ADR 009). Aucune ecriture n'a eu lieu
+  // quand le serveur reclame le code : le formulaire reste tel quel.
+  const [totpCode, setTotpCode] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [totpSetupRequired, setTotpSetupRequired] = useState(false);
 
   const { data: walletData, isLoading } = useQuery({
     queryKey: ['wallet'],
@@ -101,7 +106,7 @@ export default function Wallet() {
         throw new Error(`Limite de retrait: ${dailyLimit.toLocaleString()} FCFA/jour pour votre niveau KYC`);
       }
       const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `+226${phoneNumber}`;
-      return api.withdraw(amount, paymentMethod, fullPhone);
+      return api.withdraw(amount, paymentMethod, fullPhone, undefined, totpCode || undefined);
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -117,11 +122,27 @@ export default function Wallet() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
     onError: (err: Error) => {
+      if (err instanceof ApiRequestError) {
+        if (err.code === 'AUTH_2FA_SETUP_REQUIRED') {
+          setTotpSetupRequired(true);
+          setError(err.message);
+          return;
+        }
+        if (err.code === 'AUTH_2FA_REQUIRED' || err.code === 'AUTH_2FA_INVALID') {
+          setNeedsTotp(true);
+          setTotpCode('');
+          setError(err.code === 'AUTH_2FA_INVALID' ? 'Code invalide. Reessayez.' : '');
+          return;
+        }
+      }
       setError(err.message);
     },
   });
 
   const resetForm = () => {
+    setNeedsTotp(false);
+    setTotpCode('');
+    setTotpSetupRequired(false);
     setAmount(null);
     setPhoneNumber('');
     setPaymentMethod('orange_money');
@@ -461,6 +482,38 @@ export default function Wallet() {
               </p>
             </div>
 
+            {totpSetupRequired && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-sm mb-4">
+                Ce retrait depasse le seuil de verification renforcee.
+                <a href="/settings" className="underline ml-1">
+                  Activez la double authentification
+                </a>{' '}
+                pour le realiser.
+              </div>
+            )}
+
+            {needsTotp && !totpSetupRequired && (
+              <div className="mb-4">
+                <label className="block text-sm text-slate-400 mb-2" htmlFor="totp-withdraw">
+                  Code de double authentification
+                </label>
+                <input
+                  id="totp-withdraw"
+                  className="input w-full tracking-[0.4em] text-center"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Ce montant depasse le seuil de verification renforcee.
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <Button
                 variant="secondary"
@@ -473,7 +526,7 @@ export default function Wallet() {
                 variant="primary"
                 className="flex-1"
                 onClick={() => withdrawMutation.mutate()}
-                disabled={!amount || !phoneNumber}
+                disabled={!amount || !phoneNumber || totpSetupRequired || (needsTotp && totpCode.length !== 6)}
                 isLoading={withdrawMutation.isPending}
                 loadingText="Traitement..."
               >

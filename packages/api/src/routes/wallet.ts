@@ -11,6 +11,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
+import { requireTwoFactorIfHighValue } from '../lib/high-value-2fa';
 import { WalletService } from '../services/wallet.service';
 import { MarketService } from '../services/market.service';
 import { CertificateService } from '../services/certificate.service';
@@ -346,6 +347,11 @@ const withdrawSchema = z.object({
   phoneNumber: z.string().optional(), // Required for mobile money
   bankAccount: z.string().optional(), // Required for bank
   bankName: z.string().optional(),    // Required for bank
+  /**
+   * Exige seulement au-dessus du seuil de forte valeur (ADR 009). Un petit
+   * retrait ne doit pas reclamer un code a six chiffres.
+   */
+  totpCode: z.string().regex(/^\d{6}$/).optional(),
 });
 
 // POST /wallet/withdraw
@@ -354,6 +360,32 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
+
+  // Second facteur au-dessus du seuil (ADR 009). Place avant toute ecriture :
+  // un retrait refuse ne doit laisser aucune trace de demande.
+  const garde = await requireTwoFactorIfHighValue({
+    db: c.env.DB,
+    cache: c.env.CACHE,
+    encryptionKey: c.env.ENCRYPTION_KEY,
+    userId,
+    amountXof: body.amount,
+    operation: 'WITHDRAW',
+    totpCode: body.totpCode,
+    ipAddress: c.req.header('CF-Connecting-IP'),
+    userAgent: c.req.header('User-Agent'),
+  });
+
+  if (!garde.ok) {
+    return c.json({
+      success: false,
+      error: {
+        code: garde.code,
+        message: garde.message,
+        details: { thresholdXof: garde.thresholdXof },
+      },
+      requestId,
+    }, garde.status);
+  }
 
   const walletService = new WalletService(c.env.DB);
   const configService = new ConfigService(c.env.DB, c.env.CACHE);

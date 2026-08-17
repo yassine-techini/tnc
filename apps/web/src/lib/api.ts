@@ -36,6 +36,27 @@ import type {
 } from '@tnc-trading/shared/contracts';
 import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 
+/**
+ * Erreur d'API qui CONSERVE le code metier.
+ *
+ * `new Error(message)` seul suffisait tant que l'interface se contentait
+ * d'afficher le texte. Le second facteur sur les grosses operations (ADR 009)
+ * change la donne : l'ecran doit distinguer « code requis » de « solde
+ * insuffisant » pour ouvrir une saisie plutot qu'une banniere rouge. Comparer
+ * des messages traduisibles pour deviner le cas serait un piege a regression.
+ */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 interface ApiResponse<T> {
   success: true;
   data: T;
@@ -160,7 +181,12 @@ class ApiClient {
     const data: ApiResult<T> = await response.json();
 
     if (!data.success) {
-      throw new Error(data.error?.message || 'Une erreur est survenue');
+      throw new ApiRequestError(
+        data.error?.message || 'Une erreur est survenue',
+        data.error?.code,
+        response.status,
+        (data.error as { details?: Record<string, unknown> })?.details
+      );
     }
 
     return data;
@@ -371,18 +397,18 @@ class ApiClient {
     });
   }
 
-  async executeBuy(quoteId: string, paymentMethod: string, token?: string) {
+  async executeBuy(quoteId: string, paymentMethod: string, token?: string, totpCode?: string) {
     return this.request<TradeExecutionData>('/api/v1/market/buy', {
       method: 'POST',
-      body: JSON.stringify({ quoteId, paymentMethod }),
+      body: JSON.stringify({ quoteId, paymentMethod, totpCode }),
       token,
     });
   }
 
-  async executeSell(quoteId: string, paymentMethod: string, token?: string) {
+  async executeSell(quoteId: string, paymentMethod: string, token?: string, totpCode?: string) {
     return this.request<TradeExecutionData>('/api/v1/market/sell', {
       method: 'POST',
-      body: JSON.stringify({ quoteId, paymentMethod }),
+      body: JSON.stringify({ quoteId, paymentMethod, totpCode }),
       token,
     });
   }
@@ -427,7 +453,7 @@ class ApiClient {
     });
   }
 
-  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token?: string) {
+  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token?: string, totpCode?: string) {
     return this.request<{
       withdrawalId: string;
       amount: number;
@@ -436,7 +462,7 @@ class ApiClient {
       estimatedTime: string;
     }>('/api/v1/wallet/withdraw', {
       method: 'POST',
-      body: JSON.stringify({ amount, paymentMethod, phoneNumber }),
+      body: JSON.stringify({ amount, paymentMethod, phoneNumber, totpCode }),
       token,
     });
   }

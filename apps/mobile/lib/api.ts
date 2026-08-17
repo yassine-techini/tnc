@@ -48,6 +48,27 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
 // Expected API host for certificate pinning validation (now using ssl-pinning module)
 const ALLOWED_API_HOSTS = PINNED_DOMAINS;
 
+/**
+ * Erreur d'API qui CONSERVE le code metier.
+ *
+ * `new Error(message)` seul suffisait tant que l'interface se contentait
+ * d'afficher le texte. Le second facteur sur les grosses operations (ADR 009)
+ * change la donne : l'ecran doit distinguer « code requis » de « solde
+ * insuffisant » pour ouvrir une saisie plutot qu'une banniere rouge. Comparer
+ * des messages traduisibles pour deviner le cas serait un piege a regression.
+ */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 interface ApiResponse<T> {
   success: true;
   data: T;
@@ -271,7 +292,12 @@ class MobileApiClient {
 
         if (!data.success) {
           const errorData = data as ApiError;
-          throw new Error(errorData.error?.message || 'Une erreur est survenue');
+          throw new ApiRequestError(
+            errorData.error?.message || 'Une erreur est survenue',
+            errorData.error?.code,
+            response.status,
+            (errorData.error as { details?: Record<string, unknown> })?.details
+          );
         }
 
         return data as ApiResponse<T>;
@@ -417,7 +443,7 @@ class MobileApiClient {
     });
   }
 
-  async executeBuy(quoteId: string, paymentMethod: string, token: string) {
+  async executeBuy(quoteId: string, paymentMethod: string, token: string, totpCode?: string) {
     return this.request<{
       transactionId: string;
       type: 'BUY';
@@ -426,13 +452,13 @@ class MobileApiClient {
       status: string;
     }>('/api/v1/market/buy', {
       method: 'POST',
-      body: JSON.stringify({ quoteId, paymentMethod }),
+      body: JSON.stringify({ quoteId, paymentMethod, totpCode }),
       token,
       idempotencyKey: this.generateIdempotencyKey(),
     });
   }
 
-  async executeSell(quoteId: string, paymentMethod: string, token: string) {
+  async executeSell(quoteId: string, paymentMethod: string, token: string, totpCode?: string) {
     return this.request<{
       transactionId: string;
       type: 'SELL';
@@ -441,7 +467,7 @@ class MobileApiClient {
       status: string;
     }>('/api/v1/market/sell', {
       method: 'POST',
-      body: JSON.stringify({ quoteId, paymentMethod }),
+      body: JSON.stringify({ quoteId, paymentMethod, totpCode }),
       token,
       idempotencyKey: this.generateIdempotencyKey(),
     });
@@ -485,7 +511,7 @@ class MobileApiClient {
     });
   }
 
-  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token: string) {
+  async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token: string, totpCode?: string) {
     return this.request<{
       withdrawalId: string;
       amount: number;
@@ -493,7 +519,7 @@ class MobileApiClient {
       status: string;
     }>('/api/v1/wallet/withdraw', {
       method: 'POST',
-      body: JSON.stringify({ amount, paymentMethod, phoneNumber }),
+      body: JSON.stringify({ amount, paymentMethod, phoneNumber, totpCode }),
       token,
       idempotencyKey: this.generateIdempotencyKey(),
     });

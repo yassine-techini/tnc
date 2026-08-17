@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { QuoteData } from '@tnc-trading/shared/contracts';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, ApiRequestError } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
 import PriceChart, { PriceDataPoint } from '../components/PriceChart';
 import { UTCTimestamp } from 'lightweight-charts';
@@ -60,6 +60,15 @@ export default function Marketplace() {
     cashAmount: number;
   } | null>(null);
   const [error, setError] = useState('');
+  /**
+   * Second facteur au-dessus du seuil (ADR 009). Le devis n'est PAS consomme
+   * quand le serveur reclame un code : on reste donc sur l'ecran de
+   * confirmation, code en main, plutot que de renvoyer l'utilisateur au
+   * formulaire lui faire redemander un prix.
+   */
+  const [totpCode, setTotpCode] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [totpSetupRequired, setTotpSetupRequired] = useState(false);
 
   const [chartPeriod, setChartPeriod] = useState<'24h' | '7d' | '30d'>('24h');
 
@@ -120,11 +129,35 @@ export default function Marketplace() {
     },
   });
 
+  /**
+   * Renvoie vrai quand l'erreur est une demande de second facteur, auquel cas
+   * l'ecran de confirmation reste affiche avec un champ de saisie. Le devis est
+   * toujours valide : le serveur refuse AVANT de le consommer.
+   */
+  const handleTwoFactorError = (err: Error): boolean => {
+    if (!(err instanceof ApiRequestError)) return false;
+
+    if (err.code === 'AUTH_2FA_SETUP_REQUIRED') {
+      setTotpSetupRequired(true);
+      setError(err.message);
+      return true;
+    }
+
+    if (err.code === 'AUTH_2FA_REQUIRED' || err.code === 'AUTH_2FA_INVALID') {
+      setNeedsTotp(true);
+      setTotpCode('');
+      setError(err.code === 'AUTH_2FA_INVALID' ? 'Code invalide. Reessayez.' : '');
+      return true;
+    }
+
+    return false;
+  };
+
   // Buy mutation
   const buyMutation = useMutation({
     mutationFn: async () => {
       if (!quote) throw new Error('Erreur de session');
-      return api.executeBuy(quote.quoteId, 'wallet_balance');
+      return api.executeBuy(quote.quoteId, 'wallet_balance', undefined, totpCode || undefined);
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -138,6 +171,7 @@ export default function Marketplace() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
     onError: (err: Error) => {
+      if (handleTwoFactorError(err)) return;
       setError(err.message);
       setViewState('form');
     },
@@ -147,7 +181,7 @@ export default function Marketplace() {
   const sellMutation = useMutation({
     mutationFn: async () => {
       if (!quote) throw new Error('Erreur de session');
-      return api.executeSell(quote.quoteId, 'wallet_balance');
+      return api.executeSell(quote.quoteId, 'wallet_balance', undefined, totpCode || undefined);
     },
     onSuccess: (data) => {
       setTransactionResult({
@@ -161,6 +195,7 @@ export default function Marketplace() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
     onError: (err: Error) => {
+      if (handleTwoFactorError(err)) return;
       setError(err.message);
       setViewState('form');
     },
@@ -236,11 +271,17 @@ export default function Marketplace() {
   const cancelConfirmation = () => {
     setViewState('form');
     setQuote(null);
+    setNeedsTotp(false);
+    setTotpCode('');
+    setTotpSetupRequired(false);
   };
 
   const resetAndClose = () => {
     setViewState('form');
     setAmount('');
+    setNeedsTotp(false);
+    setTotpCode('');
+    setTotpSetupRequired(false);
     setTransactionResult(null);
     setError('');
   };
@@ -510,6 +551,38 @@ export default function Marketplace() {
               </div>
             )}
 
+            {totpSetupRequired && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-sm mb-4">
+                Cette operation depasse le seuil de verification renforcee.
+                <a href="/settings" className="underline ml-1">
+                  Activez la double authentification
+                </a>{' '}
+                pour la realiser.
+              </div>
+            )}
+
+            {needsTotp && !totpSetupRequired && (
+              <div className="mb-4">
+                <label className="block text-sm text-slate-400 mb-2" htmlFor="totp-transaction">
+                  Code de double authentification
+                </label>
+                <input
+                  id="totp-transaction"
+                  className="input w-full tracking-[0.4em] text-center"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Ce montant depasse le seuil de verification renforcee.
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <Button
                 variant="secondary"
@@ -525,7 +598,7 @@ export default function Marketplace() {
                 onClick={confirmTransaction}
                 isLoading={isLoading}
                 loadingText="Traitement..."
-                disabled={isQuoteExpired}
+                disabled={isQuoteExpired || totpSetupRequired || (needsTotp && totpCode.length !== 6)}
               >
                 {tab === 'buy' ? 'Confirmer l\'achat' : 'Confirmer la vente'}
               </Button>

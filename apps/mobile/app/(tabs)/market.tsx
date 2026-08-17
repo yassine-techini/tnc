@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
 import { useThemeColors } from '../../stores/theme';
-import { api } from '../../lib/api';
+import { api, ApiRequestError } from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
@@ -142,6 +142,10 @@ export default function MarketScreen() {
   const [amountType, setAmountType] = useState<'grams' | 'xof'>('grams');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('orange_money');
   const [isProcessing, setIsProcessing] = useState(false);
+  // Second facteur au-dessus du seuil (ADR 009). Le devis reste valide : le
+  // serveur refuse AVANT de le consommer, donc le dialogue reste ouvert.
+  const [totpCode, setTotpCode] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success' | 'warning' | 'info'; text: string } | null>(null);
   const [confirmData, setConfirmData] = useState<{ quoteId: string; tokenAmount: number; total: number; fees: number } | null>(null);
 
@@ -266,9 +270,9 @@ export default function MarketScreen() {
     setIsProcessing(true);
     try {
       if (tab === 'buy') {
-        await api.executeBuy(confirmData.quoteId, paymentMethod, tokens.accessToken);
+        await api.executeBuy(confirmData.quoteId, paymentMethod, tokens.accessToken, totpCode || undefined);
       } else {
-        await api.executeSell(confirmData.quoteId, paymentMethod, tokens.accessToken);
+        await api.executeSell(confirmData.quoteId, paymentMethod, tokens.accessToken, totpCode || undefined);
       }
       setMessage({
         type: 'success',
@@ -279,6 +283,24 @@ export default function MarketScreen() {
       setAmount('');
       setConfirmData(null);
     } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'AUTH_2FA_SETUP_REQUIRED') {
+        setConfirmData(null);
+        setNeedsTotp(false);
+        setMessage({ type: 'warning', text: err.message });
+        return;
+      }
+      if (
+        err instanceof ApiRequestError &&
+        (err.code === 'AUTH_2FA_REQUIRED' || err.code === 'AUTH_2FA_INVALID')
+      ) {
+        // Le dialogue RESTE ouvert : fermer ferait perdre un devis encore valide.
+        setNeedsTotp(true);
+        setTotpCode('');
+        if (err.code === 'AUTH_2FA_INVALID') {
+          setMessage({ type: 'error', text: 'Code invalide. Reessayez.' });
+        }
+        return;
+      }
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Echec de la transaction' });
       setConfirmData(null);
     } finally {
@@ -486,8 +508,31 @@ export default function MarketScreen() {
           confirmText={tab === 'buy' ? 'Acheter' : 'Vendre'}
           cancelText="Annuler"
           onConfirm={executeTransaction}
-          onCancel={() => setConfirmData(null)}
-        />
+          onCancel={() => { setConfirmData(null); setNeedsTotp(false); setTotpCode(''); }}
+          confirmDisabled={needsTotp && totpCode.length !== 6}
+        >
+          {needsTotp && (
+            <View style={styles.totpBlock}>
+              <Text style={[styles.totpLabel, { color: c.textSecondary }]}>
+                Code de double authentification
+              </Text>
+              <TextInput
+                testID="marche-code-2fa"
+                style={[styles.totpInput, { color: c.text, borderColor: c.border }]}
+                placeholder="000000"
+                placeholderTextColor={c.textTertiary}
+                value={totpCode}
+                onChangeText={(t) => setTotpCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+              <Text style={[styles.totpHint, { color: c.textTertiary }]}>
+                Ce montant depasse le seuil de verification renforcee.
+              </Text>
+            </View>
+          )}
+        </ConfirmDialog>
       )}
 
       {/* Action Button */}
@@ -519,6 +564,17 @@ export default function MarketScreen() {
 }
 
 const styles = StyleSheet.create({
+  totpBlock: { width: '100%', marginBottom: 16 },
+  totpLabel: { fontSize: 13, marginBottom: 6 },
+  totpInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    fontSize: 22,
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+  totpHint: { fontSize: 11, marginTop: 6 },
   container: { flex: 1, backgroundColor: '#0F0F1A', padding: 16 },
   priceCard: { backgroundColor: '#1A1A2E', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.3)' },
   priceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },

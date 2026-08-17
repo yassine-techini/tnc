@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
 import { useThemeColors } from '../../stores/theme';
-import api from '../../lib/api';
+import api, { ApiRequestError } from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -58,10 +58,14 @@ export default function WithdrawScreen() {
   const queryClient = useQueryClient();
   const { tokens, user } = useAuthStore();
   const [amount, setAmount] = useState('');
+  // Second facteur au-dessus du seuil (ADR 009). Aucune ecriture n'a eu lieu :
+  // le formulaire reste intact, on ajoute seulement la saisie du code.
+  const [totpCode, setTotpCode] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'error' | 'success' | 'warning'; text: string } | null>(null);
 
   const { data: walletData } = useQuery({
     queryKey: ['wallet'],
@@ -82,7 +86,7 @@ export default function WithdrawScreen() {
       if (!selectedMethod) throw new Error('Selectionnez un mode de retrait');
       if (!amount || parseInt(amount) < 1000) throw new Error('Montant minimum: 1,000 XOF');
 
-      return api.withdraw(parseInt(amount), selectedMethod, phoneNumber, tokens.accessToken);
+      return api.withdraw(parseInt(amount), selectedMethod, phoneNumber, tokens.accessToken, totpCode || undefined);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['wallet'] });
@@ -91,6 +95,21 @@ export default function WithdrawScreen() {
       setTimeout(() => router.back(), 3000);
     },
     onError: (error: Error) => {
+      if (error instanceof ApiRequestError) {
+        if (error.code === 'AUTH_2FA_SETUP_REQUIRED') {
+          setNeedsTotp(false);
+          setMessage({ type: 'warning', text: error.message });
+          return;
+        }
+        if (error.code === 'AUTH_2FA_REQUIRED' || error.code === 'AUTH_2FA_INVALID') {
+          setNeedsTotp(true);
+          setTotpCode('');
+          if (error.code === 'AUTH_2FA_INVALID') {
+            setMessage({ type: 'error', text: 'Code invalide. Reessayez.' });
+          }
+          return;
+        }
+      }
       setMessage({ type: 'error', text: error.message || "Impossible d'effectuer le retrait" });
     },
   });
@@ -136,6 +155,13 @@ export default function WithdrawScreen() {
 
     if (!phoneNumber) {
       setError('Veuillez entrer votre numero de telephone');
+      return;
+    }
+
+    // Une fois le code reclame, partir sans les six chiffres ne ferait que
+    // reproduire le meme refus.
+    if (needsTotp && totpCode.length !== 6) {
+      setError('Entrez le code a six chiffres de votre application d authentification');
       return;
     }
 
@@ -269,6 +295,28 @@ export default function WithdrawScreen() {
           </Text>
         </View>
 
+        {needsTotp && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>
+              Code de double authentification
+            </Text>
+            <TextInput
+              testID="retrait-code-2fa"
+              style={[styles.totpInput, { color: c.text, borderColor: c.border }]}
+              placeholder="000000"
+              placeholderTextColor={c.textTertiary}
+              value={totpCode}
+              onChangeText={(t) => setTotpCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+            />
+            <Text style={[styles.hint, { color: c.textTertiary }]}>
+              Ce montant depasse le seuil de verification renforcee.
+            </Text>
+          </View>
+        )}
+
         {error ? (
           <View style={styles.errorContainer}>
             <Ionicons name="alert-circle" size={16} color="#EF4444" />
@@ -337,6 +385,14 @@ export default function WithdrawScreen() {
 }
 
 const styles = StyleSheet.create({
+  totpInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    fontSize: 22,
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
   container: { flex: 1, backgroundColor: '#0F0F1A', padding: 16 },
 
   title: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 8 },

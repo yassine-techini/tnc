@@ -9,6 +9,10 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   destructive?: boolean;
+  /** Contenu insere entre le message et les boutons (saisie du code TOTP). */
+  children?: React.ReactNode;
+  /** Empeche la confirmation tant qu'une saisie requise est incomplete. */
+  confirmDisabled?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -19,6 +23,8 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   destructive = false,
+  children,
+  confirmDisabled = false,
 }: ConfirmDialogProps) {
   return (
     <View style={styles.container}>
@@ -31,6 +37,7 @@ export default function ConfirmDialog({
       </View>
       <Text testID="dialogue-titre" style={styles.title}>{title}</Text>
       <Text testID="dialogue-message" style={styles.message}>{message}</Text>
+      {children}
       <View style={styles.actions}>
         <TouchableOpacity testID="dialogue-annuler" style={styles.cancelButton} onPress={onCancel} activeOpacity={0.8}>
           <Text style={styles.cancelText}>{cancelText}</Text>
@@ -39,6 +46,7 @@ export default function ConfirmDialog({
           style={[styles.confirmButton, destructive && styles.confirmButtonDestructive]}
           testID="dialogue-confirmer"
           onPress={onConfirm}
+          disabled={confirmDisabled}
           activeOpacity={0.8}
         >
           <Text style={[styles.confirmText, destructive && styles.confirmTextDestructive]}>

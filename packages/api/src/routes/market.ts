@@ -17,6 +17,7 @@ import { GoldAPIService } from '../services/goldapi.service';
 import { PriceAlertService } from '../services/price-alert.service';
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
+import { requireTwoFactorIfHighValue } from '../lib/high-value-2fa';
 import { KycService } from '../services/kyc.service';
 
 const market = new Hono<AppEnv>();
@@ -234,6 +235,11 @@ const executeSchema = z.object({
   quoteId: z.string().uuid(),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'card', 'bank']).optional(),
   idempotencyKey: z.string().max(64).optional(),
+  /**
+   * Exige seulement au-dessus du seuil de forte valeur (ADR 009). Le rendre
+   * obligatoire partout ferait saisir un code pour acheter un gramme.
+   */
+  totpCode: z.string().regex(/^\d{6}$/).optional(),
 });
 
 // Helper: Get TransactionSession Durable Object stub for a user
@@ -259,6 +265,38 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
   const configService = new ConfigService(c.env.DB, c.env.CACHE);
   const marketService = new MarketService(c.env.DB, c.env.CACHE, c.env.ENVIRONMENT, configService);
   const walletService = new WalletService(c.env.DB);
+
+  // Second facteur au-dessus du seuil (ADR 009).
+  //
+  // Place AVANT `useQuote()`, qui consomme le devis de facon atomique : verifier
+  // apres ferait perdre le devis a chaque code mal saisi, et le prix aurait
+  // change au moment de recommencer.
+  const quoteAVerifier = await marketService.getQuote(body.quoteId);
+  if (quoteAVerifier && quoteAVerifier.user_id === userId) {
+    const garde = await requireTwoFactorIfHighValue({
+      db: c.env.DB,
+      cache: c.env.CACHE,
+      encryptionKey: c.env.ENCRYPTION_KEY,
+      userId,
+      amountXof: quoteAVerifier.total,
+      operation: 'BUY',
+      totpCode: body.totpCode,
+      ipAddress: c.req.header('CF-Connecting-IP'),
+      userAgent: c.req.header('User-Agent'),
+    });
+
+    if (!garde.ok) {
+      return c.json({
+        success: false,
+        error: {
+          code: garde.code,
+          message: garde.message,
+          details: { thresholdXof: garde.thresholdXof },
+        },
+        requestId,
+      }, garde.status);
+    }
+  }
 
   // Validate quote (must be first - marks quote as USED atomically)
   const quote = await marketService.useQuote(body.quoteId, userId);
@@ -450,6 +488,38 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       },
       requestId,
     }, 403);
+  }
+
+  // Second facteur au-dessus du seuil (ADR 009).
+  //
+  // Place AVANT `useQuote()`, qui consomme le devis de facon atomique : verifier
+  // apres ferait perdre le devis a chaque code mal saisi, et le prix aurait
+  // change au moment de recommencer.
+  const quoteAVerifier = await marketService.getQuote(body.quoteId);
+  if (quoteAVerifier && quoteAVerifier.user_id === userId) {
+    const garde = await requireTwoFactorIfHighValue({
+      db: c.env.DB,
+      cache: c.env.CACHE,
+      encryptionKey: c.env.ENCRYPTION_KEY,
+      userId,
+      amountXof: quoteAVerifier.total,
+      operation: 'SELL',
+      totpCode: body.totpCode,
+      ipAddress: c.req.header('CF-Connecting-IP'),
+      userAgent: c.req.header('User-Agent'),
+    });
+
+    if (!garde.ok) {
+      return c.json({
+        success: false,
+        error: {
+          code: garde.code,
+          message: garde.message,
+          details: { thresholdXof: garde.thresholdXof },
+        },
+        requestId,
+      }, garde.status);
+    }
   }
 
   // Validate quote (must be first - marks quote as USED atomically)
