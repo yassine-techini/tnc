@@ -421,7 +421,7 @@ Le signal retenu : une instruction passée à `db.batch` **ne s'exécute jamais 
 n'appelle donc pas `.run()`. Un `.prepare(…).run()` sur une table de valeur est une
 écriture exécutée isolément.
 
-### P. Le rappel de paiement complète la transaction avant de créditer 🔴
+### P. Le rappel de paiement complétait la transaction avant de créditer ✅
 
 `routes/webhooks.ts`, branche `SUCCESS` :
 
@@ -437,7 +437,7 @@ Et ce n'est pas réservé au cas de panne. Le contrôle d'écart de montant inte
 donc durablement une transaction complétée sans crédit, sur une entrée parfaitement
 plausible.
 
-### Q. Le rejet d'un retrait fait trois écritures séparées 🔴
+### Q. Le rejet d'un retrait faisait trois écritures séparées ✅
 
 `routes/admin.ts`, branche de rejet : rembourser le portefeuille, marquer la transaction
 `CANCELLED`, marquer le retrait `REJECTED` — trois `.run()` successifs.
@@ -449,6 +449,25 @@ marquage échoue, la transaction reste `PENDING` : la reprise franchit la garde 
 
 C'est exactement ce que le contrat de lot gardé élimine — même garde sur chaque
 instruction, basculement d'état en dernier, et le second essai ne touche aucune ligne.
+
+**Corrigé (P).** La validation du montant passe **avant** toute écriture. Crédit et
+basculement sont dans un seul lot, tous deux gardés par `status != 'COMPLETED'`, le
+basculement en dernier. La route lit son `meta.changes` : zéro signifie « rappel déjà
+traité », et elle répond 200 sans renotifier le client.
+
+**Corrigé (Q).** Remboursement, retrait et transaction dans un seul lot, chaque
+instruction gardée sur `PENDING`, basculement en dernier, et 409 si rien n'a été touché.
+La branche d'approbation avait la même forme à deux écritures — traitée de même.
+
+**Trouvé en écrivant les tests** : `test/helpers/real-d1.ts` avait dérivé du schéma réel
+(pas d'`external_reference`, quatre colonnes manquantes sur `withdrawals`). Son propre
+commentaire posait la règle — un harnais qui ne reflète pas le schéma certifie des
+requêtes que la production rejette. Aligné.
+
+Un test fige aussi **pourquoi** chaque instruction doit porter la garde : une mise à jour
+qui ne matche aucune ligne n'est pas une erreur et n'interrompt pas le lot, donc garder
+le seul basculement laisserait le crédit s'exécuter quand même.
+
 
 ### Ce que cet audit a confirmé de sain
 

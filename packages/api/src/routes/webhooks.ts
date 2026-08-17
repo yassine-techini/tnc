@@ -464,48 +464,86 @@ webhooks.post('/payment/bank', async (c) => {
 
     // Update transaction based on webhook status
     if (status === 'SUCCESS') {
-      // Complete the transaction
-      await c.env.DB
-        .prepare(`
-          UPDATE transactions
-          SET status = 'COMPLETED',
-              external_reference = ?,
-              completed_at = datetime('now'),
-              updated_at = datetime('now')
-          WHERE id = ?
-        `)
-        .bind(bankReference, existingTransaction.id)
-        .run();
-
-      // Credit wallet for deposits. Validate the webhook amount against the
-      // amount we expected for this transaction, and credit the DB-derived net
-      // amount (never the attacker-controllable webhook value).
-      if (existingTransaction.type === 'DEPOSIT') {
-        const expected = Number(existingTransaction.cash_amount) || 0;
-        if (Math.abs(amount - expected) > 1) {
-          await c.env.DB
-            .prepare(`
-              INSERT INTO audit_logs (id, action, entity_type, entity_id, new_value, ip_address, created_at)
-              VALUES (?, 'BANK_WEBHOOK_AMOUNT_MISMATCH', 'transaction', ?, ?, ?, datetime('now'))
-            `)
-            .bind(
-              crypto.randomUUID(),
-              existingTransaction.id,
-              JSON.stringify({ expected, received: amount }),
-              c.req.header('CF-Connecting-IP') || 'unknown'
-            )
-            .run();
-          return c.json({ success: false, error: 'Amount mismatch', requestId }, 400);
-        }
-        const netAmount = expected - (Number(existingTransaction.fees) || 0);
+      /**
+       * Le montant se verifie AVANT toute ecriture.
+       *
+       * Ce controle intervenait apres le basculement en `COMPLETED` et renvoyait
+       * 400 : un rappel au montant divergent laissait donc durablement une
+       * transaction completee et jamais creditee — sur une entree parfaitement
+       * plausible, pas seulement en cas de panne.
+       */
+      const attendu = Number(existingTransaction.cash_amount) || 0;
+      if (existingTransaction.type === 'DEPOSIT' && Math.abs(amount - attendu) > 1) {
         await c.env.DB
           .prepare(`
-            UPDATE wallets
-            SET cash_balance = cash_balance + ?, updated_at = datetime('now')
-            WHERE user_id = ?
+            INSERT INTO audit_logs (id, action, entity_type, entity_id, new_value, ip_address, created_at)
+            VALUES (?, 'BANK_WEBHOOK_AMOUNT_MISMATCH', 'transaction', ?, ?, ?, datetime('now'))
           `)
-          .bind(netAmount, existingTransaction.user_id)
+          .bind(
+            crypto.randomUUID(),
+            existingTransaction.id,
+            JSON.stringify({ expected: attendu, received: amount }),
+            c.req.header('CF-Connecting-IP') || 'unknown'
+          )
           .run();
+        return c.json({ success: false, error: 'Amount mismatch', requestId }, 400);
+      }
+
+      /**
+       * Credit et basculement dans le MEME lot, sous la MEME garde.
+       *
+       * C'etaient deux validations distinctes : la transaction passait a
+       * `COMPLETED`, puis le portefeuille etait credite. Un echec entre les deux
+       * laissait une transaction qui dit « fait » face a un solde qui n'a pas
+       * bouge — le client a paye et n'a rien recu.
+       *
+       * Chaque instruction porte `status != 'COMPLETED'`, et le basculement vient
+       * EN DERNIER : un rappel rejoue ne credite rien et ne bascule rien, parce
+       * qu'aucune des deux ne touche de ligne. C'est le contrat de lot garde —
+       * une mise a jour qui ne matche aucune ligne n'est pas une erreur et
+       * n'interrompt pas le lot, donc la garde doit etre portee partout.
+       */
+      const instructions = [];
+
+      if (existingTransaction.type === 'DEPOSIT') {
+        // Le net vient de la BASE, jamais du montant transmis par le rappel.
+        const net = attendu - (Number(existingTransaction.fees) || 0);
+        instructions.push(
+          c.env.DB
+            .prepare(`
+              UPDATE wallets
+              SET cash_balance = cash_balance + ?, updated_at = datetime('now')
+              WHERE user_id = ?
+                AND EXISTS (SELECT 1 FROM transactions WHERE id = ? AND status != 'COMPLETED')
+            `)
+            .bind(net, existingTransaction.user_id, existingTransaction.id)
+        );
+      }
+
+      instructions.push(
+        c.env.DB
+          .prepare(`
+            UPDATE transactions
+            SET status = 'COMPLETED',
+                external_reference = ?,
+                completed_at = datetime('now'),
+                updated_at = datetime('now')
+            WHERE id = ? AND status != 'COMPLETED'
+          `)
+          .bind(bankReference, existingTransaction.id)
+      );
+
+      const resultats = await c.env.DB.batch(instructions);
+      const bascule = resultats[resultats.length - 1];
+
+      // Aucune ligne touchee : le rappel a deja ete traite. On repond 200 pour
+      // que l'operateur cesse de reessayer, sans renotifier le client.
+      if ((bascule.meta?.changes ?? 0) === 0) {
+        return c.json({
+          success: true,
+          message: 'Webhook déjà traité',
+          requestId,
+        });
       }
 
       // Send success notification

@@ -1862,26 +1862,43 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
 
       // Update transaction status to PROCESSING (awaiting confirmation) or COMPLETED for bank
       const newStatus = transaction.payment_method === 'bank' ? 'COMPLETED' : 'PROCESSING';
-      await c.env.DB
-        .prepare(`
-          UPDATE transactions
-          SET status = ?,
-              external_reference = ?,
-              completed_at = CASE WHEN ? = 'COMPLETED' THEN datetime('now') ELSE NULL END
-          WHERE id = ?
-        `)
-        .bind(newStatus, payoutResult?.transactionId || null, newStatus, id)
-        .run();
 
-      // Update withdrawal record
-      await c.env.DB
-        .prepare(`
-          UPDATE withdrawals
-          SET status = ?, provider_reference = ?, completed_at = datetime('now')
-          WHERE transaction_id = ?
-        `)
-        .bind(newStatus, payoutResult?.transactionId || 'MANUAL', id)
-        .run();
+      /**
+       * Les deux ecritures dans le MEME lot, sous la MEME garde.
+       *
+       * C'etaient deux validations distinctes : un echec sur la seconde laissait
+       * la transaction avancee et le retrait encore `PENDING`. Chaque instruction
+       * porte donc `status = 'PENDING'`, et le basculement de la transaction vient
+       * EN DERNIER — une mise a jour qui ne matche aucune ligne n'est pas une
+       * erreur et n'interrompt pas le lot, donc la garde doit etre portee partout.
+       */
+      const resultatsApprobation = await c.env.DB.batch([
+        c.env.DB
+          .prepare(`
+            UPDATE withdrawals
+            SET status = ?, provider_reference = ?, completed_at = datetime('now')
+            WHERE transaction_id = ?
+              AND EXISTS (SELECT 1 FROM transactions WHERE id = ? AND status = 'PENDING')
+          `)
+          .bind(newStatus, payoutResult?.transactionId || 'MANUAL', id, id),
+        c.env.DB
+          .prepare(`
+            UPDATE transactions
+            SET status = ?,
+                external_reference = ?,
+                completed_at = CASE WHEN ? = 'COMPLETED' THEN datetime('now') ELSE NULL END
+            WHERE id = ? AND status = 'PENDING'
+          `)
+          .bind(newStatus, payoutResult?.transactionId || null, newStatus, id),
+      ]);
+
+      if ((resultatsApprobation[resultatsApprobation.length - 1].meta?.changes ?? 0) === 0) {
+        return c.json({
+          success: false,
+          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: 'Ce retrait a déjà été traité' },
+          requestId: crypto.randomUUID(),
+        }, 409);
+      }
 
       // Send notification to user
       notificationService.sendWithdrawalApproved(
@@ -1896,35 +1913,52 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       }
 
     } else {
-      // Reject withdrawal - refund the amount to wallet
-      await c.env.DB
-        .prepare(`
-          UPDATE wallets
-          SET cash_balance = cash_balance + ?, updated_at = datetime('now')
-          WHERE user_id = ?
-        `)
-        .bind(transaction.cash_amount, transaction.user_id)
-        .run();
+      /**
+       * Remboursement, retrait et transaction dans le MEME lot, sous la MEME garde.
+       *
+       * C'etaient trois validations successives. La garde amont
+       * (`status !== 'PENDING'` -> refus) bloque un rejeu sequentiel, mais elle
+       * est LUE avant d'ecrire : si le remboursement passait et que le marquage
+       * echouait, la transaction restait `PENDING`, la reprise franchissait la
+       * garde et remboursait UNE SECONDE FOIS.
+       *
+       * Ici, chaque instruction porte `status = 'PENDING'` et le basculement vient
+       * en dernier : le second essai ne touche aucune ligne, donc ne rembourse rien.
+       */
+      const motifRejet = reason || "Rejeté par l'administrateur";
+      const resultatsRejet = await c.env.DB.batch([
+        c.env.DB
+          .prepare(`
+            UPDATE wallets
+            SET cash_balance = cash_balance + ?, updated_at = datetime('now')
+            WHERE user_id = ?
+              AND EXISTS (SELECT 1 FROM transactions WHERE id = ? AND status = 'PENDING')
+          `)
+          .bind(transaction.cash_amount, transaction.user_id, id),
+        c.env.DB
+          .prepare(`
+            UPDATE withdrawals
+            SET status = 'REJECTED', failure_reason = ?, completed_at = datetime('now')
+            WHERE transaction_id = ?
+              AND EXISTS (SELECT 1 FROM transactions WHERE id = ? AND status = 'PENDING')
+          `)
+          .bind(reason || 'Rejeté', id, id),
+        c.env.DB
+          .prepare(`
+            UPDATE transactions
+            SET status = 'CANCELLED', failure_reason = ?, completed_at = datetime('now')
+            WHERE id = ? AND status = 'PENDING'
+          `)
+          .bind(motifRejet, id),
+      ]);
 
-      // Update transaction status to CANCELLED
-      await c.env.DB
-        .prepare(`
-          UPDATE transactions
-          SET status = 'CANCELLED', failure_reason = ?, completed_at = datetime('now')
-          WHERE id = ?
-        `)
-        .bind(reason || 'Rejeté par l\'administrateur', id)
-        .run();
-
-      // Update withdrawal record
-      await c.env.DB
-        .prepare(`
-          UPDATE withdrawals
-          SET status = 'REJECTED', failure_reason = ?, completed_at = datetime('now')
-          WHERE transaction_id = ?
-        `)
-        .bind(reason || 'Rejeté', id)
-        .run();
+      if ((resultatsRejet[resultatsRejet.length - 1].meta?.changes ?? 0) === 0) {
+        return c.json({
+          success: false,
+          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: 'Ce retrait a déjà été traité' },
+          requestId: crypto.randomUUID(),
+        }, 409);
+      }
 
       // Send rejection notification
       notificationService.sendEmail({

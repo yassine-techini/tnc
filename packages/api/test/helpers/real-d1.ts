@@ -119,6 +119,9 @@ CREATE TABLE transactions (
   -- writes them failed against the harness only. The harness has to mirror the
   -- real schema or it certifies queries production would reject.
   quote_id TEXT,
+  -- Added by 0033: six writes named it and no migration created it, so a deposit
+  -- failed after the operator had already been charged.
+  external_reference TEXT,
   payout_method TEXT,
   payout_reference TEXT,
   metadata TEXT,
@@ -138,6 +141,12 @@ CREATE TABLE withdrawals (
   bank_account TEXT,
   bank_name TEXT,
   status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','PROCESSING','COMPLETED','FAILED','REJECTED')),
+  -- Present in production since 0001. Their absence here let the harness certify
+  -- an UPDATE that production would have rejected.
+  provider_reference TEXT,
+  failure_reason TEXT,
+  approved_by TEXT,
+  approved_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 );
