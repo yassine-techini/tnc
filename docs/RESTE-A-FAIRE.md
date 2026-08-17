@@ -481,6 +481,52 @@ le seul basculement laisserait le crédit s'exécuter quand même.
 
 ---
 
+## Sixième audit — 17 août 2026, à qui appartient la ressource ?
+
+Angle jamais couvert : l'**autorisation au niveau de l'objet**. L'audit 3 avait vérifié
+les gardes de route (`requirePermission` : « cet appelant a-t-il ce droit ? »). Personne
+n'avait vérifié la question suivante : « cette ressource-ci est-elle la sienne ? » Sans
+ce filtre, n'importe quel titulaire de compte lit ou modifie les données d'un autre en
+changeant un identifiant dans l'URL.
+
+### Aucun défaut trouvé — et c'est le résultat
+
+Les **17 routes utilisateur portant un paramètre** filtrent toutes sur le propriétaire :
+
+- en SQL (`WHERE id = ? AND user_id = ?`, comme le marquage d'une notification lue) ;
+- dans le corps de la route (`if (consignment.producer_id !== userId) return 404`) ;
+- ou dans le service auquel elle délègue (`LeaseService.requestExit` refuse avant
+  d'écrire).
+
+`GET /verify/:code` est la seule route non filtrée, **par conception** : le code de
+vérification d'un certificat *est* le justificatif.
+
+Deux vérifications complémentaires, également propres :
+
+- **Aucune route ne lit un identifiant de propriétaire depuis le corps de la requête.**
+  Il vient toujours du jeton.
+- **Le service d'objets applique une double garde.** Servir la photo d'un lot vérifie
+  l'appartenance du lot, *puis* revalide la clé R2 contre le préfixe du producteur — avec
+  un commentaire qui explique pourquoi : les documents KYC vivent dans le même seau.
+
+### Ce que l'audit signale quand même : une convention, pas un mécanisme 🔵
+
+Il n'existe pas d'équivalent de `requirePermission` pour la propriété d'un objet. Chaque
+route s'en souvient — quinze fois sur quinze aujourd'hui — mais rien ne l'y oblige. Une
+seizième route ajoutée demain peut l'oublier sans que rien ne le signale.
+
+Le symptôme est mesurable : mon détecteur a eu besoin de **trois élargissements**
+successifs pour voir toutes les formes en usage (filtre SQL, comparaison JavaScript avec
+`user_id`, comparaison avec `producer_id`, délégation à un service). Quatre idiomes pour
+une même règle, c'est une règle qu'on applique de mémoire.
+
+Ce n'est pas un défaut aujourd'hui. C'est une fragilité, du même genre que celle qui a
+produit les constats du quatrième audit — et le remède serait du même ordre : soit un
+utilitaire unique (`assertOwnership(ressource, userId)`), soit un contrôle statique qui
+refuse une route à paramètre sans filtre reconnaissable.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
