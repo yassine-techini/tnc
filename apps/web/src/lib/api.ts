@@ -3,6 +3,12 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
+import type {
+  KycStatusData,
+  NotificationPreferencesData,
+  PriceAlertsData,
+  UserProfileData,
+} from '@tnc-trading/shared/contracts';
 // Contrats partages avec l API (packages/shared/src/contracts).
 import type {
   LeaseAccrualsData,
@@ -436,14 +442,7 @@ class ApiClient {
 
   // User
   async getProfile(token?: string) {
-    return this.request<{
-      id: string;
-      email: string;
-      phone: string;
-      kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
-      kycStatus: string;
-      role: string;
-    }>('/api/v1/users/me', { token });
+    return this.request<UserProfileData>('/api/v1/users/me', { token });
   }
 
   // ── Producer consignments (export workflow) ──
@@ -745,18 +744,7 @@ class ApiClient {
 
   // KYC
   async getKycStatus(authToken?: string) {
-    return this.request<{
-      level: 'BASIC' | 'STANDARD' | 'VERIFIED';
-      status: 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
-      rejectionReason?: string;
-      submittedAt?: string;
-      reviewedAt?: string;
-      documents?: {
-        id: string;
-        type: string;
-        status: string;
-      }[];
-    }>('/api/v1/users/me/kyc/status', { token: authToken });
+    return this.request<KycStatusData>('/api/v1/users/me/kyc/status', { token: authToken });
   }
 
   async submitKyc(
@@ -810,13 +798,7 @@ class ApiClient {
 
   // Notification Preferences
   async getNotificationPreferences(authToken?: string) {
-    return this.request<{
-      email: boolean;
-      sms: boolean;
-      priceAlerts: boolean;
-      transactionAlerts: boolean;
-      marketingEmails: boolean;
-    }>('/api/v1/users/me/preferences/notifications', { token: authToken });
+    return this.request<NotificationPreferencesData>('/api/v1/users/me/preferences/notifications', { token: authToken });
   }
 
   async updateNotificationPreferences(
@@ -873,14 +855,7 @@ class ApiClient {
     },
     authToken?: string
   ) {
-    return this.request<{
-      id: string;
-      alertType: 'ABOVE' | 'BELOW';
-      targetPrice: number;
-      currency: string;
-      notificationMethod: string;
-      message: string;
-    }>('/api/v1/users/me/price-alerts', {
+    return this.request<PriceAlertsData>('/api/v1/users/me/price-alerts', {
       method: 'POST',
       body: JSON.stringify(data),
       token: authToken,

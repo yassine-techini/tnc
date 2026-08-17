@@ -1,4 +1,9 @@
 import { Hono, Context, Next } from 'hono';
+import type {
+  AdminDashboardData,
+  AdminStockData,
+  AdminPermissionsData,
+} from '@tnc-trading/shared/contracts';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
@@ -593,7 +598,7 @@ admin.get('/dashboard', requirePermission('dashboard', 'view'), async (c) => {
         pendingWithdrawals: pendingWithdrawalsResult?.count || 0,
         recentTransactions: recentTransactionsMapped,
         currentPrice,
-      },
+      } satisfies AdminDashboardData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -1609,7 +1614,7 @@ admin.get('/stock', requirePermission('stock', 'view'), async (c) => {
         lastAuditDate: stock?.last_audit_date,
         lastAuditResult: stock?.last_audit_result,
         coverage: stock?.total_allocated ? (tokensResult?.total || 0) / stock.total_allocated : 0,
-      },
+      } satisfies AdminStockData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -2397,7 +2402,7 @@ admin.get('/me/permissions', async (c) => {
     const adminId = c.get('adminId' as never) as string;
     const adminRole = c.get('adminRole' as never) as string;
     const permissions = await resolvePermissions(c.env.DB, adminId, adminRole);
-    return c.json({ success: true, data: { permissions }, requestId });
+    return c.json({ success: true, data: { permissions } satisfies AdminPermissionsData, requestId });
   } catch (error) {
     console.error('Get permissions error:', error);
     return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);

@@ -60,10 +60,13 @@ export default function KycIntroScreen() {
             <Text style={[styles.levelLabel, { color: c.textSecondary }]}>Niveau KYC</Text>
             <Text style={styles.levelValue}>{status.level}</Text>
           </View>
-          {status.rejectionReason && (
+          {/* Le motif est porté par le DOSSIER, pas par le statut. Lu à la
+              racine, il valait toujours undefined : un utilisateur rejeté
+              voyait le rejet sans jamais en connaître la raison. */}
+          {status.document?.rejectionReason && (
             <View style={styles.rejectionBox}>
               <Text style={styles.rejectionTitle}>Raison du rejet:</Text>
-              <Text style={styles.rejectionText}>{status.rejectionReason}</Text>
+              <Text style={styles.rejectionText}>{status.document.rejectionReason}</Text>
             </View>
           )}
         </View>

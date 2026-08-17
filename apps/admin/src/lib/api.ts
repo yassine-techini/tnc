@@ -1,4 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
+// Contrats partages avec l API.
+import type {
+  AdminDashboardData,
+  AdminPermissionsData,
+  AdminStockData,
+} from '@tnc-trading/shared/contracts';
 
 interface ApiResponse<T> {
   success: true;
@@ -197,21 +203,7 @@ class AdminApiClient {
 
   // Dashboard
   async getDashboard(token?: string) {
-    return this.request<{
-      totalUsers: number;
-      activeUsers: number;
-      totalTransactions: number;
-      totalVolume: number;
-      pendingKyc: number;
-      pendingWithdrawals: number;
-      stockCoverage: number;
-      recentTransactions: Array<{
-        id: string;
-        type: string;
-        amount: number;
-        createdAt: string;
-      }>;
-    }>('/api/v1/admin/dashboard', { token });
+    return this.request<AdminDashboardData>('/api/v1/admin/dashboard', { token });
   }
 
   // Users
@@ -293,13 +285,7 @@ class AdminApiClient {
 
   // Stock
   async getStock(token?: string) {
-    return this.request<{
-      totalAllocated: number;
-      tokensIssued: number;
-      availableStock: number;
-      coverage: number;
-      lastAuditDate: string | null;
-    }>('/api/v1/admin/stock', { token });
+    return this.request<AdminStockData>('/api/v1/admin/stock', { token });
   }
 
   async adjustStock(amount: number, reason: string, token?: string) {
@@ -432,7 +418,7 @@ class AdminApiClient {
 
   // My permissions
   async getMyPermissions(token?: string) {
-    return this.request<{ permissions: Record<string, string[]> }>('/api/v1/admin/me/permissions', { token });
+    return this.request<AdminPermissionsData>('/api/v1/admin/me/permissions', { token });
   }
 
   // Admin Management

@@ -1,4 +1,9 @@
 import * as Application from 'expo-application';
+import type {
+  KycStatusData,
+  PriceAlertsData,
+  UserProfileData,
+} from '@tnc-trading/shared/contracts';
 // Contrats partages avec l API (packages/shared/src/contracts).
 import type {
   LeaseAccrualsData,
@@ -496,14 +501,7 @@ class MobileApiClient {
 
   // User
   async getProfile(token: string) {
-    return this.request<{
-      id: string;
-      email: string;
-      phone: string;
-      kycLevel: 'BASIC' | 'STANDARD' | 'VERIFIED';
-      kycStatus: string;
-      role: string;
-    }>('/api/v1/users/me', { token });
+    return this.request<UserProfileData>('/api/v1/users/me', { token });
   }
 
   // ── Producer: KYB and consignments ──
@@ -653,12 +651,7 @@ class MobileApiClient {
 
   // KYC
   async getKycStatus(token: string) {
-    return this.request<{
-      level: 'BASIC' | 'STANDARD' | 'VERIFIED';
-      status: 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
-      rejectionReason?: string;
-      submittedAt?: string;
-    }>('/api/v1/users/me/kyc/status', { token });
+    return this.request<KycStatusData>('/api/v1/users/me/kyc/status', { token });
   }
 
   /**
@@ -875,10 +868,7 @@ class MobileApiClient {
     },
     token: string
   ) {
-    return this.request<{
-      id: string;
-      message: string;
-    }>('/api/v1/users/me/price-alerts', {
+    return this.request<PriceAlertsData>('/api/v1/users/me/price-alerts', {
       method: 'POST',
       body: JSON.stringify({
         alertType: data.alertType,

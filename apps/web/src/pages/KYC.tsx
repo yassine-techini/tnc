@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { KycStatusData } from '@tnc-trading/shared/contracts';
 import { useAuthStore } from '../stores/auth';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
@@ -17,12 +18,11 @@ interface KycFormData {
   selfieImage: string;
 }
 
-interface KycStatus {
-  level: 'BASIC' | 'STANDARD' | 'VERIFIED';
-  status: 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
-  rejectionReason?: string;
-  submittedAt?: string;
-}
+// Le contrat partage remplace cette copie locale, qui declarait
+// `rejectionReason` a la racine alors que la route le porte dans `document` :
+// un utilisateur rejete ne voyait donc jamais le motif, et le type local
+// empechait le compilateur de le dire.
+type KycStatus = KycStatusData;
 
 const documentTypes: { value: DocumentType; label: string; hasBack: boolean }[] = [
   { value: 'CNIB', label: 'Carte Nationale d\'Identité Burkinabè', hasBack: true },
@@ -165,10 +165,10 @@ export default function KYC() {
           <p className="text-slate-400 text-center mb-4">
             Votre demande de vérification a été refusée.
           </p>
-          {kycStatus.rejectionReason && (
+          {kycStatus.document?.rejectionReason && (
             <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg mb-6">
               <p className="text-sm text-red-400">
-                <span className="font-medium">Raison:</span> {kycStatus.rejectionReason}
+                <span className="font-medium">Raison:</span> {kycStatus.document?.rejectionReason}
               </p>
             </div>
           )}

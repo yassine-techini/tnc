@@ -1,4 +1,13 @@
 import { Hono } from 'hono';
+// Contrats partages : `satisfies` fait echouer la compilation si la forme
+// emise s ecarte de ce que les clients importent.
+import type {
+  UserProfileData,
+  KycStatusData,
+  KycSubmitData,
+  NotificationPreferencesData,
+  PriceAlertsData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -64,7 +73,7 @@ users.get('/me', async (c) => {
           totalBought: wallet.total_bought,
           totalSpent: wallet.total_spent,
         } : null,
-      },
+      } satisfies UserProfileData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -323,7 +332,7 @@ users.get('/me/kyc/status', async (c) => {
           submittedAt: kycDoc.created_at,
           reviewedAt: kycDoc.reviewed_at,
         } : null,
-      },
+      } satisfies KycStatusData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -825,7 +834,7 @@ users.get('/me/preferences/notifications', async (c) => {
         priceAlerts: Boolean(prefs.price_alerts),
         transactionAlerts: Boolean(prefs.transaction_alerts),
         marketingEmails: Boolean(prefs.marketing_emails),
-      },
+      } satisfies NotificationPreferencesData,
       requestId,
     });
   } catch (error) {

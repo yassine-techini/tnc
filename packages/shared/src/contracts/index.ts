@@ -305,6 +305,143 @@ export interface StorageFeesData {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Utilisateur
+// ─────────────────────────────────────────────────────────────
+
+export type KycLevelName = 'BASIC' | 'STANDARD' | 'VERIFIED';
+export type KycStatusName = 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+
+/** `GET /api/v1/users/me` */
+export interface UserProfileData {
+  id: string;
+  email: string;
+  phone: string;
+  country: string;
+  kycLevel: KycLevelName;
+  kycStatus: KycStatusName;
+  role: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  twoFactorEnabled: boolean;
+  createdAt: string;
+  /** null tant qu aucun portefeuille n a ete cree pour ce compte. */
+  wallet: {
+    tokenBalance: number;
+    cashBalance: number;
+    totalBought: number;
+    totalSpent: number;
+  } | null;
+}
+
+/**
+ * `GET /api/v1/users/me/kyc/status`
+ *
+ * `document` au singulier : la route renvoie le dernier dossier, pas une liste.
+ * Le client web declarait `documents` — champ qui n a jamais existe.
+ */
+export interface KycStatusData {
+  level: KycLevelName;
+  status: KycStatusName;
+  document: {
+    id: string;
+    documentType: string;
+    status: string;
+    rejectionReason: string | null;
+    submittedAt: string;
+    reviewedAt: string | null;
+  } | null;
+}
+
+/** `POST /api/v1/users/me/kyc` */
+export interface KycSubmitData {
+  kycId: string;
+  status: string;
+  /** false quand aucun prestataire de verification n est configure. */
+  verificationStarted: boolean;
+}
+
+/** `GET|PATCH /api/v1/users/me/preferences/notifications` */
+export interface NotificationPreferencesData {
+  email: boolean;
+  sms: boolean;
+  priceAlerts: boolean;
+  transactionAlerts: boolean;
+  marketingEmails: boolean;
+}
+
+export interface PriceAlertView {
+  id: string;
+  alertType: 'ABOVE' | 'BELOW';
+  targetPrice: number;
+  currency: string;
+  notificationMethod: string;
+  isActive: boolean;
+  triggered: boolean;
+  triggeredAt: string | null;
+  triggeredPrice: number | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/** `GET /api/v1/users/me/price-alerts` */
+export interface PriceAlertsData {
+  items: PriceAlertView[];
+  total: number;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Back-office
+// ─────────────────────────────────────────────────────────────
+
+export interface AdminRecentTransaction {
+  id: string;
+  type: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+  /** Le back-office voit les identites — contrairement au portail Etat. */
+  userEmail: string | null;
+}
+
+/** `GET /api/v1/admin/dashboard` */
+export interface AdminDashboardData {
+  totalUsers: number;
+  activeUsers: number;
+  totalTransactions: number;
+  totalVolume: number;
+  pendingKyc: number;
+  pendingWithdrawals: number;
+  recentTransactions: AdminRecentTransaction[];
+  /**
+   * Prix lu depuis le cache KV et deserialise : null quand rien n est en cache.
+   * Sa forme depend du producteur du cache, d ou `unknown` plutot qu un type
+   * invente qui donnerait une fausse assurance.
+   */
+  currentPrice: unknown;
+}
+
+/**
+ * `GET /api/v1/admin/stock`
+ *
+ * `coverage` est ici le taux d UTILISATION (emis / alloue), l inverse du
+ * `coverageRatio` du portail Etat (alloue / emis). Deux notions, deux noms —
+ * les confondre inverserait la lecture.
+ */
+export interface AdminStockData {
+  totalAllocated: number;
+  tokensIssued: number;
+  availableStock: number;
+  lastAuditDate: string | null;
+  lastAuditResult: string | null;
+  coverage: number;
+}
+
+/** `GET /api/v1/admin/me/permissions` */
+export interface AdminPermissionsData {
+  permissions: Record<string, string[]>;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Authentification
 // ─────────────────────────────────────────────────────────────
 
