@@ -19,7 +19,11 @@ export default function Stock() {
 
   const stock = data?.data;
   const price = priceData?.data;
-  const stockHistory = stock?.stockHistory || [];
+  // La route /state/stock ne renvoie PAS d'historique : le champ était déclaré
+  // dans le type du client et n'a jamais existé dans la réponse, donc le
+  // graphique était vide en permanence sans que rien ne le signale. Tant que la
+  // route n'expose pas de série, on ne prétend pas en avoir une.
+  const stockHistory: Array<{ date: string; allocated: number; issued: number }> = [];
 
   const stockValue = (stock?.totalAllocated || 0) * (price?.priceXof || 0);
   const issuedValue = (stock?.tokensIssued || 0) * (price?.priceXof || 0);
@@ -103,7 +107,7 @@ export default function Stock() {
               />
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-lg font-bold">
-                  {((stock?.coverage || 0) * 100).toFixed(1)}% couvert
+                  {((stock?.coverageRatio || 0) * 100).toFixed(1)}% couvert
                 </span>
               </div>
             </div>
@@ -128,12 +132,12 @@ export default function Stock() {
                 <p className="text-xs text-slate-500">100%</p>
               </div>
               <div className="text-center p-4 bg-slate-900/50 rounded-lg">
-                <div className={`w-4 h-4 rounded mx-auto mb-2 ${(stock?.coverage || 0) >= 1 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <div className={`w-4 h-4 rounded mx-auto mb-2 ${(stock?.coverageRatio || 0) >= 1 ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <p className="text-sm text-slate-400">Couverture</p>
-                <p className={`font-semibold ${(stock?.coverage || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
-                  {((stock?.coverage || 0) * 100).toFixed(1)}%
+                <p className={`font-semibold ${(stock?.coverageRatio || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                  {((stock?.coverageRatio || 0) * 100).toFixed(1)}%
                 </p>
-                <p className="text-xs text-slate-500">{(stock?.coverage || 0) >= 1 ? 'OK' : 'Insuffisant'}</p>
+                <p className="text-xs text-slate-500">{(stock?.coverageRatio || 0) >= 1 ? 'OK' : 'Insuffisant'}</p>
               </div>
             </div>
           </div>
@@ -230,22 +234,22 @@ export default function Stock() {
 
           {/* Coverage Alert */}
           <div className={`p-4 rounded-lg border ${
-            (stock?.coverage || 0) >= 1
+            (stock?.coverageRatio || 0) >= 1
               ? 'bg-green-500/10 border-green-500/30'
               : 'bg-red-500/10 border-red-500/30'
           }`}>
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{(stock?.coverage || 0) >= 1 ? '✅' : '⚠️'}</span>
+              <span className="text-2xl">{(stock?.coverageRatio || 0) >= 1 ? '✅' : '⚠️'}</span>
               <div>
                 <p className={`font-medium ${
-                  (stock?.coverage || 0) >= 1 ? 'text-green-400' : 'text-red-400'
+                  (stock?.coverageRatio || 0) >= 1 ? 'text-green-400' : 'text-red-400'
                 }`}>
-                  {(stock?.coverage || 0) >= 1
+                  {(stock?.coverageRatio || 0) >= 1
                     ? 'Réserve entièrement couverte'
                     : 'Attention: Couverture insuffisante'}
                 </p>
                 <p className="text-sm text-slate-400">
-                  {(stock?.coverage || 0) >= 1
+                  {(stock?.coverageRatio || 0) >= 1
                     ? 'Tous les tokens en circulation sont adossés à de l\'or physique.'
                     : 'Les tokens emis depassent le stock d\'or alloue.'}
                 </p>

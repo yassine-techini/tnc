@@ -195,14 +195,24 @@ class StateApiClient {
 
   // Dashboard
   async getDashboard(token?: string) {
+    // Ces champs sont EXACTEMENT ceux que la route renvoie. La déclaration
+    // précédente annonçait totalAllocated / tokensIssued / coverage, qu'aucune
+    // réponse ne contenait : le tableau de bord affichait donc en permanence
+    // 0 g de réserve et 0 % de couverture, avec l'alerte rouge qui va avec.
+    // TypeScript ne pouvait rien voir — le mensonge était dans le paramètre de
+    // type lui-même.
     return this.request<{
-      totalAllocated: number;
-      tokensIssued: number;
-      coverage: number;
       totalUsers: number;
+      totalTokens: number;
       totalVolume: number;
-      lastPriceUpdate: string;
-      currentPrice: number;
+      goldAllocated: number;
+      /** Or prêté, donc absent du coffre. */
+      goldOnLoan: number;
+      goldVaulted: number;
+      fullyVaulted: boolean;
+      coverageRatio: number;
+      monthlyVolume: number;
+      lastUpdate: string;
     }>('/api/v1/state/dashboard', { token });
   }
 
@@ -212,13 +222,15 @@ class StateApiClient {
       totalAllocated: number;
       tokensIssued: number;
       availableStock: number;
-      coverage: number;
+      /** Alloué n'est pas détenu : cette part est due par une contrepartie. */
+      goldOnLoan: number;
+      goldVaulted: number;
+      fullyVaulted: boolean;
+      /** Avertissement de l'API sur le prêt — affiché tel quel. */
+      lendingNotice: string;
+      coverageRatio: number;
       lastAuditDate: string | null;
-      stockHistory: Array<{
-        date: string;
-        allocated: number;
-        issued: number;
-      }>;
+      lastAuditResult: string | null;
     }>('/api/v1/state/stock', { token });
   }
 

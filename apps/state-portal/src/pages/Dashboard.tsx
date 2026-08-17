@@ -22,7 +22,7 @@ export default function Dashboard() {
   const [chartPeriod, setChartPeriod] = useState(7);
   const [txPeriod, setTxPeriod] = useState<'day' | 'week' | 'month'>('day');
 
-  const { data: dashboardData, isLoading } = useQuery({
+  const { data: dashboardData, isLoading, isError } = useQuery({
     queryKey: ['state-dashboard'],
     queryFn: () => stateApi.getDashboard(),
     enabled: isAuthenticated,
@@ -47,16 +47,26 @@ export default function Dashboard() {
   });
 
   const stats = dashboardData?.data;
+
+  /**
+   * Un chiffre absent n'est PAS zéro.
+   *
+   * Les compteurs affichaient `|| '0'`, si bien qu'une panne d'API montrait à un
+   * ministère une réserve nationale à zéro et une couverture de 0 % en rouge.
+   * Une donnée manquante se dit « — », jamais par un chiffre qu'on croira.
+   */
+  const num = (value: number | undefined, digits = 0): string =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—';
   const price = priceData?.data;
   const priceHistory = priceHistoryData?.data?.items || [];
   const txStats = txStatsData?.data?.items || [];
 
-  const stockValue = (stats?.totalAllocated || 0) * (price?.priceXof || 0);
+  const stockValue = (stats?.goldAllocated || 0) * (price?.priceXof || 0);
 
   // Data for coverage pie chart
   const coverageData = [
-    { name: 'Tokens Émis', value: stats?.tokensIssued || 0, color: '#3B82F6' },
-    { name: 'Disponible', value: (stats?.totalAllocated || 0) - (stats?.tokensIssued || 0), color: '#D4AF37' },
+    { name: 'Tokens Émis', value: stats?.totalTokens || 0, color: '#3B82F6' },
+    { name: 'Disponible', value: (stats?.goldAllocated || 0) - (stats?.totalTokens || 0), color: '#D4AF37' },
   ];
 
   // Calculate price stats
@@ -87,6 +97,28 @@ export default function Dashboard() {
       {/* Main Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Gold Allocated */}
+        {/* Une panne d'API ne doit pas ressembler à une réserve vide. */}
+        {isError && (
+          <div className="col-span-full rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+            Les chiffres n'ont pas pu être chargés. Ce qui est affiché ci-dessous est incomplet —
+            ce n'est pas un état réel de la réserve.
+          </div>
+        )}
+
+        {/* L'or prêté est absent du coffre. La page publique /reserve et
+            l'attestation signée le disent ; ce portail le taisait. */}
+        {stats && !stats.fullyVaulted && (
+          <div className="col-span-full rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <strong>{num(stats.goldOnLoan)} g</strong> de la réserve sont actuellement
+            <strong> prêtés</strong> pour financer le rendement de la location : cet or reste dû à
+            la plateforme mais n'est pas physiquement en coffre.
+            <span className="block mt-1 text-amber-300/80">
+              Effectivement en coffre : {num(stats.goldVaulted)} g sur {num(stats.goldAllocated)} g
+              alloués.
+            </span>
+          </div>
+        )}
+
         <div className="card-state">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-gold-500/20 rounded-xl flex items-center justify-center">
@@ -99,7 +131,7 @@ export default function Dashboard() {
               ) : (
                 <>
                   <p className="text-3xl font-bold text-gold-500">
-                    {stats?.totalAllocated?.toFixed(0) || '0'} g
+                    {num(stats?.goldAllocated)} g
                   </p>
                   <p className="text-sm text-slate-400">
                     = {stockValue.toLocaleString()} FCFA
@@ -122,7 +154,7 @@ export default function Dashboard() {
                 <div className="h-8 w-32 bg-slate-700 rounded animate-pulse mt-1"></div>
               ) : (
                 <p className="text-3xl font-bold">
-                  {stats?.tokensIssued?.toFixed(0) || '0'} g
+                  {num(stats?.totalTokens)} g
                 </p>
               )}
             </div>
@@ -133,9 +165,9 @@ export default function Dashboard() {
         <div className="card">
           <div className="flex items-center gap-4">
             <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-              (stats?.coverage || 0) >= 1 ? 'bg-green-500/20' : 'bg-red-500/20'
+              (stats?.coverageRatio || 0) >= 1 ? 'bg-green-500/20' : 'bg-red-500/20'
             }`}>
-              <span className="text-3xl">{(stats?.coverage || 0) >= 1 ? '✓' : '⚠️'}</span>
+              <span className="text-3xl">{(stats?.coverageRatio || 0) >= 1 ? '✓' : '⚠️'}</span>
             </div>
             <div>
               <p className="text-sm text-slate-400">Couverture</p>
@@ -143,9 +175,9 @@ export default function Dashboard() {
                 <div className="h-8 w-32 bg-slate-700 rounded animate-pulse mt-1"></div>
               ) : (
                 <p className={`text-3xl font-bold ${
-                  (stats?.coverage || 0) >= 1 ? 'text-green-400' : 'text-red-400'
+                  (stats?.coverageRatio || 0) >= 1 ? 'text-green-400' : 'text-red-400'
                 }`}>
-                  {((stats?.coverage || 0) * 100).toFixed(1)}%
+                  {stats ? `${(stats.coverageRatio * 100).toFixed(1)}%` : '—'}
                 </p>
               )}
             </div>
@@ -308,11 +340,11 @@ export default function Dashboard() {
           <div className="flex justify-center gap-6 mt-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-blue-500"></div>
-              <span className="text-sm text-slate-400">Tokens Émis ({stats?.tokensIssued?.toFixed(0) || 0} g)</span>
+              <span className="text-sm text-slate-400">Tokens Émis ({num(stats?.totalTokens)} g)</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-gold-500"></div>
-              <span className="text-sm text-slate-400">Disponible ({((stats?.totalAllocated || 0) - (stats?.tokensIssued || 0)).toFixed(0)} g)</span>
+              <span className="text-sm text-slate-400">Disponible ({num((stats?.goldAllocated ?? 0) - (stats?.totalTokens ?? 0))} g)</span>
             </div>
           </div>
         </div>

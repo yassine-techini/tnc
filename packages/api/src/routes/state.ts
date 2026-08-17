@@ -487,6 +487,13 @@ state.get('/dashboard', async (c) => {
         totalTokens: totalTokensResult?.total || 0,
         totalVolume: totalVolumeResult?.total || 0,
         goldAllocated: stock?.total_allocated || 0,
+        // L'or PRÊTÉ, et donc absent du coffre. La page publique /reserve le
+        // divulgue, l'attestation signée le divulgue, le certificat et le relevé
+        // de règlement aussi — le portail de l'État était le seul à l'ignorer,
+        // alors que c'est l'audience qui a alloué cet or.
+        goldOnLoan: stock?.gold_on_loan || 0,
+        goldVaulted: Math.max(0, (stock?.total_allocated || 0) - (stock?.gold_on_loan || 0)),
+        fullyVaulted: (stock?.gold_on_loan || 0) === 0,
         coverageRatio,
         monthlyVolume: monthlyVolumeResult?.total || 0,
         lastUpdate: new Date().toISOString(),
@@ -527,6 +534,13 @@ state.get('/stock', async (c) => {
         totalAllocated: stock?.total_allocated || 0,
         tokensIssued: tokensResult?.total || 0,
         availableStock: (stock?.total_allocated || 0) - (tokensResult?.total || 0),
+        // Alloué n'est pas détenu : la part prêtée est due par une contrepartie
+        // et n'est pas physiquement en coffre.
+        goldOnLoan: stock?.gold_on_loan || 0,
+        goldVaulted: Math.max(0, (stock?.total_allocated || 0) - (stock?.gold_on_loan || 0)),
+        fullyVaulted: (stock?.gold_on_loan || 0) === 0,
+        lendingNotice:
+          "Une partie de la réserve peut être prêtée pour financer le rendement de la location. L'or prêté reste dû à la plateforme mais n'est pas physiquement en coffre : la couverture correspondante dépend du remboursement de la contrepartie.",
         coverageRatio,
         lastAuditDate: stock?.last_audit_date,
         lastAuditResult: stock?.last_audit_result,
