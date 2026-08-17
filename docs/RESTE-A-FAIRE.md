@@ -11,7 +11,7 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 | `packages/api` | 13 modules de routes, 616 tests | Le plus mature |
 | `apps/admin` | 19 écrans, 53 tests | Complet |
 | `apps/web` | 13 pages + auth + vitrine, 34 tests | Complet |
-| `apps/mobile` | 4 onglets + producteur + location + répartition, 50 tests | Complet ; bout-en-bout sur appareil manquant |
+| `apps/mobile` | 4 onglets + producteur + location + répartition, 61 tests | Complet ; parcours bout-en-bout écrits, jamais exécutés |
 | `apps/state-portal` | 5 écrans, 33 tests | Complet |
 
 ---
@@ -42,11 +42,22 @@ qu'un composant affiche une valeur déjà vérifiée ailleurs.
 | `apps/web` | 34 | hook de formulaire, vérification d'attestation |
 | `apps/admin` | 53 | client API, magasin de session |
 | `apps/state-portal` | 33 | client API, session, écrans Stock / Tableau de bord / Connexion |
-| `apps/mobile` | 50 | session et jetons, validation de saisie, épinglage SSL, formatage |
+| `apps/mobile` | 61 | session et jetons, validation de saisie, épinglage SSL, formatage, sélecteurs bout-en-bout |
 
-**Ce qui reste** : le bout-en-bout mobile sur appareil ou émulateur (Detox ou
-Maestro). C'est la seule chose qu'un rendu simulé n'apporterait pas — et elle ne
-se ferme pas en simulant un appareil de plus.
+**Ce qui reste** : **exécuter** les parcours bout-en-bout mobiles. Ils sont écrits
+(3 parcours Maestro + 1 sous-parcours, 25 `testID` posés sur le chemin critique,
+choix d'outil dans [ADR 008](./adr/008-bout-en-bout-mobile.md)) et un contrôle
+statique prouve que chaque sélecteur désigne un élément existant — mais **aucun n'a
+tourné contre un appareil**.
+
+Le blocage est matériel, pas conceptuel : la machine de développement a le SDK
+Android et `adb`, mais aucune image système, aucun AVD et pas de JDK. Il faut
+télécharger plusieurs gigaoctets (image système, JDK, Maestro, chaîne Gradle pour
+compiler l'application native). La marche à suivre est dans
+[`apps/mobile/e2e/README.md`](../apps/mobile/e2e/README.md).
+
+Tant que ce passage n'a pas eu lieu, ces fichiers ne sont pas une couverture
+acquise — seulement un travail préparatoire vérifié.
 
 ## 3. Contrats de réponse — catégorie fermée ✅
 

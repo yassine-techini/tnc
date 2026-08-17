@@ -12,6 +12,9 @@
     "lint": "biome lint ./app",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "e2e:verifier": "node scripts/check-e2e-selectors.mjs",
+    "e2e": "maestro test e2e/",
+    "e2e:critique": "maestro test e2e/ --include-tags critique",
     "check:pins": "node scripts/check-ssl-pins.mjs"
   },
   "dependencies": {

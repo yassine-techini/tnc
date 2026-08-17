@@ -1,0 +1,70 @@
+appId: com.tnc.trading
+name: Chemin de l'argent — acheter de l'or
+tags:
+  - critique
+  - argent
+env:
+  IDENTIFIANT: client.demo@tnc-trading.com
+  MOT_DE_PASSE: DemoClient2024!
+  GRAMMES: '2'
+---
+# Le parcours qui compte : un client verifie doit pouvoir transformer des francs
+# en grammes et voir son solde bouger. Chaque etape ci-dessous existe parce
+# qu'un defaut reel a deja ete trouve dessus pendant la mission — devis, prix
+# expire, solde lu sur un champ inexistant.
+
+- runFlow: sous-parcours/connexion.yaml
+
+- tapOn:
+    id: 'onglet-portefeuille'
+- assertVisible:
+    id: 'portefeuille-solde-or'
+    timeout: 15000
+# Le solde d'avant est copie pour pouvoir constater qu'il a change. Maestro ne
+# compare pas deux captures : c'est l'operateur qui lit le rapport. Le but ici
+# est qu'un solde fige saute aux yeux dans les traces.
+- copyTextFrom:
+    id: 'portefeuille-solde-or'
+- evalScript: ${output.soldeAvant = maestro.copiedText}
+
+- tapOn:
+    id: 'onglet-marche'
+- tapOn:
+    id: 'marche-onglet-acheter'
+- tapOn:
+    id: 'marche-unite-grammes'
+
+- tapOn:
+    id: 'marche-montant'
+- inputText: ${GRAMMES}
+- hideKeyboard
+
+- tapOn:
+    id: 'marche-valider'
+
+# Le devis s'affiche dans un dialogue avant tout debit : un achat qui part sans
+# cette etape est un achat que le client n'a pas confirme.
+- assertVisible:
+    id: 'dialogue-confirmer'
+    timeout: 20000
+- assertVisible:
+    id: 'dialogue-message'
+- tapOn:
+    id: 'dialogue-confirmer'
+
+# Un succes doit etre annonce par une banniere de succes, pas seulement par
+# l'absence d'erreur.
+- assertVisible:
+    id: 'message-succes'
+    timeout: 30000
+- assertNotVisible:
+    id: 'message-erreur'
+
+- tapOn:
+    id: 'onglet-portefeuille'
+- assertVisible:
+    id: 'portefeuille-solde-or'
+    timeout: 15000
+- copyTextFrom:
+    id: 'portefeuille-solde-or'
+- assertTrue: ${maestro.copiedText != output.soldeAvant}

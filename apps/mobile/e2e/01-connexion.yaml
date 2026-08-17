@@ -1,0 +1,38 @@
+appId: com.tnc.trading
+name: Connexion par mot de passe
+tags:
+  - critique
+  - authentification
+env:
+  IDENTIFIANT: client.demo@tnc-trading.com
+  MOT_DE_PASSE: DemoClient2024!
+---
+# Le premier parcours verifie la porte d'entree : sans elle, aucun autre n'a de
+# sens. Il s'arrete a l'arrivee sur l'accueil — pas plus loin, pour qu'un echec
+# ici designe l'authentification et rien d'autre.
+
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+
+- assertVisible:
+    id: 'connexion-identifiant'
+
+- tapOn:
+    id: 'connexion-identifiant'
+- inputText: ${IDENTIFIANT}
+
+- tapOn:
+    id: 'connexion-mot-de-passe'
+- inputText: ${MOT_DE_PASSE}
+
+- hideKeyboard
+- tapOn:
+    id: 'connexion-valider'
+
+# L'arrivee sur la barre d'onglets EST le succes : elle n'existe que dans la
+# zone authentifiee de l'application.
+- assertVisible:
+    id: 'onglet-portefeuille'
+    timeout: 20000

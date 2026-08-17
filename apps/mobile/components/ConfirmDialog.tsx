@@ -29,14 +29,15 @@ export default function ConfirmDialog({
           color={destructive ? '#EF4444' : '#D4AF37'}
         />
       </View>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.message}>{message}</Text>
+      <Text testID="dialogue-titre" style={styles.title}>{title}</Text>
+      <Text testID="dialogue-message" style={styles.message}>{message}</Text>
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.cancelButton} onPress={onCancel} activeOpacity={0.8}>
+        <TouchableOpacity testID="dialogue-annuler" style={styles.cancelButton} onPress={onCancel} activeOpacity={0.8}>
           <Text style={styles.cancelText}>{cancelText}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.confirmButton, destructive && styles.confirmButtonDestructive]}
+          testID="dialogue-confirmer"
           onPress={onConfirm}
           activeOpacity={0.8}
         >

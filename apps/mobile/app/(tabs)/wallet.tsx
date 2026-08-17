@@ -68,7 +68,7 @@ export default function WalletScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D4AF37" />}
     >
       {/* Title */}
-      <Text style={[styles.pageTitle, { color: c.text }]}>Portefeuille</Text>
+      <Text testID="portefeuille-titre" style={[styles.pageTitle, { color: c.text }]}>Portefeuille</Text>
 
       {/* Gold Balance */}
       <View style={[styles.goldCard, { backgroundColor: c.surface }]}>
@@ -78,7 +78,7 @@ export default function WalletScreen() {
         </View>
         {isLoading ? <View style={[styles.skeleton, { backgroundColor: c.border }]} /> : (
           <>
-            <Text style={styles.goldValue}>{wallet?.tokenBalance?.toFixed(3) || '0.000'} g</Text>
+            <Text testID="portefeuille-solde-or" style={styles.goldValue}>{wallet?.tokenBalance?.toFixed(3) || '0.000'} g</Text>
             <Text style={[styles.goldSubtext, { color: c.textTertiary }]}>Valeur: {((wallet?.tokenBalance || 0) * (price?.sellPrice || 0)).toLocaleString()} XOF</Text>
           </>
         )}
@@ -91,7 +91,7 @@ export default function WalletScreen() {
           <Text style={styles.cashLabel}>Solde Disponible</Text>
         </View>
         {isLoading ? <View style={[styles.skeleton, { backgroundColor: c.border }]} /> : (
-          <Text style={[styles.cashValue, { color: c.text }]}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
+          <Text testID="portefeuille-solde-especes" style={[styles.cashValue, { color: c.text }]}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
         )}
       </View>
 

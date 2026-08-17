@@ -355,12 +355,14 @@ export default function MarketScreen() {
       {/* Buy/Sell Tabs */}
       <View style={[styles.tabs, { backgroundColor: c.surface }]}>
         <TouchableOpacity
+          testID="marche-onglet-acheter"
           style={[styles.tab, tab === 'buy' && styles.tabActiveBuy]}
           onPress={() => setTab('buy')}
         >
           <Text style={[styles.tabText, { color: tab === 'buy' ? '#fff' : c.textSecondary }, tab === 'buy' && styles.tabTextActive]}>Acheter</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          testID="marche-onglet-vendre"
           style={[styles.tab, tab === 'sell' && styles.tabActiveSell]}
           onPress={() => setTab('sell')}
         >
@@ -375,12 +377,14 @@ export default function MarketScreen() {
           <View style={styles.amountTypeButtons}>
             <TouchableOpacity
               style={[styles.amountTypeBtn, { backgroundColor: amountType === 'grams' ? c.gold : c.border }, amountType === 'grams' && styles.amountTypeBtnActive]}
+              testID="marche-unite-grammes"
               onPress={() => { setAmountType('grams'); setAmount(''); }}
             >
               <Text style={[styles.amountTypeBtnText, { color: amountType === 'grams' ? '#0F0F1A' : c.textSecondary }, amountType === 'grams' && styles.amountTypeBtnTextActive]}>Grammes</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.amountTypeBtn, { backgroundColor: amountType === 'xof' ? c.gold : c.border }, amountType === 'xof' && styles.amountTypeBtnActive]}
+              testID="marche-unite-xof"
               onPress={() => { setAmountType('xof'); setAmount(''); }}
             >
               <Text style={[styles.amountTypeBtnText, { color: amountType === 'xof' ? '#0F0F1A' : c.textSecondary }, amountType === 'xof' && styles.amountTypeBtnTextActive]}>XOF</Text>
@@ -389,6 +393,7 @@ export default function MarketScreen() {
         </View>
         <View style={[styles.inputContainer, { backgroundColor: c.surface, borderColor: c.border }]}>
           <TextInput
+            testID="marche-montant"
             style={[styles.input, { color: c.text }]}
             placeholder="0.000"
             placeholderTextColor={c.textTertiary}
@@ -492,6 +497,7 @@ export default function MarketScreen() {
           tab === 'buy' ? styles.actionButtonBuy : styles.actionButtonSell,
           (!amount || parseFloat(amount) <= 0) && styles.actionButtonDisabled,
         ]}
+        testID="marche-valider"
         onPress={handleTransaction}
         disabled={!amount || parseFloat(amount) <= 0 || isProcessing}
       >

@@ -1,0 +1,45 @@
+appId: com.tnc.trading
+name: Un compte BASIC ne peut pas acheter
+tags:
+  - critique
+  - kyc
+env:
+  IDENTIFIANT: client.basic@tnc-trading.com
+  MOT_DE_PASSE: DemoBasic2024!
+  GRAMMES: '1'
+---
+# Le seul parcours dont le succes est un REFUS.
+#
+# Un compte BASIC est en consultation seule (KYC_LIMITS.BASIC : dailyBuy 0,
+# canSell false). L'ecran doit le dire et ne rien executer. Un test qui verifie
+# seulement que l'achat marche ne verrait jamais cette regle se rompre — et une
+# regle KYC qui se rompt en silence, c'est de la conformite perdue.
+
+- runFlow: sous-parcours/connexion.yaml
+
+- tapOn:
+    id: 'onglet-marche'
+- tapOn:
+    id: 'marche-onglet-acheter'
+- tapOn:
+    id: 'marche-unite-grammes'
+
+- tapOn:
+    id: 'marche-montant'
+- inputText: ${GRAMMES}
+- hideKeyboard
+
+- tapOn:
+    id: 'marche-valider'
+
+# Refus attendu, et annonce comme tel.
+- assertVisible:
+    id: 'message-avertissement'
+    timeout: 20000
+- assertVisible: 'Completez votre KYC pour effectuer des transactions'
+
+# Rien ne doit avoir ete engage : ni dialogue de confirmation, ni succes.
+- assertNotVisible:
+    id: 'dialogue-confirmer'
+- assertNotVisible:
+    id: 'message-succes'

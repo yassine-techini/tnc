@@ -9,7 +9,26 @@ interface InlineMessageProps {
   message: string;
   onDismiss?: () => void;
   autoDismiss?: number; // ms, 0 = no auto dismiss
+  /**
+   * Ancre pour les parcours bout-en-bout. Le type est repris dans l'identifiant
+   * (`message-erreur`, `message-succes`…) : un parcours qui verifie un refus ne
+   * doit pas pouvoir se satisfaire d'une banniere de succes affichee au meme
+   * endroit.
+   */
+  testID?: string;
 }
+
+/**
+ * Identifiants ECRITS EN ENTIER, pas assembles a l'execution : le controle qui
+ * verifie les parcours bout-en-bout les cherche tels quels dans les sources. Un
+ * identifiant construit par interpolation serait introuvable, donc invérifiable.
+ */
+const TEST_ID: Record<MessageType, string> = {
+  error: 'message-erreur',
+  success: 'message-succes',
+  warning: 'message-avertissement',
+  info: 'message-info',
+};
 
 const CONFIG: Record<MessageType, { icon: React.ComponentProps<typeof Ionicons>['name']; bg: string; border: string; color: string; iconColor: string }> = {
   error: {
@@ -42,7 +61,7 @@ const CONFIG: Record<MessageType, { icon: React.ComponentProps<typeof Ionicons>[
   },
 };
 
-export default function InlineMessage({ type, message, onDismiss, autoDismiss = 5000 }: InlineMessageProps) {
+export default function InlineMessage({ type, message, onDismiss, autoDismiss = 5000, testID }: InlineMessageProps) {
   const config = CONFIG[type];
 
   useEffect(() => {
@@ -53,9 +72,12 @@ export default function InlineMessage({ type, message, onDismiss, autoDismiss = 
   }, [autoDismiss, onDismiss]);
 
   return (
-    <View style={[styles.container, { backgroundColor: config.bg, borderColor: config.border }]}>
+    <View
+      testID={testID ?? TEST_ID[type]}
+      style={[styles.container, { backgroundColor: config.bg, borderColor: config.border }]}
+    >
       <Ionicons name={config.icon} size={20} color={config.iconColor} />
-      <Text style={[styles.message, { color: config.color }]}>{message}</Text>
+      <Text testID={`${testID ?? TEST_ID[type]}-texte`} style={[styles.message, { color: config.color }]}>{message}</Text>
       {onDismiss && (
         <TouchableOpacity onPress={onDismiss} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="close" size={18} color={config.color} />

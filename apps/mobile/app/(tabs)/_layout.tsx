@@ -63,6 +63,7 @@ export default function TabLayout() {
           title: 'Accueil',
           headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon name="index" focused={focused} />,
+          tabBarButtonTestID: 'onglet-accueil',
         }}
       />
       <Tabs.Screen
@@ -71,6 +72,7 @@ export default function TabLayout() {
           title: 'Marche',
           headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon name="market" focused={focused} />,
+          tabBarButtonTestID: 'onglet-marche',
         }}
       />
       <Tabs.Screen
@@ -79,6 +81,7 @@ export default function TabLayout() {
           title: 'Portefeuille',
           headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon name="wallet" focused={focused} />,
+          tabBarButtonTestID: 'onglet-portefeuille',
         }}
       />
       <Tabs.Screen
@@ -87,6 +90,7 @@ export default function TabLayout() {
           title: 'Profil',
           headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon name="profile" focused={focused} />,
+          tabBarButtonTestID: 'onglet-profil',
         }}
       />
     </Tabs>

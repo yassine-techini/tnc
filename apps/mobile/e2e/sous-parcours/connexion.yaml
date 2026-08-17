@@ -1,0 +1,30 @@
+appId: com.tnc.trading
+name: Connexion (sous-parcours reutilisable)
+---
+# Extrait pour que les parcours metier commencent a leur vrai sujet. Un echec
+# ici doit se lire comme « la connexion a echoue », pas comme un echec d'achat.
+
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+
+- assertVisible:
+    id: 'connexion-identifiant'
+    timeout: 30000
+
+- tapOn:
+    id: 'connexion-identifiant'
+- inputText: ${IDENTIFIANT}
+
+- tapOn:
+    id: 'connexion-mot-de-passe'
+- inputText: ${MOT_DE_PASSE}
+
+- hideKeyboard
+- tapOn:
+    id: 'connexion-valider'
+
+- assertVisible:
+    id: 'onglet-portefeuille'
+    timeout: 20000

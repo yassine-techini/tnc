@@ -490,6 +490,7 @@ export default function LoginScreen() {
                 <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
                   <Ionicons name="mail-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
                   <TextInput
+                    testID="connexion-identifiant"
                     style={[styles.input, { color: c.text }]}
                     placeholder="email@example.com"
                     placeholderTextColor={c.textTertiary}
@@ -506,6 +507,7 @@ export default function LoginScreen() {
                 <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
                   <Ionicons name="lock-closed-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
                   <TextInput
+                    testID="connexion-mot-de-passe"
                     style={[styles.input, { color: c.text }]}
                     placeholder="Votre mot de passe"
                     placeholderTextColor={c.textTertiary}
@@ -532,6 +534,7 @@ export default function LoginScreen() {
                   <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
                     <Ionicons name="shield-checkmark-outline" size={18} color={c.textTertiary} style={styles.inputIcon} />
                     <TextInput
+                      testID="connexion-code-2fa"
                       style={[styles.input, { color: c.text }]}
                       placeholder="123456"
                       placeholderTextColor={c.textTertiary}
@@ -557,6 +560,7 @@ export default function LoginScreen() {
               ) : null}
 
               <TouchableOpacity
+                testID="connexion-valider"
                 style={[styles.button, isLoading && styles.buttonDisabled]}
                 onPress={handleLogin}
                 disabled={isLoading}
