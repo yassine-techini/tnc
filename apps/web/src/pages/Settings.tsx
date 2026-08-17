@@ -9,7 +9,10 @@ type ActiveSection = 'none' | '2fa-setup' | '2fa-disable' | 'password' | 'price-
 
 interface TwoFactorData {
   secret: string;
-  qrCodeUrl: string;
+  /** otpauth://… — la route ne renvoie pas d'image de QR, et c'est voulu. */
+  uri: string;
+  issuer: string;
+  message: string;
 }
 
 interface PriceAlert {
@@ -332,17 +335,21 @@ export default function Settings() {
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-slate-400">
-                Scannez ce QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)
+                Ajoutez ce compte à votre application d'authentification (Google Authenticator,
+                Authy, etc.).
               </p>
 
-              {twoFactorData && (
-                <div className="flex justify-center p-4 bg-white rounded-lg">
-                  <img
-                    src={twoFactorData.qrCodeUrl}
-                    alt="QR Code 2FA"
-                    className="w-48 h-48"
-                  />
-                </div>
+              {/* Pas d'image de QR : la générer via un service externe enverrait
+                  la graine TOTP à un tiers. Le lien otpauth:// enrôle
+                  directement quand une application est installée, et la clé
+                  ci-dessous couvre les autres cas. */}
+              {twoFactorData?.uri && (
+                <a
+                  href={twoFactorData.uri}
+                  className="block text-center px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                >
+                  Ouvrir dans mon application d'authentification
+                </a>
               )}
 
               <div className="p-3 bg-slate-900 rounded-lg">

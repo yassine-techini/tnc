@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as SecureStore from 'expo-secure-store';
@@ -132,7 +132,7 @@ export default function TwoFactorScreen() {
           </View>
           <View style={styles.stepItem}>
             <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
-            <Text style={styles.stepText}>Scannez le QR code avec l'application</Text>
+            <Text style={styles.stepText}>Ajoutez le compte via le lien, ou saisissez la clé</Text>
           </View>
           <View style={styles.stepItem}>
             <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
@@ -161,28 +161,28 @@ export default function TwoFactorScreen() {
     );
   }
 
-  // Setup screen (scan QR code)
+  // Setup screen : lien otpauth:// ou saisie manuelle de la clé
   if (step === 'setup' && setupData) {
     return (
       <ScrollView style={styles.container}>
-        <Text style={styles.title}>Scannez le QR code</Text>
+        <Text style={styles.title}>Activez la double authentification</Text>
         <Text style={styles.subtitle}>
-          Utilisez votre application d'authentification pour scanner ce code
+          Ajoutez ce compte à votre application d'authentification
         </Text>
 
-        <View style={styles.qrContainer}>
-          {setupData.qrCodeUrl ? (
-            <Image
-              source={{ uri: setupData.qrCodeUrl }}
-              style={styles.qrCode}
-              resizeMode="contain"
-            />
-          ) : (
-            <View style={styles.qrPlaceholder}>
-              <Text style={styles.qrPlaceholderText}>QR Code</Text>
-            </View>
-          )}
-        </View>
+        {/* Pas d'image de QR : la faire générer par un service externe
+            enverrait la graine TOTP à un tiers. Sur téléphone, le lien
+            otpauth:// fait mieux qu'un QR — il ouvre directement
+            l'application d'authentification, sans passer par l'appareil photo. */}
+        {setupData.uri ? (
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => Linking.openURL(setupData.uri)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>Ouvrir dans mon application</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.secretBox}>
           <Text style={styles.secretLabel}>Ou entrez ce code manuellement:</Text>
@@ -190,7 +190,7 @@ export default function TwoFactorScreen() {
         </View>
 
         <TouchableOpacity style={styles.button} onPress={() => setStep('verify')}>
-          <Text style={styles.buttonText}>J'ai scanné le code</Text>
+          <Text style={styles.buttonText}>J'ai ajouté le compte</Text>
         </TouchableOpacity>
 
         <View style={styles.bottomPadding} />
@@ -238,7 +238,7 @@ export default function TwoFactorScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.backLink} onPress={() => setStep('setup')}>
-          <Text style={styles.backLinkText}>← Retour au QR code</Text>
+          <Text style={styles.backLinkText}>← Retour à la clé</Text>
         </TouchableOpacity>
 
         <View style={styles.bottomPadding} />

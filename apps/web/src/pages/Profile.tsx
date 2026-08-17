@@ -21,7 +21,7 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [totpUri, setTotpUri] = useState('');
   const [secret, setSecret] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [verificationCode, setVerificationCode] = useState('');
@@ -62,7 +62,7 @@ export default function Profile() {
   const setup2FAMutation = useMutation({
     mutationFn: () => api.setup2FAProfile(),
     onSuccess: (data) => {
-      setQrCodeUrl(data.data.qrCodeUrl);
+      setTotpUri(data.data.uri);
       setSecret(data.data.secret);
       setActiveSection('2fa');
     },
@@ -187,7 +187,7 @@ export default function Profile() {
     setNewPassword('');
     setConfirmPassword('');
     setTotpCode('');
-    setQrCodeUrl('');
+    setTotpUri('');
     setSecret('');
     setBackupCodes([]);
     setVerificationCode('');
@@ -553,16 +553,26 @@ export default function Profile() {
             </div>
           )}
 
-          {!user?.twoFactorEnabled && qrCodeUrl && !backupCodes.length && (
+          {/* Conditionné au SECRET, pas à un champ que la route n'envoie pas :
+              c'est cette condition qui masquait tout le bloc, secret compris. */}
+          {!user?.twoFactorEnabled && secret && !backupCodes.length && (
             <div className="space-y-4 mb-6">
               <p className="text-sm text-slate-400">
-                Scannez ce QR code avec votre application d'authentification (Google Authenticator, Authy, etc.)
+                Ajoutez ce compte à votre application d'authentification (Google Authenticator,
+                Authy, etc.).
               </p>
-              <div className="flex justify-center">
-                <img src={qrCodeUrl} alt="QR Code 2FA" className="w-48 h-48 bg-white p-2 rounded" />
-              </div>
+              {totpUri && (
+                <a
+                  href={totpUri}
+                  className="block text-center px-4 py-3 rounded-lg bg-gold-500/10 border border-gold-500/30 text-gold-400 hover:bg-gold-500/20"
+                >
+                  Ouvrir dans mon application d'authentification
+                </a>
+              )}
               <div className="p-3 bg-slate-800 rounded-lg">
-                <p className="text-xs text-slate-400 mb-1">Code secret (si impossible de scanner)</p>
+                <p className="text-xs text-slate-400 mb-1">
+                  Ou saisissez ce code secret manuellement
+                </p>
                 <p className="font-mono text-sm break-all text-amber-400">{secret}</p>
               </div>
             </div>

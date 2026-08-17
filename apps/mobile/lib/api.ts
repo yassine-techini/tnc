@@ -731,9 +731,21 @@ class MobileApiClient {
 
   // 2FA
   async setup2FA(token: string) {
+    // La route renvoie `secret`, `uri`, `issuer` et `message`. Elle n'a JAMAIS
+    // renvoyé `qrCodeUrl` : l'écran web conditionnait tout son bloc à ce champ
+    // absent, si bien que ni le QR ni le secret manuel ne s'affichaient et que
+    // l'activation 2FA était inutilisable.
+    //
+    // Aucun QR n'est généré côté serveur, délibérément : le faire via le service
+    // externe utilisé pour les certificats enverrait la GRAINE TOTP de chaque
+    // utilisateur à un tiers. Un code de vérification de certificat est public,
+    // un secret 2FA ne l'est pas.
     return this.request<{
       secret: string;
-      qrCodeUrl: string;
+      /** otpauth://… — à ouvrir dans l'application d'authentification. */
+      uri: string;
+      issuer: string;
+      message: string;
     }>('/api/v1/auth/2fa/setup', {
       method: 'POST',
       token,
