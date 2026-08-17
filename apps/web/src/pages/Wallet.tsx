@@ -53,6 +53,31 @@ export default function Wallet() {
     enabled: isAuthenticated,
   });
 
+  /**
+   * Dépôts en cours.
+   *
+   * L'API sait répondre depuis toujours ; aucun client ne le demandait. Un dépôt
+   * mobile-money bloqué chez l'opérateur était donc invisible pour celui qui
+   * l'avait initié — et impossible à annuler.
+   */
+  const { data: pendingDepositsData } = useQuery({
+    queryKey: ['pending-deposits'],
+    queryFn: () => api.getPendingDeposits(),
+    enabled: isAuthenticated,
+    // Un dépôt se dénoue chez l'opérateur, pas ici : on redemande régulièrement.
+    refetchInterval: 30_000,
+  });
+
+  const cancelDepositMutation = useMutation({
+    mutationFn: (id: string) => api.cancelDeposit(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-deposits'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   const { data: priceData } = useQuery({
     queryKey: ['price'],
     queryFn: () => api.getPrice(),
@@ -299,6 +324,53 @@ export default function Wallet() {
           </div>
         </div>
       </div>
+
+      {/* Dépôts en cours — visibles et annulables tant qu'ils n'ont pas abouti */}
+      {(pendingDepositsData?.data?.items?.length ?? 0) > 0 && (
+        <div className="card border-amber-500/25">
+          <h2 className="text-sm font-semibold text-amber-300 mb-1">
+            Dépôt{(pendingDepositsData?.data?.total ?? 0) > 1 ? 's' : ''} en cours
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">
+            En attente de confirmation par l'opérateur de paiement.
+          </p>
+          <ul className="space-y-3">
+            {pendingDepositsData?.data?.items?.map((depot) => (
+              <li
+                key={depot.id}
+                className="flex items-start justify-between gap-4 flex-wrap p-3 rounded-lg bg-slate-900/50 border border-slate-800"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white tabular-nums">
+                    {formatCurrency(depot.amount, 'XOF')}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {depot.paymentMethod || 'moyen inconnu'} ·{' '}
+                    {depot.status === 'PENDING' ? 'en attente' : 'en cours de traitement'}
+                  </p>
+                  {depot.paymentReference && (
+                    <p className="font-mono text-[11px] text-slate-500 mt-0.5">
+                      {depot.paymentReference}
+                    </p>
+                  )}
+                </div>
+
+                {/* L'API n'accepte l'annulation qu'en PENDING : proposer le bouton
+                    sur un dépôt déjà en traitement promettrait ce qu'elle refuse. */}
+                {depot.status === 'PENDING' && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => cancelDepositMutation.mutate(depot.id)}
+                    isLoading={cancelDepositMutation.isPending}
+                  >
+                    Annuler
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="card">

@@ -7,6 +7,11 @@ import type {
   DepositData,
   WithdrawData,
 } from '@tnc-trading/shared/contracts';
+import type {
+  DepositCancelledData,
+  DepositStatusData,
+  PendingDepositsData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../types/env';
@@ -729,7 +734,7 @@ wallet.get('/deposits/pending', async (c) => {
           updatedAt: d.updated_at,
         })) || [],
         total: pendingDeposits.results?.length || 0,
-      },
+      } satisfies PendingDepositsData,
       requestId,
     });
   } catch (error) {
@@ -820,7 +825,7 @@ wallet.get('/deposit/status/:id', async (c) => {
           await new ConfigService(c.env.DB, c.env.CACHE).getNumber('deposit_processing_fast_minutes', 5),
           await new ConfigService(c.env.DB, c.env.CACHE).getNumber('deposit_processing_slow_minutes', 30)
         ),
-      },
+      } satisfies DepositStatusData,
       requestId,
     });
   } catch (error) {
@@ -919,7 +924,7 @@ wallet.post('/deposit/:id/cancel', async (c) => {
       data: {
         message: 'Dépôt annulé avec succès',
         transactionId: id,
-      },
+      } satisfies DepositCancelledData,
       requestId,
     });
   } catch (error) {

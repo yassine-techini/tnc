@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/auth';
@@ -35,6 +35,29 @@ export default function WalletScreen() {
       return api.getWallet(tokens.accessToken);
     },
     enabled: !!tokens?.accessToken,
+  });
+
+  const queryClient = useQueryClient();
+
+  /**
+   * Depots en cours. L'API savait repondre ; aucun client ne le demandait, si
+   * bien qu'un depot bloque chez l'operateur etait invisible pour celui qui
+   * l'avait initie — et impossible a annuler.
+   */
+  const { data: depotsEnCours } = useQuery({
+    queryKey: ['pending-deposits'],
+    queryFn: () => api.getPendingDeposits(tokens!.accessToken),
+    enabled: !!tokens?.accessToken,
+    refetchInterval: 30_000,
+  });
+
+  const annulerDepot = useMutation({
+    mutationFn: (id: string) => api.cancelDeposit(id, tokens!.accessToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-deposits'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
   });
 
   const { data: priceData, refetch: refetchPrice } = useQuery({
@@ -94,6 +117,42 @@ export default function WalletScreen() {
           <Text testID="portefeuille-solde-especes" style={[styles.cashValue, { color: c.text }]}>{(wallet?.cashBalance || 0).toLocaleString()} XOF</Text>
         )}
       </View>
+
+      {(depotsEnCours?.data?.items?.length ?? 0) > 0 && (
+        <View style={[styles.depotsCard, { backgroundColor: c.surface }]}>
+          <Text style={styles.depotsTitre}>
+            Depot{(depotsEnCours?.data?.total ?? 0) > 1 ? 's' : ''} en cours
+          </Text>
+          <Text style={[styles.depotsSous, { color: c.textTertiary }]}>
+            En attente de confirmation par l'operateur de paiement.
+          </Text>
+          {depotsEnCours?.data?.items?.map((depot) => (
+            <View key={depot.id} style={[styles.depotLigne, { borderColor: c.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.depotMontant, { color: c.text }]}>
+                  {depot.amount.toLocaleString()} XOF
+                </Text>
+                <Text style={[styles.depotDetail, { color: c.textSecondary }]}>
+                  {depot.paymentMethod || 'moyen inconnu'} ·{' '}
+                  {depot.status === 'PENDING' ? 'en attente' : 'en cours de traitement'}
+                </Text>
+              </View>
+              {/* L'API n'accepte l'annulation qu'en PENDING : proposer le bouton
+                  sur un depot deja en traitement promettrait ce qu'elle refuse. */}
+              {depot.status === 'PENDING' && (
+                <TouchableOpacity
+                  testID={`depot-annuler-${depot.id}`}
+                  style={styles.depotAnnuler}
+                  disabled={annulerDepot.isPending}
+                  onPress={() => annulerDepot.mutate(depot.id)}
+                >
+                  <Text style={styles.depotAnnulerTexte}>Annuler</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Performance */}
       <View style={[styles.performanceCard, { backgroundColor: c.surface }]}>
@@ -191,6 +250,25 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
+  depotsCard: { marginHorizontal: 16, marginBottom: 16, borderRadius: 16, padding: 16 },
+  depotsTitre: { color: '#F59E0B', fontSize: 14, fontWeight: '600' },
+  depotsSous: { fontSize: 12, marginTop: 2, marginBottom: 10 },
+  depotLigne: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    paddingVertical: 10,
+  },
+  depotMontant: { fontSize: 15, fontWeight: '600' },
+  depotDetail: { fontSize: 12, marginTop: 2 },
+  depotAnnuler: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  depotAnnulerTexte: { color: '#EF4444', fontSize: 13, fontWeight: '600' },
   container: { flex: 1, backgroundColor: '#0F0F1A', padding: 16 },
   pageTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 16, paddingTop: 8 },
   goldCard: { backgroundColor: '#1A1A2E', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.2)', marginBottom: 10 },

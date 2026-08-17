@@ -7,6 +7,9 @@ import type {
   KycStatusData,
   NotificationPreferencesData,
   NotificationsData,
+  DepositCancelledData,
+  DepositStatusData,
+  PendingDepositsData,
   PriceAlertsData,
   UserProfileData,
 } from '@tnc-trading/shared/contracts';
@@ -511,6 +514,32 @@ class MobileApiClient {
       token,
       idempotencyKey: this.generateIdempotencyKey(),
     });
+  }
+
+  /**
+   * Cycle de vie d'un dépôt.
+   *
+   * Ces trois routes existaient et n'étaient appelées par personne : un dépôt
+   * mobile-money bloqué chez l'opérateur restait invisible et non annulable.
+   */
+  async getPendingDeposits(token: string) {
+    return this.request<PendingDepositsData>('/api/v1/wallet/deposits/pending', {
+      token,
+    });
+  }
+
+  async getDepositStatus(id: string, token: string) {
+    return this.request<DepositStatusData>(
+      `/api/v1/wallet/deposit/status/${encodeURIComponent(id)}`,
+      { token }
+    );
+  }
+
+  async cancelDeposit(id: string, token: string) {
+    return this.request<DepositCancelledData>(
+      `/api/v1/wallet/deposit/${encodeURIComponent(id)}/cancel`,
+      { method: 'POST', token }
+    );
   }
 
   async withdraw(amount: number, paymentMethod: string, phoneNumber: string, token: string, totpCode?: string) {

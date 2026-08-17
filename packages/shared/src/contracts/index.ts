@@ -361,6 +361,175 @@ export interface KycSubmitData {
 }
 
 /** `GET|PATCH /api/v1/users/me/preferences/notifications` */
+/**
+ * Un dépôt en cours — `GET /api/v1/wallet/deposits/pending`
+ *
+ * Ces trois routes (liste, statut, annulation) étaient servies et aucun client ne
+ * les appelait : un dépôt mobile-money bloqué chez l'opérateur était invisible et
+ * non annulable, alors que l'API savait répondre.
+ */
+export interface PendingDeposit {
+  id: string;
+  amount: number;
+  status: 'PENDING' | 'PROCESSING';
+  paymentMethod: string | null;
+  paymentReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PendingDepositsData {
+  items: PendingDeposit[];
+  total: number;
+}
+
+/** `GET /api/v1/wallet/deposit/status/:id` */
+export interface DepositStatusData {
+  id: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  amount: number;
+  fees: number;
+  netAmount: number;
+  paymentMethod: string | null;
+  paymentReference: string | null;
+  externalReference: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+  /** Depuis combien de temps il traîne — la question que pose l'utilisateur. */
+  minutesSinceCreation: number;
+  /**
+   * Ce que le fournisseur de paiement répond, quand il répond. `null` quand il
+   * n'a pas été interrogé ou n'a pas répondu — ce qui EST une information : un
+   * dépôt bloqué sans réponse du fournisseur ne se traite pas comme un refus.
+   */
+  providerStatus: { status: string; details?: Record<string, unknown> } | null;
+  /** Message prêt à afficher, calculé sur des seuils configurables. */
+  statusMessage: string;
+}
+
+/** `POST /api/v1/wallet/deposit/:id/cancel` */
+export interface DepositCancelledData {
+  message: string;
+  transactionId: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Réconciliation — /api/v1/admin/reconciliation/*
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Une transaction telle que le service de réconciliation la voit : colonnes
+ * brutes, pas une projection d'écran. C'est volontaire — quand on cherche
+ * pourquoi les comptes ne tombent pas juste, on veut la ligne, pas un résumé.
+ */
+export interface ReconciliationTransaction {
+  id: string;
+  user_id: string;
+  wallet_id: string;
+  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  token_amount: number | null;
+  cash_amount: number;
+  price_per_gram: number | null;
+  fees: number;
+  payment_method: string | null;
+  payment_reference: string | null;
+  external_reference: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/** `GET /admin/reconciliation/stuck` */
+export interface StuckTransactionsData {
+  items: ReconciliationTransaction[];
+  total: number;
+  /** Seuil retenu par le serveur, borné entre 1 et 1440 minutes. */
+  thresholdMinutes: number;
+}
+
+/** `GET /admin/reconciliation/pending` */
+export interface PendingReconciliationData {
+  items: ReconciliationTransaction[];
+  total: number;
+}
+
+/** Un solde qui ne correspond pas à la somme de ses mouvements. */
+export interface WalletDiscrepancy {
+  walletId: string;
+  expectedBalance: number;
+  actualBalance: number;
+  /** Positif : le portefeuille détient plus que ce que les mouvements justifient. */
+  difference: number;
+}
+
+/** `GET /admin/reconciliation/discrepancies` */
+export interface WalletDiscrepanciesData {
+  items: WalletDiscrepancy[];
+  total: number;
+  /** La réponse à la question qu'on pose en premier : y en a-t-il ? */
+  hasDiscrepancies: boolean;
+}
+
+/**
+ * `GET /admin/reconciliation/report`
+ *
+ * La réponse fait autorité sur l'équilibre des comptes. L'écran d'administration
+ * la recalculait auparavant côté navigateur à partir de deux endpoints de
+ * synthèse — deux sources de vérité sur une plateforme adossée à de l'or.
+ */
+export interface ReconciliationReportData {
+  reportDate: string;
+  periodStart: string;
+  periodEnd: string;
+  summary: {
+    totalTransactions: number;
+    completedTransactions: number;
+    failedTransactions: number;
+    pendingTransactions: number;
+    processingTransactions: number;
+    cancelledTransactions: number;
+  };
+  volumeByType: Array<{
+    type: string;
+    count: number;
+    totalAmount: number;
+    completedAmount: number;
+  }>;
+  stuckTransactions: ReconciliationTransaction[];
+  discrepancies: WalletDiscrepancy[];
+}
+
+/** `GET /admin/reconciliation/daily` */
+export interface DailyReconciliationData {
+  date: string;
+  summary: Array<{
+    type: string;
+    status: string;
+    count: number;
+    total_amount: number;
+    total_tokens: number;
+  }>;
+  hourlyDistribution: Array<{ hour: string; count: number }>;
+}
+
+/** Ce que confirme `POST /admin/reconciliation/transaction/:id`. */
+export interface ReconcileActionData {
+  transactionId: string;
+  action: 'complete' | 'fail' | 'cancel';
+  status: string;
+}
+
+/** Ce que confirme `POST /admin/reconciliation/bulk`. */
+export interface BulkReconcileData {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: Array<{ transactionId: string; success: boolean; error?: string }>;
+}
+
 export interface NotificationView {
   id: string;
   type: string;

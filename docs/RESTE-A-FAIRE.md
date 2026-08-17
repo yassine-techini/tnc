@@ -120,7 +120,7 @@ blocage du flux producteur. C'était faux : le client construit ce chemin par un
 fonction utilitaire (`consignmentAction(id, 'transit')`), invisible à une recherche
 textuelle. Les constats ci-dessous ont tous été vérifiés un par un.
 
-### E. Le module de réconciliation est servi, permissionné, et injoignable 🟠
+### E. Le module de réconciliation est servi, permissionné, et injoignable ✅
 
 Six endpoints (`/admin/reconciliation/daily`, `/pending`, `/discrepancies`, `/report`,
 `/transaction/:id`, `/bulk`), un module RBAC à part entière (`reconciliation:
@@ -140,7 +140,7 @@ Deux conséquences :
   API et n'est atteignable par personne. Un administrateur peut recevoir
   `reconciliation:update` sans aucun moyen de l'exercer.
 
-### F. Le cycle de vie d'un dépôt s'arrête à sa création 🟠
+### F. Le cycle de vie d'un dépôt s'arrête à sa création ✅
 
 `GET /wallet/deposits/pending`, `GET /wallet/deposit/status/:id` et
 `POST /wallet/deposit/:id/cancel` sont servis. Les quatre clients n'exposent que
@@ -148,6 +148,27 @@ Deux conséquences :
 
 Un dépôt mobile-money qui reste bloqué chez l'opérateur est donc **invisible et non
 annulable** par l'utilisateur, alors que l'API sait répondre aux trois questions.
+
+**Corrigé.** Et l'écran cachait pire que ce que l'audit avait vu : `discrepancy: 0` et
+`isBalanced: true` étaient des **constantes**. La bannière verte « comptes équilibrés »
+s'affichait donc quoi qu'il arrive, et la branche rouge était littéralement
+inatteignable. Un écran de réconciliation qui affirme l'équilibre sans le vérifier est
+pire qu'une absence d'écran.
+
+L'écran lit désormais les six endpoints, sous contrat partagé : synthèse de période,
+volumes par type, écarts de solde détaillés, transactions bloquées avec seuil réglable,
+et les actions de résolution — gardées par `reconciliation:update`, avec un message
+explicite pour les rôles en lecture seule. Une panne de chargement affiche « état
+inconnu », jamais un vert rassurant. 10 tests d'écran.
+
+**Corrigé (F).** Les dépôts en cours sont visibles et annulables sur le web et le mobile,
+avec re-interrogation périodique — un dépôt se dénoue chez l'opérateur, pas dans
+l'application. Le bouton d'annulation n'apparaît qu'en statut `PENDING`, parce que
+l'API refuse au-delà : le proposer promettrait ce qu'elle ne fera pas.
+
+Les contrats ont attrapé trois champs que j'avais omis en les écrivant
+(`hasDiscrepancies`, `minutesSinceCreation`, `providerStatus`) — tous utiles à l'écran,
+tous ajoutés plutôt que supprimés.
 
 ### G. La configuration pays n'atteint pas l'écran d'inscription 🟡
 

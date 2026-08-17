@@ -10,6 +10,13 @@ import type {
   AnalyticsHistoryData,
   AdminPermissionsData,
   AdminStockData,
+  BulkReconcileData,
+  DailyReconciliationData,
+  PendingReconciliationData,
+  ReconcileActionData,
+  ReconciliationReportData,
+  StuckTransactionsData,
+  WalletDiscrepanciesData,
 } from '@tnc-trading/shared/contracts';
 
 interface ApiResponse<T> {
@@ -290,6 +297,70 @@ class AdminApiClient {
   }
 
   // Stock
+  // ── Réconciliation ────────────────────────────────────────────────
+  //
+  // Ces six routes existaient, avec leur module RBAC, et AUCUN client ne les
+  // appelait : l'écran recalculait l'équilibre dans le navigateur à partir de
+  // deux endpoints de synthèse. Deux sources de vérité sur l'équilibre des
+  // comptes, sur une plateforme adossée à de l'or.
+
+  async getReconciliationReport(start?: string, end?: string, token?: string) {
+    const params = new URLSearchParams();
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    const suffixe = params.toString() ? `?${params}` : '';
+    return this.request<ReconciliationReportData>(
+      `/api/v1/admin/reconciliation/report${suffixe}`,
+      { token }
+    );
+  }
+
+  async getWalletDiscrepancies(token?: string) {
+    return this.request<WalletDiscrepanciesData>('/api/v1/admin/reconciliation/discrepancies', {
+      token,
+    });
+  }
+
+  async getStuckTransactions(thresholdMinutes = 60, token?: string) {
+    return this.request<StuckTransactionsData>(
+      `/api/v1/admin/reconciliation/stuck?threshold=${thresholdMinutes}`,
+      { token }
+    );
+  }
+
+  async getPendingReconciliation(token?: string) {
+    return this.request<PendingReconciliationData>('/api/v1/admin/reconciliation/pending', {
+      token,
+    });
+  }
+
+  async getDailyReconciliation(token?: string) {
+    return this.request<DailyReconciliationData>('/api/v1/admin/reconciliation/daily', { token });
+  }
+
+  async reconcileTransaction(
+    id: string,
+    action: 'complete' | 'fail' | 'cancel',
+    options: { externalReference?: string; reason?: string } = {},
+    token?: string
+  ) {
+    return this.request<ReconcileActionData>(
+      `/api/v1/admin/reconciliation/transaction/${encodeURIComponent(id)}`,
+      { method: 'POST', body: JSON.stringify({ action, ...options }), token }
+    );
+  }
+
+  async bulkReconcile(
+    transactions: Array<{ transactionId: string; action: 'complete' | 'fail' | 'cancel'; reason?: string }>,
+    token?: string
+  ) {
+    return this.request<BulkReconcileData>('/api/v1/admin/reconciliation/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ transactions }),
+      token,
+    });
+  }
+
   async getStock(token?: string) {
     return this.request<AdminStockData>('/api/v1/admin/stock', { token });
   }

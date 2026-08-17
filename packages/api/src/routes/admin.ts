@@ -4,6 +4,15 @@ import type {
   AdminStockData,
   AdminPermissionsData,
 } from '@tnc-trading/shared/contracts';
+import type {
+  BulkReconcileData,
+  DailyReconciliationData,
+  PendingReconciliationData,
+  ReconcileActionData,
+  ReconciliationReportData,
+  StuckTransactionsData,
+  WalletDiscrepanciesData,
+} from '@tnc-trading/shared/contracts';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
@@ -2105,7 +2114,7 @@ admin.get('/reconciliation/stuck', requirePermission('reconciliation', 'view'), 
         items: stuckTransactions,
         total: stuckTransactions.length,
         thresholdMinutes,
-      },
+      } satisfies StuckTransactionsData,
       requestId,
     });
   } catch (error) {
@@ -2134,7 +2143,7 @@ admin.get('/reconciliation/pending', requirePermission('reconciliation', 'view')
       data: {
         items: pendingTransactions,
         total: pendingTransactions.length,
-      },
+      } satisfies PendingReconciliationData,
       requestId,
     });
   } catch (error) {
@@ -2225,7 +2234,7 @@ admin.get('/reconciliation/report', requirePermission('reconciliation', 'view'),
     const periodEnd = c.req.query('end') || new Date().toISOString();
 
     const reconciliationService = new ReconciliationService(c.env.DB);
-    const report = await reconciliationService.generateReport(periodStart, periodEnd);
+    const report: ReconciliationReportData = await reconciliationService.generateReport(periodStart, periodEnd);
 
     return c.json({
       success: true,
@@ -2259,7 +2268,7 @@ admin.get('/reconciliation/discrepancies', requirePermission('reconciliation', '
         items: discrepancies,
         total: discrepancies.length,
         hasDiscrepancies: discrepancies.length > 0,
-      },
+      } satisfies WalletDiscrepanciesData,
       requestId,
     });
   } catch (error) {

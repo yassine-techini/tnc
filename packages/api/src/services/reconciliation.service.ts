@@ -1,23 +1,15 @@
 import { NotificationService } from './notification.service';
+import type {
+  DailyReconciliationData,
+  ReconciliationReportData,
+  ReconciliationTransaction,
+  WalletDiscrepancy,
+} from '@tnc-trading/shared/contracts';
 import { ConfigService } from './config.service';
 
-interface Transaction {
-  id: string;
-  user_id: string;
-  wallet_id: string;
-  type: 'BUY' | 'SELL' | 'DEPOSIT' | 'WITHDRAWAL' | 'FEE';
-  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-  token_amount: number | null;
-  cash_amount: number;
-  price_per_gram: number | null;
-  fees: number;
-  payment_method: string | null;
-  payment_reference: string | null;
-  external_reference: string | null;
-  failure_reason: string | null;
-  created_at: string;
-  completed_at: string | null;
-}
+// La forme d'une transaction vue par la reconciliation vient du contrat partage :
+// l'ecran d'administration lit exactement ce que ce service produit.
+type Transaction = ReconciliationTransaction;
 
 interface ReconciliationResult {
   transactionId: string;
@@ -27,32 +19,7 @@ interface ReconciliationResult {
   message: string;
 }
 
-interface ReconciliationReport {
-  reportDate: string;
-  periodStart: string;
-  periodEnd: string;
-  summary: {
-    totalTransactions: number;
-    completedTransactions: number;
-    failedTransactions: number;
-    pendingTransactions: number;
-    processingTransactions: number;
-    cancelledTransactions: number;
-  };
-  volumeByType: {
-    type: string;
-    count: number;
-    totalAmount: number;
-    completedAmount: number;
-  }[];
-  stuckTransactions: Transaction[];
-  discrepancies: {
-    walletId: string;
-    expectedBalance: number;
-    actualBalance: number;
-    difference: number;
-  }[];
-}
+type ReconciliationReport = ReconciliationReportData;
 
 export class ReconciliationService {
   private configService: ConfigService | null;
@@ -378,7 +345,7 @@ export class ReconciliationService {
   /**
    * Check for wallet balance discrepancies
    */
-  async checkWalletDiscrepancies(): Promise<{ walletId: string; expectedBalance: number; actualBalance: number; difference: number }[]> {
+  async checkWalletDiscrepancies(): Promise<WalletDiscrepancy[]> {
     // Calculate expected balances from completed transactions
     const walletExpected = await this.db
       .prepare(`
@@ -455,7 +422,7 @@ export class ReconciliationService {
   /**
    * Get daily transaction summary for monitoring
    */
-  async getDailySummary(): Promise<any> {
+  async getDailySummary(): Promise<DailyReconciliationData> {
     const today = new Date().toISOString().split('T')[0];
 
     const summary = await this.db

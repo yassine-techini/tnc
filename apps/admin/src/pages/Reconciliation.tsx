@@ -1,393 +1,354 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReconciliationTransaction } from '@tnc-trading/shared/contracts';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
+import { useAdminStore } from '../stores/auth';
 
-interface ReconciliationData {
-  stock: {
-    totalAllocated: number;
-    tokensIssued: number;
-    availableStock: number;
-    coverage: number;
-  };
-  wallets: {
-    totalTokens: number;
-    totalCash: number;
-    userCount: number;
-  };
-  transactions: {
-    totalBought: number;
-    totalSold: number;
-    pendingBuys: number;
-    pendingSells: number;
-  };
-  discrepancy: number;
-  isBalanced: boolean;
+/**
+ * Réconciliation — lue depuis le serveur, plus recalculée dans le navigateur.
+ *
+ * Cet écran additionnait les mille premières transactions côté client et
+ * affichait `isBalanced: true` — une CONSTANTE. La bannière verte « comptes
+ * équilibrés » était donc affichée quoi qu'il arrive, et la branche rouge était
+ * inatteignable. Six endpoints faisaient autorité sur la question ; aucun n'était
+ * appelé.
+ *
+ * Tout ce qui s'affiche ici vient désormais de `/admin/reconciliation/*`, sous
+ * contrat partagé.
+ */
+
+const SEUILS = [15, 30, 60, 180, 1440] as const;
+
+const ACTIONS = [
+  { cle: 'complete' as const, libelle: 'Marquer complétée', ton: 'btn-primary' },
+  { cle: 'fail' as const, libelle: 'Marquer échouée', ton: 'btn-secondary' },
+  { cle: 'cancel' as const, libelle: 'Annuler', ton: 'btn-secondary' },
+];
+
+function xof(montant: number): string {
+  return `${Math.round(montant).toLocaleString('fr-FR')} XOF`;
+}
+
+/** Un chiffre absent n'est pas zéro — même règle que sur le portail État. */
+function nombre(valeur: number | undefined): string {
+  return typeof valeur === 'number' && Number.isFinite(valeur)
+    ? valeur.toLocaleString('fr-FR')
+    : '—';
 }
 
 export default function Reconciliation() {
-  const { isAuthenticated } = useAdminStore();
-  const [selectedPeriod, setSelectedPeriod] = useState<'day' | 'week' | 'month' | 'all'>('day');
+  const { isAuthenticated, hasPermission } = useAdminStore();
+  const queryClient = useQueryClient();
+  const [seuil, setSeuil] = useState<number>(60);
+  const [enCours, setEnCours] = useState<string | null>(null);
+  const [motif, setMotif] = useState('');
+  const [erreur, setErreur] = useState('');
 
-  const { data: stockData, isLoading: stockLoading } = useQuery({
-    queryKey: ['admin-stock'],
-    queryFn: () => adminApi.getStock(),
+  const peutAgir = hasPermission('reconciliation', 'update');
+
+  const rapport = useQuery({
+    queryKey: ['reconciliation-report'],
+    queryFn: () => adminApi.getReconciliationReport(),
     enabled: isAuthenticated,
   });
 
-  const { data: statsData, isLoading: statsLoading } = useQuery({
-    queryKey: ['admin-stats'],
-    queryFn: () => adminApi.getDashboard(),
+  const ecarts = useQuery({
+    queryKey: ['reconciliation-discrepancies'],
+    queryFn: () => adminApi.getWalletDiscrepancies(),
     enabled: isAuthenticated,
   });
 
-  const { data: transactionsData } = useQuery({
-    queryKey: ['admin-transactions-summary', selectedPeriod],
-    queryFn: () => adminApi.getTransactions(1, 1000),
+  const bloquees = useQuery({
+    queryKey: ['reconciliation-stuck', seuil],
+    queryFn: () => adminApi.getStuckTransactions(seuil),
     enabled: isAuthenticated,
   });
 
-  const isLoading = stockLoading || statsLoading;
-  const stock = stockData?.data;
-  const stats = statsData?.data;
-  const transactions = transactionsData?.data?.items || [];
-
-  const reconciliation: ReconciliationData = {
-    stock: {
-      totalAllocated: stock?.totalAllocated || 0,
-      tokensIssued: stock?.tokensIssued || 0,
-      availableStock: stock?.availableStock || 0,
-      coverage: stock?.coverage || 0,
+  const resoudre = useMutation({
+    mutationFn: (params: { id: string; action: 'complete' | 'fail' | 'cancel' }) =>
+      adminApi.reconcileTransaction(params.id, params.action, {
+        reason: motif || undefined,
+      }),
+    onSuccess: () => {
+      setEnCours(null);
+      setMotif('');
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-stuck'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-report'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-discrepancies'] });
     },
-    wallets: {
-      totalTokens: stock?.tokensIssued || 0,
-      totalCash: stats?.totalVolume || 0,
-      userCount: stats?.totalUsers || 0,
-    },
-    transactions: {
-      totalBought: transactions
-        .filter((t: any) => t.type === 'BUY' && t.status === 'COMPLETED')
-        .reduce((sum: number, t: any) => sum + (t.tokenAmount || 0), 0),
-      totalSold: transactions
-        .filter((t: any) => t.type === 'SELL' && t.status === 'COMPLETED')
-        .reduce((sum: number, t: any) => sum + (t.tokenAmount || 0), 0),
-      pendingBuys: transactions
-        .filter((t: any) => t.type === 'BUY' && t.status === 'PENDING')
-        .reduce((sum: number, t: any) => sum + (t.tokenAmount || 0), 0),
-      pendingSells: transactions
-        .filter((t: any) => t.type === 'SELL' && t.status === 'PENDING')
-        .reduce((sum: number, t: any) => sum + (t.tokenAmount || 0), 0),
-    },
-    discrepancy: 0,
-    isBalanced: true,
-  };
-
-  const transactionBreakdown = {
-    BUY: { count: 0, totalTokens: 0, totalCash: 0 },
-    SELL: { count: 0, totalTokens: 0, totalCash: 0 },
-    DEPOSIT: { count: 0, totalTokens: 0, totalCash: 0 },
-    WITHDRAWAL: { count: 0, totalTokens: 0, totalCash: 0 },
-  };
-
-  transactions.forEach((t: any) => {
-    if (t.status === 'COMPLETED' && transactionBreakdown[t.type as keyof typeof transactionBreakdown]) {
-      transactionBreakdown[t.type as keyof typeof transactionBreakdown].count++;
-      transactionBreakdown[t.type as keyof typeof transactionBreakdown].totalTokens += t.tokenAmount || 0;
-      transactionBreakdown[t.type as keyof typeof transactionBreakdown].totalCash += t.cashAmount || 0;
-    }
+    onError: (e: Error) => setErreur(e.message),
   });
 
-  const exportReport = () => {
-    const report = {
-      generatedAt: new Date().toISOString(),
-      period: selectedPeriod,
-      stockReconciliation: reconciliation.stock,
-      walletTotals: reconciliation.wallets,
-      transactionSummary: reconciliation.transactions,
-      transactionBreakdown,
-      discrepancy: reconciliation.discrepancy,
-      isBalanced: reconciliation.isBalanced,
-    };
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+  const donneesRapport = rapport.data?.data;
+  const donneesEcarts = ecarts.data?.data;
+  const donneesBloquees = bloquees.data?.data;
+
+  // L'état d'équilibre vient du serveur. Quand il n'a pas pu être chargé, on ne
+  // sait pas — et on le dit, plutôt que d'afficher un vert rassurant.
+  const chargementEchoue = rapport.isError || ecarts.isError;
+  const nbEcarts = donneesEcarts?.total;
+  const equilibre = donneesEcarts?.hasDiscrepancies === false;
+
+  const exporterRapport = () => {
+    if (!donneesRapport) return;
+    // Le rapport exporté est celui du serveur, pas une addition faite ici.
+    const blob = new Blob([JSON.stringify(donneesRapport, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `reconciliation_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = `reconciliation_${donneesRapport.reportDate}.json`;
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    URL.revokeObjectURL(url);
   };
-
-  const breakdownRows = [
-    { key: 'BUY', label: 'Achats', color: 'bg-emerald-500', tokenColor: 'text-emerald-400', tokenPrefix: '+' },
-    { key: 'SELL', label: 'Ventes', color: 'bg-red-500', tokenColor: 'text-red-400', tokenPrefix: '-' },
-    { key: 'DEPOSIT', label: 'Dépôts', color: 'bg-blue-500', tokenColor: '', tokenPrefix: '' },
-    { key: 'WITHDRAWAL', label: 'Retraits', color: 'bg-amber-500', tokenColor: 'text-red-400', tokenPrefix: '-' },
-  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Réconciliation</h1>
-          <p className="text-sm text-slate-500 mt-1">Verification de la cohérence des données</p>
+          <p className="text-sm text-slate-500 mt-1">
+            Écarts de solde, transactions bloquées et rapport de période — tels que le serveur les
+            établit
+          </p>
         </div>
-        <div className="flex gap-3">
-          <div className="flex rounded-xl border border-slate-800/60 overflow-hidden">
-            {(['day', 'week', 'month', 'all'] as const).map((period) => (
-              <button
-                key={period}
-                onClick={() => setSelectedPeriod(period)}
-                className={`px-3 py-2 text-xs font-medium transition-all ${
-                  selectedPeriod === period
-                    ? 'bg-gold-500/15 text-gold-400'
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/40'
-                }`}
-              >
-                {{ day: "Aujourd'hui", week: 'Semaine', month: 'Mois', all: 'Tout' }[period]}
-              </button>
-            ))}
-          </div>
-          <button onClick={exportReport} className="btn-secondary flex items-center gap-2 group">
-            <svg className="w-4 h-4 transition-transform group-hover:-translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Exporter
-          </button>
-        </div>
+        <button
+          className="btn-secondary text-sm"
+          onClick={exporterRapport}
+          disabled={!donneesRapport}
+        >
+          Exporter le rapport
+        </button>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="card">
-              <div className="h-28 bg-slate-800/60 rounded-xl animate-pulse" />
+      {erreur && (
+        <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300 flex items-center justify-between gap-3">
+          <span>{erreur}</span>
+          <button className="underline text-xs" onClick={() => setErreur('')}>
+            Fermer
+          </button>
+        </div>
+      )}
+
+      {/* Bannière d'état — ni verte par défaut, ni muette en cas de panne. */}
+      <div
+        className={`p-4 rounded-xl border ${
+          chargementEchoue
+            ? 'bg-slate-500/10 border-slate-500/25'
+            : equilibre
+              ? 'bg-emerald-500/10 border-emerald-500/25'
+              : 'bg-red-500/10 border-red-500/25'
+        }`}
+      >
+        {chargementEchoue ? (
+          <p className="text-sm text-slate-300">
+            <span className="font-semibold">État inconnu.</span> Le rapport de réconciliation n'a
+            pas pu être chargé — ce n'est pas un constat d'équilibre.
+          </p>
+        ) : rapport.isLoading || ecarts.isLoading ? (
+          <p className="text-sm text-slate-400">Vérification en cours…</p>
+        ) : equilibre ? (
+          <p className="text-sm text-emerald-300">
+            <span className="font-semibold">Comptes équilibrés.</span> Aucun écart entre les soldes
+            de portefeuille et la somme de leurs mouvements.
+          </p>
+        ) : (
+          <p className="text-sm text-red-300">
+            <span className="font-semibold">{nombre(nbEcarts)} écart(s) de solde.</span> Un
+            portefeuille détient un montant que ses mouvements ne justifient pas.
+          </p>
+        )}
+      </div>
+
+      {/* Synthèse de période, telle que le serveur la calcule */}
+      <section className="card">
+        <h2 className="text-sm font-semibold text-slate-300 mb-4">
+          Période{' '}
+          {donneesRapport
+            ? `du ${donneesRapport.periodStart.slice(0, 10)} au ${donneesRapport.periodEnd.slice(0, 10)}`
+            : ''}
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {[
+            ['Total', donneesRapport?.summary.totalTransactions],
+            ['Complétées', donneesRapport?.summary.completedTransactions],
+            ['En cours', donneesRapport?.summary.processingTransactions],
+            ['En attente', donneesRapport?.summary.pendingTransactions],
+            ['Échouées', donneesRapport?.summary.failedTransactions],
+            ['Annulées', donneesRapport?.summary.cancelledTransactions],
+          ].map(([libelle, valeur]) => (
+            <div key={libelle as string}>
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">{libelle}</p>
+              <p className="text-xl font-semibold text-white mt-1 tabular-nums">
+                {nombre(valeur as number | undefined)}
+              </p>
             </div>
           ))}
         </div>
-      ) : (
-        <>
-          {/* Status Banner */}
-          <div className={`p-4 rounded-xl border ${
-            reconciliation.isBalanced
-              ? 'bg-emerald-500/10 border-emerald-500/20'
-              : 'bg-red-500/10 border-red-500/20'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                reconciliation.isBalanced ? 'bg-emerald-500/15' : 'bg-red-500/15'
-              }`}>
-                {reconciliation.isBalanced ? (
-                  <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                )}
-              </div>
-              <div>
-                <p className={`font-semibold text-sm ${reconciliation.isBalanced ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {reconciliation.isBalanced ? 'Comptes équilibrés' : 'Écart détecté'}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {reconciliation.isBalanced
-                    ? 'Les tokens émis correspondent aux soldes des portefeuilles'
-                    : `Ecart de ${reconciliation.discrepancy.toFixed(6)} g détecté`}
-                </p>
-              </div>
-            </div>
-          </div>
+      </section>
 
-          {/* Main Reconciliation */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Stock Side */}
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-gold-500/15 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-gold-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                </div>
-                <h2 className="text-sm font-semibold text-gold-400">Or Physique</h2>
-                <span className="text-[10px] bg-slate-800/60 text-slate-500 px-2 py-0.5 rounded-lg font-medium">Cote Stock</span>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: 'Or total alloué', value: `${reconciliation.stock.totalAllocated.toFixed(3)} g`, color: 'text-gold-400' },
-                  { label: 'Tokens émis', value: `${reconciliation.stock.tokensIssued.toFixed(3)} g`, color: 'text-white' },
-                  { label: 'Stock disponible', value: `${reconciliation.stock.availableStock.toFixed(3)} g`, color: 'text-emerald-400' },
-                  { label: 'Taux de couverture', value: `${(reconciliation.stock.coverage * 100).toFixed(2)}%`, color: reconciliation.stock.coverage >= 1 ? 'text-emerald-400' : 'text-red-400' },
-                ].map((item) => (
-                  <div key={item.label} className="flex justify-between items-center p-3 rounded-xl bg-slate-800/40">
-                    <span className="text-xs text-slate-400">{item.label}</span>
-                    <span className={`font-mono font-semibold text-sm ${item.color}`}>{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Wallet Side */}
-            <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                  </svg>
-                </div>
-                <h2 className="text-sm font-semibold text-white">Portefeuilles</h2>
-                <span className="text-[10px] bg-slate-800/60 text-slate-500 px-2 py-0.5 rounded-lg font-medium">Cote Utilisateurs</span>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: 'Total tokens détenus', value: `${reconciliation.wallets.totalTokens.toFixed(3)} g`, color: 'text-white' },
-                  { label: 'Total solde FCFA', value: `${reconciliation.wallets.totalCash.toLocaleString()} FCFA`, color: 'text-white' },
-                  { label: "Nombre d'utilisateurs", value: `${reconciliation.wallets.userCount}`, color: 'text-white' },
-                ].map((item) => (
-                  <div key={item.label} className="flex justify-between items-center p-3 rounded-xl bg-slate-800/40">
-                    <span className="text-xs text-slate-400">{item.label}</span>
-                    <span className={`font-mono font-semibold text-sm ${item.color}`}>{item.value}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center p-3 rounded-xl border-2 border-dashed border-slate-700/60 bg-slate-800/20">
-                  <span className="text-xs text-slate-400 font-medium">Écart (Émis - Détenus)</span>
-                  <span className={`font-mono font-bold text-sm ${
-                    reconciliation.isBalanced ? 'text-emerald-400' : 'text-red-400'
-                  }`}>
-                    {reconciliation.discrepancy >= 0 ? '+' : ''}{reconciliation.discrepancy.toFixed(6)} g
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Transaction Breakdown */}
-          <div className="card">
-            <h2 className="text-sm font-semibold text-white mb-4">Répartition des transactions</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-800/60">
-                    <th className="table-header">Type</th>
-                    <th className="table-header text-right">Nombre</th>
-                    <th className="table-header text-right">Total Or (g)</th>
-                    <th className="table-header text-right">Total FCFA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {breakdownRows.map((row) => {
-                    const data = transactionBreakdown[row.key as keyof typeof transactionBreakdown];
-                    const hasTokens = row.key === 'BUY' || row.key === 'SELL';
-                    const hasCashSign = row.key === 'DEPOSIT' || row.key === 'WITHDRAWAL';
-                    return (
-                      <tr key={row.key} className="table-row">
-                        <td className="table-cell">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${row.color}`} />
-                            <span className="text-sm">{row.label}</span>
-                          </div>
-                        </td>
-                        <td className="table-cell text-right font-mono text-sm">{data.count}</td>
-                        <td className={`table-cell text-right font-mono text-sm ${row.tokenColor || 'text-slate-500'}`}>
-                          {hasTokens ? `${row.tokenPrefix}${data.totalTokens.toFixed(3)}` : '-'}
-                        </td>
-                        <td className={`table-cell text-right font-mono text-sm ${
-                          hasCashSign ? (row.key === 'DEPOSIT' ? 'text-emerald-400' : 'text-red-400') : 'text-slate-300'
-                        }`}>
-                          {hasCashSign && (row.key === 'DEPOSIT' ? '+' : '-')}{data.totalCash.toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-700/60">
-                    <td className="table-cell font-semibold text-white">Net Or</td>
-                    <td className="table-cell text-right">-</td>
-                    <td className={`table-cell text-right font-mono font-bold ${
-                      transactionBreakdown.BUY.totalTokens - transactionBreakdown.SELL.totalTokens >= 0
-                        ? 'text-emerald-400'
-                        : 'text-red-400'
-                    }`}>
-                      {(transactionBreakdown.BUY.totalTokens - transactionBreakdown.SELL.totalTokens).toFixed(3)} g
-                    </td>
-                    <td className="table-cell text-right">-</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          {/* Pending Transactions */}
-          <div className="card">
-            <h2 className="text-sm font-semibold text-white mb-4">Transactions en attente</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl bg-slate-800/40">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Achats en attente</p>
-                    <p className="text-xl font-bold text-amber-400 mt-0.5">
-                      {reconciliation.transactions.pendingBuys.toFixed(3)} <span className="text-sm">g</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-800/40">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Ventes en attente</p>
-                    <p className="text-xl font-bold text-amber-400 mt-0.5">
-                      {reconciliation.transactions.pendingSells.toFixed(3)} <span className="text-sm">g</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Reconciliation Formula */}
-          <div className="card">
-            <h2 className="text-sm font-semibold text-white mb-4">Formule de vérification</h2>
-            <div className="font-mono text-xs space-y-3 p-4 bg-slate-800/40 rounded-xl border border-slate-700/40">
-              <div>
-                <p className="text-slate-500 mb-1">// Invariant principal</p>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${
-                    reconciliation.stock.tokensIssued <= reconciliation.stock.totalAllocated ? 'bg-emerald-500' : 'bg-red-500'
-                  }`} />
-                  <p className={reconciliation.stock.tokensIssued <= reconciliation.stock.totalAllocated ? 'text-emerald-400' : 'text-red-400'}>
-                    ASSERT: Tokens Émis ({reconciliation.stock.tokensIssued.toFixed(3)})
-                    {' '}&lt;= Or Alloué ({reconciliation.stock.totalAllocated.toFixed(3)})
-                    {' '}: <span className="font-bold">{reconciliation.stock.tokensIssued <= reconciliation.stock.totalAllocated ? 'OK' : 'FAIL'}</span>
-                  </p>
-                </div>
-              </div>
-              <div className="border-t border-slate-700/40 pt-3">
-                <p className="text-slate-500 mb-1">// Cohérence des soldes</p>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${reconciliation.isBalanced ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                  <p className={reconciliation.isBalanced ? 'text-emerald-400' : 'text-red-400'}>
-                    ASSERT: Sum(Wallets.tokens) == Tokens Émis
-                    {' '}: <span className="font-bold">{reconciliation.isBalanced ? 'OK' : `ECART ${reconciliation.discrepancy.toFixed(6)}g`}</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
+      {/* Volumes par type */}
+      {donneesRapport && donneesRapport.volumeByType.length > 0 && (
+        <section className="card overflow-x-auto">
+          <h2 className="text-sm font-semibold text-slate-300 mb-4">Volume par type</h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="text-left pb-2">Type</th>
+                <th className="text-right pb-2">Nombre</th>
+                <th className="text-right pb-2">Montant total</th>
+                <th className="text-right pb-2">Dont complété</th>
+              </tr>
+            </thead>
+            <tbody>
+              {donneesRapport.volumeByType.map((ligne) => (
+                <tr key={ligne.type} className="border-t border-slate-800">
+                  <td className="py-2 text-slate-300">{ligne.type}</td>
+                  <td className="py-2 text-right tabular-nums">{nombre(ligne.count)}</td>
+                  <td className="py-2 text-right tabular-nums">{xof(ligne.totalAmount)}</td>
+                  <td className="py-2 text-right tabular-nums text-emerald-400">
+                    {xof(ligne.completedAmount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
+
+      {/* Écarts de solde */}
+      {donneesEcarts && donneesEcarts.items.length > 0 && (
+        <section className="card overflow-x-auto">
+          <h2 className="text-sm font-semibold text-red-400 mb-4">
+            Écarts de solde ({donneesEcarts.total})
+          </h2>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="text-left pb-2">Portefeuille</th>
+                <th className="text-right pb-2">Attendu</th>
+                <th className="text-right pb-2">Constaté</th>
+                <th className="text-right pb-2">Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {donneesEcarts.items.map((e) => (
+                <tr key={e.walletId} className="border-t border-slate-800">
+                  <td className="py-2 font-mono text-xs text-slate-400">{e.walletId}</td>
+                  <td className="py-2 text-right tabular-nums">{xof(e.expectedBalance)}</td>
+                  <td className="py-2 text-right tabular-nums">{xof(e.actualBalance)}</td>
+                  <td
+                    className={`py-2 text-right tabular-nums font-semibold ${
+                      e.difference > 0 ? 'text-amber-400' : 'text-red-400'
+                    }`}
+                  >
+                    {e.difference > 0 ? '+' : ''}
+                    {xof(e.difference)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* Transactions bloquées, avec les actions que l'API sait exécuter */}
+      <section className="card">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <h2 className="text-sm font-semibold text-slate-300">
+            Transactions bloquées ({nombre(donneesBloquees?.total)})
+          </h2>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-500" htmlFor="seuil">
+              Bloquées depuis plus de
+            </label>
+            <select
+              id="seuil"
+              className="input text-sm py-1"
+              value={seuil}
+              onChange={(e) => setSeuil(Number(e.target.value))}
+            >
+              {SEUILS.map((s) => (
+                <option key={s} value={s}>
+                  {s >= 60 ? `${s / 60} h` : `${s} min`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {bloquees.isLoading ? (
+          <p className="text-sm text-slate-500">Chargement…</p>
+        ) : donneesBloquees && donneesBloquees.items.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Aucune transaction bloquée au-delà de ce seuil.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {donneesBloquees?.items.map((t: ReconciliationTransaction) => (
+              <li key={t.id} className="p-3 rounded-lg bg-slate-900/50 border border-slate-800">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-sm text-white">
+                      {t.type} · <span className="text-slate-400">{t.status}</span>
+                    </p>
+                    <p className="font-mono text-[11px] text-slate-500 mt-0.5">{t.id}</p>
+                    <p className="text-xs text-slate-400 mt-1 tabular-nums">
+                      {xof(t.cash_amount)}
+                      {t.token_amount ? ` · ${t.token_amount} g` : ''} · créée le{' '}
+                      {t.created_at.slice(0, 16).replace('T', ' ')}
+                    </p>
+                    {t.failure_reason && (
+                      <p className="text-xs text-red-400 mt-1">{t.failure_reason}</p>
+                    )}
+                  </div>
+
+                  {peutAgir && (
+                    <button
+                      className="btn-secondary text-xs"
+                      onClick={() => setEnCours(enCours === t.id ? null : t.id)}
+                    >
+                      {enCours === t.id ? 'Fermer' : 'Résoudre'}
+                    </button>
+                  )}
+                </div>
+
+                {enCours === t.id && peutAgir && (
+                  <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                    <input
+                      className="input w-full text-sm"
+                      placeholder="Motif (consigné dans la piste d'audit)"
+                      value={motif}
+                      onChange={(e) => setMotif(e.target.value)}
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      {ACTIONS.map((a) => (
+                        <button
+                          key={a.cle}
+                          className={`${a.ton} text-xs`}
+                          disabled={resoudre.isPending}
+                          onClick={() => resoudre.mutate({ id: t.id, action: a.cle })}
+                        >
+                          {a.libelle}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!peutAgir && donneesBloquees && donneesBloquees.items.length > 0 && (
+          <p className="text-xs text-slate-500 mt-3">
+            Votre rôle permet de consulter la réconciliation, pas de la corriger.
+          </p>
+        )}
+      </section>
     </div>
   );
 }
