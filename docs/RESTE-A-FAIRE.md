@@ -16,7 +16,7 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 
 ---
 
-## Écarts relevés à l'audit du 17 août 2026 — A, B et C traités ✅
+## Écarts relevés à l'audit du 17 août 2026 — les quatre traités ✅
 
 Audit de la spécification (`CLAUDE.md`) contre le code. **Ce qui allait bien** :
 les 38 endpoints promis existent tous (219 handlers), les 15 codes d'erreur métier
@@ -24,7 +24,8 @@ sont implémentés, les 11 crons déclarés sont tous traités, les intégration
 sont réelles et échouent fermé quand la clé manque, et il n'y a **aucun TODO, FIXME
 ni amorce abandonnée** dans le code applicatif.
 
-Quatre écarts avaient été relevés. Trois sont corrigés.
+Les quatre écarts relevés sont corrigés. Ce qui subsiste, en D, est une
+décision d'exploitation, pas du code manquant.
 
 ### A. Aucun 2FA sur les transactions ✅
 
@@ -71,15 +72,38 @@ chaque écran.
 `formatRelativeTime`, avec le même défaut de fuseau. Elle sert ailleurs dans
 l'application web ; la remplacer par la fonction partagée est un nettoyage à part.
 
-### D. La sauvegarde D1 automatique est à la checklist, pas dans le code 🟡
+### D. La sauvegarde de la base ✅
 
-Non traité. « Backup automatique D1 activé » figure à la checklist avant déploiement.
-`docs/deployment.md` ne documente qu'un `wrangler d1 export` **manuel**, et aucun des
-11 crons ne fait de sauvegarde.
+Corrigé — [ADR 010](./adr/010-sauvegarde-de-la-base.md).
 
-Pour une plateforme dont la base de données *est* le registre de propriété de l'or,
-la fréquence de sauvegarde et sa destination sont une décision à prendre
-explicitement, pas à laisser à une ligne de checklist non cochée.
+Le vrai correctif n'est pas le cron, c'est la **visibilité**. Un cron qui échoue en
+silence ramène à l'absence de sauvegarde en donnant en plus l'illusion contraire.
+Le diagnostic porte donc une vérification `database_backup` qui passe au rouge
+au-delà de 48 h sans sauvegarde vérifiée : la case de la checklist est devenue une
+mesure.
+
+Trois points de conception, décidés plutôt que subis :
+
+- **Les secrets ne sont pas sauvegardés.** Empreintes de mots de passe, graines
+  TOTP, clés de fournisseurs (`config`, `integrations`) sont exclus. Une copie de
+  tout ça dans un stockage moins gardé que la base serait une sauvegarde qui
+  *diminue* la sécurité. Coût assumé : une restauration exige une réinitialisation
+  des mots de passe.
+- **Aucune table ne peut être oubliée.** Le travail énumère `sqlite_master` et
+  sauvegarde tout ce qui n'est pas explicitement exclu. Une liste blanche aurait
+  laissé une table ajoutée plus tard hors de la sauvegarde, en silence.
+- **Une sauvegarde non relue est une affirmation.** Chaque fichier est relu depuis
+  R2 et son empreinte recalculée ; un écart ou une table tronquée font échouer
+  l'exécution, et la purge de rétention ne s'exécute qu'après une sauvegarde
+  vérifiée.
+
+**Reste ouvert — décision d'exploitation** : cet export vit dans le **même compte
+Cloudflare** que la base. Il protège de la perte de la base, pas de la perte du
+compte. Une copie chez un tiers demande des identifiants qu'on ne peut pas
+inventer ici.
+
+Et : **une restauration jamais répétée n'est pas une restauration éprouvée.** Le
+format NDJSON se réimporte par script, mais l'exercice reste à faire.
 
 ---
 

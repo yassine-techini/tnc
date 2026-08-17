@@ -243,6 +243,7 @@ export class ReadinessService {
     checks.push(...(await this.dailyJobChecks()));
     checks.push(await this.countryCheck());
     checks.push(await this.priceFreshnessCheck());
+    checks.push(await this.backupCheck());
 
     const summary = {
       ok: checks.filter((c) => c.state === 'ok').length,
@@ -481,6 +482,75 @@ export class ReadinessService {
         probeable: false,
       },
     ];
+  }
+
+/**
+   * Age de la derniere sauvegarde VERIFIEE.
+   *
+   * C'est le vrai correctif de l'ecart D. Ajouter un cron ne suffit pas : un cron
+   * qui echoue en silence ramene a la situation d'avant en donnant en plus
+   * l'illusion contraire. Ici, l'absence de sauvegarde recente est une mesure,
+   * pas une case a cocher.
+   */
+  private async backupCheck(): Promise<Check> {
+    const commun = {
+      key: 'database_backup',
+      group: 'Exploitation',
+      label: 'Sauvegarde de la base (cron 0 7 * * *)',
+      impact: "Aucune copie exportable du registre au-dela des 30 jours de Time Travel",
+      source: 'wrangler' as const,
+      probeable: false,
+    };
+
+    let etat: {
+      finishedAt?: string;
+      ok?: boolean;
+      totalRows?: number;
+      tables?: number;
+      tronquees?: string[];
+      erreur?: string;
+    } | null = null;
+
+    try {
+      etat = await this.env.CACHE.get('backup:last', 'json');
+    } catch {
+      return { ...commun, state: 'probe_failed', detail: "L'etat de sauvegarde n'a pas pu etre lu" };
+    }
+
+    if (!etat?.finishedAt) {
+      return {
+        ...commun,
+        state: 'missing',
+        detail: "Aucune sauvegarde n'a jamais abouti",
+      };
+    }
+
+    const ageHeures = (Date.now() - new Date(etat.finishedAt).getTime()) / 3_600_000;
+    const quand = etat.finishedAt.slice(0, 16).replace('T', ' ');
+
+    if (!etat.ok) {
+      return {
+        ...commun,
+        state: 'missing',
+        detail: `Derniere tentative en echec le ${quand} — ${etat.erreur || 'raison inconnue'}`,
+      };
+    }
+
+    // 48 h : deux executions quotidiennes manquees d'affilee. Une seule peut
+    // tenir a un incident passager ; deux, c'est une panne.
+    if (ageHeures > 48) {
+      return {
+        ...commun,
+        state: 'missing',
+        detail: `Derniere sauvegarde verifiee le ${quand}, soit il y a ${Math.floor(ageHeures / 24)} jour(s)`,
+      };
+    }
+
+    return {
+      ...commun,
+      state: 'ok',
+      detail: `${etat.tables ?? 0} table(s), ${etat.totalRows ?? 0} ligne(s), verifiee le ${quand}`,
+    };
   }
 
   /** Au moins un pays réellement ouvrable. */

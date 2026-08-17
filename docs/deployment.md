@@ -254,14 +254,70 @@ Pour l'admin et le portail Etat:
 2. Definissez les regles d'acces (email, domaine, IdP)
 3. Ajoutez le middleware d'authentification Access
 
-## Backup et Restauration
+## Sauvegarde et restauration
 
-### Backup D1
+Trois niveaux, qui ne protegent pas des memes choses. Les confondre revient a
+croire qu'on est couvert alors qu'on ne l'est que partiellement.
+
+### 1. Time Travel (D1, automatique, 0 configuration)
+
+Restauration a un instant donne sur les **30 derniers jours**. Couvre la fausse
+manoeuvre et la migration ratee.
 
 ```bash
-# Export de la base
-wrangler d1 export tnc-trading-db --output backup.sql --env production
+wrangler d1 time-travel restore tnc-trading-db --timestamp <ISO8601> --env production
 ```
+
+Ne couvre pas : la retention au-dela de 30 jours, la perte d'acces au compte
+Cloudflare, et l'inspection du contenu (Time Travel restaure, il ne se lit pas).
+
+### 2. Export quotidien verifie (cron `0 7 * * *`, ADR 010)
+
+Ecrit dans le seau `LOGS_STORAGE` sous `backups/<date>/` : un fichier NDJSON par
+table, plus un `manifest.json` portant le nombre de lignes et l'empreinte SHA-256
+de chacune.
+
+Chaque fichier est **relu depuis R2** apres ecriture et son empreinte recalculee.
+Un ecart, ou une table tronquee, et l'execution est un **echec** — pas un succes
+assorti d'un avertissement.
+
+**Ce que l'export ne contient pas**, deliberement : les tables de session et
+d'identifiants (`sessions`, `verification_codes`, `recovery_codes`,
+`two_factor_backup_codes`, `api_keys`), les secrets de fournisseurs (`config`,
+`integrations`), et les colonnes `password_hash` / `two_factor_secret`.
+
+Une restauration depuis cet export exige donc une reinitialisation des mots de
+passe et un re-enrolement du second facteur. C'est le prix d'une sauvegarde qui
+ne cree pas une seconde copie des identifiants dans un stockage moins garde que
+la base.
+
+Reglages (table `config`) :
+
+| Cle | Defaut | Effet |
+|---|---|---|
+| `backup_retention_days` | 90 | Age au-dela duquel un jour de sauvegarde est purge |
+| `backup_max_rows_per_table` | 200000 | Plafond par table ; l'atteindre marque la sauvegarde en ECHEC |
+
+**Surveiller** : le diagnostic de disponibilite porte une verification
+`database_backup`. Elle passe au rouge si la derniere sauvegarde verifiee date de
+plus de 48 h, ou si la derniere tentative a echoue. Un cron qui echoue en silence
+ramene a l'absence de sauvegarde, en donnant en plus l'illusion contraire.
+
+### 3. Copie hors Cloudflare — DECISION A PRENDRE
+
+L'export du point 2 vit dans le meme compte que la base. Il protege de la perte
+de la base, **pas de la perte du compte**.
+
+Une copie chez un tiers demande des identifiants qui ne peuvent pas etre inventes
+ici. C'est une decision d'exploitation, consignee au carnet et volontairement non
+tranchee.
+
+### Restauration depuis un export
+
+Le format NDJSON se reimporte par script (une ligne = un `INSERT`). Aucune
+procedure automatisee n'est fournie, et **une restauration jamais repetee n'est
+pas une restauration eprouvee** : elle merite un exercice avant la mise en
+production, pas apres.
 
 ### Backup R2
 

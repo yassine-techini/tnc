@@ -474,7 +474,7 @@ const ERROR_CODES = {
 - [ ] Clés API (GoldAPI, Smile Identity, Orange Money) actives
 - [ ] Liste d'IP renseignée pour admin/état (`admin_ip_allowlist`, `state_ip_allowlist`)
 - [ ] Monitoring et alertes configurés
-- [ ] Backup automatique D1 activé
+- [ ] Sauvegarde vérifiée : `database_backup` au vert dans le diagnostic (cron `0 7 * * *`, ADR 010)
 - [ ] Tests E2E passés
 - [ ] Pentest réalisé (avant go-live)
 

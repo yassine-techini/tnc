@@ -14,6 +14,7 @@ import { anchorLatestAttestation } from './jobs/anchor-attestation';
 import { accrueLeaseYield } from './jobs/lease-accrual';
 import { settleLeaseExits } from './jobs/lease-settlement';
 import { chargeStorageFees } from './jobs/storage-fee';
+import { backupDatabase } from './jobs/database-backup';
 // NOTE: price alerts are delivered inline by refreshGoldPrice()
 // (PriceAlertService.checkAndTriggerAlerts) which sends email/SMS directly.
 // The former standalone jobs/price-alerts.ts pushed PRICE_ALERT_* messages to a
@@ -88,6 +89,12 @@ export async function handleScheduled(
       // morning is back in the vault and must be charged for from today
       case '0 6 * * *':
         await chargeStorageFees(env, ctx);
+        break;
+
+      // Database backup - 7 AM UTC, after storage fees: every scheduled write of
+      // the day has landed, so the captured state no longer moves (ADR 010)
+      case '0 7 * * *':
+        await backupDatabase(env, ctx);
         break;
 
       // Monthly report - 1st of month at 1 AM UTC
