@@ -10,7 +10,9 @@ import type {
   AnalyticsHistoryData,
   AdminPermissionsData,
   AdminStockData,
+  BulkKycApproveData,
   BulkReconcileData,
+  SuspendedUsersData,
   DailyReconciliationData,
   PendingReconciliationData,
   ReconcileActionData,
@@ -303,6 +305,37 @@ class AdminApiClient {
   // appelait : l'écran recalculait l'équilibre dans le navigateur à partir de
   // deux endpoints de synthèse. Deux sources de vérité sur l'équilibre des
   // comptes, sur une plateforme adossée à de l'or.
+
+  /**
+   * Preuve de reserve en PDF.
+   *
+   * L'ecran exportait du JSON en expliquant qu'il n'existait « pas de generateur
+   * PDF dans Workers ». C'etait vrai avant la phase 1.3 ; la route existe depuis,
+   * et rend un vrai PDF. Le commentaire avait survecu a sa raison d'etre.
+   */
+  async downloadProofOfReservePdf(token?: string): Promise<Blob> {
+    const response = await fetch(`${API_URL}/api/v1/admin/reports/por.pdf`, {
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Le PDF n a pas pu etre genere');
+    return response.blob();
+  }
+
+  async getSuspendedUsers(page = 1, limit = 50, token?: string) {
+    return this.request<SuspendedUsersData>(
+      `/api/v1/admin/suspended-users?page=${page}&limit=${limit}`,
+      { token }
+    );
+  }
+
+  async bulkApproveKyc(userIds: string[], reason?: string, token?: string) {
+    return this.request<BulkKycApproveData>('/api/v1/admin/bulk/kyc-approve', {
+      method: 'POST',
+      body: JSON.stringify({ userIds, reason }),
+      token,
+    });
+  }
 
   async getReconciliationReport(start?: string, end?: string, token?: string) {
     const params = new URLSearchParams();

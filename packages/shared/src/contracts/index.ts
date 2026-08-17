@@ -362,6 +362,83 @@ export interface KycSubmitData {
 
 /** `GET|PATCH /api/v1/users/me/preferences/notifications` */
 /**
+ * `POST /api/v1/users/me/password`
+ *
+ * Les clients appelaient `/auth/change-password`, une route qui n'existe pas :
+ * changer son mot de passe renvoyait un 404 sur le web comme sur le mobile.
+ */
+export interface PasswordChangedData {
+  message: string;
+  passwordStrength: string;
+  /** Les autres sessions sont revoquees — l'ecran doit pouvoir le dire. */
+  sessionsInvalidated: boolean;
+}
+
+export interface SuspendedUser {
+  id: string;
+  email: string;
+  phone: string;
+  suspended_at: string | null;
+  suspended_until: string | null;
+  suspension_reason: string | null;
+  kyc_level: string;
+}
+
+/**
+ * `GET /api/v1/admin/suspended-users`
+ *
+ * Servi depuis le début, affiché nulle part : un compte suspendu ne se
+ * retrouvait qu'en le cherchant nommément.
+ */
+export interface SuspendedUsersData {
+  items: SuspendedUser[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+/** `POST /api/v1/admin/bulk/kyc-approve` */
+export interface BulkKycApproveData {
+  summary: { total: number; succeeded: number; failed: number };
+  results: Array<{ userId: string; success: boolean; message: string }>;
+}
+
+export interface PublicCountryPaymentMethod {
+  id: string;
+  label: string;
+}
+
+/**
+ * Un pays tel que `GET /api/v1/public/countries` le décrit.
+ *
+ * `enabled` dit qu'une ligne existe et qu'on a coché la case. `serviceable` dit
+ * qu'un paiement peut réellement aboutir — c'est le seul des deux sur lequel un
+ * écran d'inscription doit se fonder : ouvrir un compte dans un pays où personne
+ * ne peut déposer d'argent, c'est promettre un service qui n'existe pas.
+ */
+export interface PublicCountry {
+  code: string;
+  name: string;
+  currency: string;
+  currencySymbol: string;
+  currencyDecimals: number;
+  phonePrefix: string;
+  idDocumentTypes: string[];
+  locale: string;
+  paymentMethods: PublicCountryPaymentMethod[];
+  /** Annoncés mais pas encore implémentés — jamais présentés comme disponibles. */
+  plannedPaymentMethods: PublicCountryPaymentMethod[];
+  enabled: boolean;
+  serviceable: boolean;
+}
+
+/** `GET /api/v1/public/countries` */
+export interface PublicCountriesData {
+  countries: PublicCountry[];
+}
+
+/**
  * Un dépôt en cours — `GET /api/v1/wallet/deposits/pending`
  *
  * Ces trois routes (liste, statut, annulation) étaient servies et aucun client ne

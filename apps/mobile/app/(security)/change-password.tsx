@@ -54,11 +54,13 @@ export default function ChangePasswordScreen() {
   const changeMutation = useMutation({
     mutationFn: async () => {
       if (!tokens?.accessToken) throw new Error('Non authentifie');
+      // `/auth/change-password` n'existe pas : cet ecran renvoyait un 404. La
+      // seule route est `POST /users/me/password`, qui exige la confirmation.
       const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
-      const response = await fetch(`${API_URL}/api/v1/auth/change-password`, {
+      const response = await fetch(`${API_URL}/api/v1/users/me/password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${tokens.accessToken}` },
-        body: JSON.stringify({ currentPassword, newPassword }),
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword: newPassword }),
       });
       const data = await response.json();
       if (!data.success) throw new Error(data.error?.message || 'Erreur lors du changement de mot de passe');

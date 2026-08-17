@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useAdminStore } from '../stores/auth';
 import { adminApi } from '../lib/api';
 
@@ -14,8 +15,33 @@ export default function ProofOfReserve() {
 
   const report = data?.data;
 
-  // Client-side export of the loaded report. The backend serves JSON (no PDF
-  // renderer in Workers), so we export JSON honestly rather than mislabel it.
+  const [pdfEnCours, setPdfEnCours] = useState(false);
+  const [pdfErreur, setPdfErreur] = useState('');
+
+  const telechargerPdf = async () => {
+    setPdfEnCours(true);
+    setPdfErreur('');
+    try {
+      const blob = await adminApi.downloadProofOfReservePdf();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement('a');
+      lien.href = url;
+      lien.download = `proof-of-reserve-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(lien);
+      lien.click();
+      document.body.removeChild(lien);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setPdfErreur(e instanceof Error ? e.message : 'Le PDF n a pas pu être généré');
+    } finally {
+      setPdfEnCours(false);
+    }
+  };
+
+  // Export JSON — utile pour une machine qui relit le rapport.
+  // Le PDF, lui, vient du serveur : il est rendu par `renderPdf` depuis la
+  // phase 1.3. Le commentaire qui affirmait ici qu'aucun generateur PDF
+  // n'existait dans Workers avait survecu a sa raison d'etre.
   const exportJson = () => {
     if (!report) return;
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
@@ -50,6 +76,14 @@ export default function ProofOfReserve() {
 
   return (
     <div className="space-y-6">
+      {/* Un echec de generation doit se voir : sinon le bouton ne fait rien et
+          l operateur croit a un navigateur qui bloque le telechargement. */}
+      {pdfErreur && (
+        <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+          {pdfErreur}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -67,6 +101,13 @@ export default function ProofOfReserve() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             Actualiser
+          </button>
+          <button
+            onClick={telechargerPdf}
+            disabled={!report || pdfEnCours}
+            className="btn-secondary flex items-center gap-2 disabled:opacity-50"
+          >
+            {pdfEnCours ? 'Génération…' : 'PDF'}
           </button>
           <button onClick={exportJson} disabled={!report} className="btn-primary flex items-center gap-2 disabled:opacity-50">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

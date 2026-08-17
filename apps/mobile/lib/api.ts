@@ -7,6 +7,7 @@ import type {
   KycStatusData,
   NotificationPreferencesData,
   NotificationsData,
+  PublicCountriesData,
   DepositCancelledData,
   DepositStatusData,
   PendingDepositsData,
@@ -522,6 +523,17 @@ class MobileApiClient {
    * Ces trois routes existaient et n'étaient appelées par personne : un dépôt
    * mobile-money bloqué chez l'opérateur restait invisible et non annulable.
    */
+  /**
+   * Pays ouvrables — route PUBLIQUE, appelée avant toute session.
+   *
+   * L'inscription proposait une liste codée en dur : huit pays sur le mobile,
+   * cent quatre-vingt-dix sur le web. Or seuls les pays `serviceable` peuvent
+   * réellement encaisser un dépôt.
+   */
+  async getPublicCountries() {
+    return this.request<PublicCountriesData>('/api/v1/public/countries', {});
+  }
+
   async getPendingDeposits(token: string) {
     return this.request<PendingDepositsData>('/api/v1/wallet/deposits/pending', {
       token,

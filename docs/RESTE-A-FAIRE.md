@@ -170,31 +170,47 @@ Les contrats ont attrapé trois champs que j'avais omis en les écrivant
 (`hasDiscrepancies`, `minutesSinceCreation`, `providerStatus`) — tous utiles à l'écran,
 tous ajoutés plutôt que supprimés.
 
-### G. La configuration pays n'atteint pas l'écran d'inscription 🟡
+### G. La configuration pays n'atteignait pas l'inscription ✅
 
-La table `country_config` et `GET /public/countries` existent (phase 4.2, UEMOA +
-Ouganda). `apps/mobile/app/(auth)/register.tsx` code **huit pays en dur**.
+Corrigé — et l'écran **web** était pire que le mobile : il proposait **190 pays codés
+en dur**, du Brunei au Canada, alors que cinq seulement sont configurés (BF, CI, ML, SN,
+UG). On pouvait donc ouvrir un compte depuis n'importe où, pour ne jamais pouvoir y
+déposer un franc.
 
-Conséquence : activer un pays en base ne le fait pas apparaître à l'inscription. La
-configuration construite pour ouvrir un pays ne commande pas l'écran qui en dépend.
+Les deux écrans lisent maintenant `/public/countries` et ne retiennent que les pays
+`serviceable` — plus strict qu'`enabled`, parce qu'un pays sans moyen de paiement
+implémenté n'est pas ouvrable. Échec fermé : si la liste ne charge pas, le champ est
+désactivé et le dit, plutôt que de rouvrir la liste d'avant.
 
-### H. Capacités d'administration sans écran 🟡
+### H. Capacités d'administration sans écran ✅
 
-- `POST /admin/bulk/kyc-approve` — validation KYC en lot
-- `GET /admin/suspended-users` — liste des comptes suspendus
-- `GET /admin/reports/por.pdf` — preuve de réserve en PDF côté back-office (le portail
-  État a son propre export ; l'écran admin n'en propose pas)
+- **Comptes suspendus** — listés en tête de l'écran Utilisateurs, avec motif et terme.
+  Une suspension sans date de fin s'affiche « sans terme » plutôt qu'avec une date
+  inventée.
+- **Validation KYC en lot** — cases à cocher et barre d'action sur la file KYC. Le
+  résultat annonce les échecs autant que les succès : un lot à moitié passé qui se dit
+  « traité » enverrait chercher les manquants à l'aveugle.
+- **Preuve de réserve en PDF** — bouton de téléchargement. Le commentaire de l'écran
+  affirmait qu'il n'existait « pas de générateur PDF dans Workers » : c'était vrai avant
+  la phase 1.3, et ce commentaire avait survécu à sa raison d'être.
 
-### I. Surface redondante — nettoyage, pas manque 🔵
+### I. Le changement de mot de passe était cassé 🔴 → ✅
 
-- `POST /users/me/password` fait double emploi avec `/auth/change-password`, seul utilisé
-- `/users/me/kyc/resubmit` et `/users/me/kyc/history` inutilisés : l'écran de refus
-  renvoie l'utilisateur vers le formulaire normal
-- `/auth/resend-code`, `/producer/consignments/:id/documents/upload`
+**Mon constat initial était à l'envers.** J'avais écrit que `POST /users/me/password`
+faisait double emploi avec `/auth/change-password`. En vérifiant avant de supprimer :
+`/auth/change-password` **n'existe pas**. La liste des routes d'authentification ne la
+contient pas.
 
-`GET /market/price/health` et `POST /market/price/refresh` sont des points
-d'exploitation : leur absence d'écran est normale, comme `/admin/readiness` qui a bien
-un consommateur (`scripts/readiness.mjs`).
+Les deux clients l'appelaient. **Changer son mot de passe renvoyait donc un 404, sur le
+web comme sur le mobile.** Et viser la bonne route ne suffisait pas : la validation
+exige aussi `confirmPassword`, que ni l'un ni l'autre n'envoyait.
+
+Corrigé des deux côtés, sous contrat partagé, avec des tests qui vérifient le **chemin
+appelé** — le compilateur ne voit pas une chaîne de caractères.
+
+Restent inutilisés, et sans conséquence : `/users/me/kyc/resubmit` et `/kyc/history`
+(l'écran de refus renvoie vers le formulaire normal), `/auth/resend-code` (le renvoi de
+code passe par le chemin sans mot de passe), `/producer/consignments/:id/documents/upload`.
 
 ### Ce que cet audit a confirmé de sain
 

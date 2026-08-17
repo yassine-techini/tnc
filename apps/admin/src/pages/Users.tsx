@@ -63,6 +63,21 @@ export default function Users() {
     enabled: isAuthenticated,
   });
 
+  /**
+   * Comptes suspendus.
+   *
+   * La route existait et n'etait affichee nulle part : un compte suspendu ne se
+   * retrouvait qu'en le cherchant nommement, ce qui suppose de savoir qu'il
+   * l'est.
+   */
+  const { data: suspendus } = useQuery({
+    queryKey: ['admin-suspended-users'],
+    queryFn: () => adminApi.getSuspendedUsers(),
+    enabled: isAuthenticated,
+  });
+
+  const comptesSuspendus = suspendus?.data?.items ?? [];
+
   const allUsers: User[] = data?.data?.items || [];
 
   // Client-side filtering for KYC level and status
@@ -147,6 +162,49 @@ export default function Users() {
           Exporter CSV
         </button>
       </div>
+
+      {/* Comptes suspendus — mis en tete parce qu'ils appellent une decision */}
+      {comptesSuspendus.length > 0 && (
+        <div className="card border-amber-500/25">
+          <h2 className="text-sm font-semibold text-amber-300 mb-1">
+            {suspendus?.data?.total ?? comptesSuspendus.length} compte(s) suspendu(s)
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">
+            Ces comptes ne peuvent ni acheter, ni vendre, ni retirer.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="text-left pb-2">Compte</th>
+                  <th className="text-left pb-2">Depuis</th>
+                  <th className="text-left pb-2">Jusqu&apos;au</th>
+                  <th className="text-left pb-2">Motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comptesSuspendus.map((u) => (
+                  <tr key={u.id} className="border-t border-slate-800">
+                    <td className="py-2">
+                      <p className="text-slate-200">{u.email}</p>
+                      <p className="text-[11px] text-slate-500">{u.phone}</p>
+                    </td>
+                    <td className="py-2 text-slate-400">
+                      {u.suspended_at ? u.suspended_at.slice(0, 10) : '—'}
+                    </td>
+                    <td className="py-2 text-slate-400">
+                      {/* Pas de date de fin = suspension sans terme. « — » le dit ;
+                          une date inventee laisserait croire a une levee automatique. */}
+                      {u.suspended_until ? u.suspended_until.slice(0, 10) : 'sans terme'}
+                    </td>
+                    <td className="py-2 text-slate-400">{u.suspension_reason || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Statistics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

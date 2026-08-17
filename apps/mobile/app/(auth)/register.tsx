@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   View,
@@ -18,16 +19,6 @@ import { useThemeColors } from '../../stores/theme';
 import { api } from '../../lib/api';
 import InlineMessage from '../../components/InlineMessage';
 
-const countries = [
-  { code: 'BF', name: 'Burkina Faso', prefix: '+226' },
-  { code: 'CI', name: "Cote d'Ivoire", prefix: '+225' },
-  { code: 'ML', name: 'Mali', prefix: '+223' },
-  { code: 'SN', name: 'Senegal', prefix: '+221' },
-  { code: 'TG', name: 'Togo', prefix: '+228' },
-  { code: 'BJ', name: 'Benin', prefix: '+229' },
-  { code: 'NE', name: 'Niger', prefix: '+227' },
-  { code: 'GW', name: 'Guinee-Bissau', prefix: '+245' },
-];
 
 export default function RegisterScreen() {
   const c = useThemeColors();
@@ -43,6 +34,20 @@ export default function RegisterScreen() {
     confirmPassword: '',
     country: 'BF',
   });
+
+  /**
+   * Pays ouvrables, lus depuis l'API.
+   *
+   * Huit pays etaient codes ici. Activer un pays en base — l'Ouganda, par
+   * exemple — ne le faisait donc pas apparaitre a l'endroit meme ou quelqu'un
+   * s'inscrit. `serviceable` est plus strict qu'`enabled` : il exige un moyen de
+   * paiement reellement implemente.
+   */
+  const { data: countriesData, isError: countriesError } = useQuery({
+    queryKey: ['public-countries'],
+    queryFn: () => api.getPublicCountries(),
+  });
+  const countries = (countriesData?.data?.countries ?? []).filter((c) => c.serviceable);
 
   const selectedCountry = countries.find(c => c.code === formData.country);
 
@@ -171,17 +176,24 @@ export default function RegisterScreen() {
                 dropdownIconColor="#D4AF37"
               >
                 {countries.map((country) => (
-                  <Picker.Item key={country.code} label={`${country.name} (${country.prefix})`} value={country.code} color={c.text} />
+                  <Picker.Item key={country.code} label={`${country.name} (${country.phonePrefix})`} value={country.code} color={c.text} />
                 ))}
               </Picker>
             </View>
+            {/* Sans la liste, on ne devine pas quels pays sont servis — et on ne
+                rouvre surtout pas ceux qui etaient codes ici. */}
+            {countriesError && (
+              <Text style={styles.paysErreur}>
+                La liste des pays n'a pas pu etre chargee. Reessayez dans un instant.
+              </Text>
+            )}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: c.textSecondary }]}>Telephone</Text>
             <View style={[styles.inputWrapper, { backgroundColor: c.surface, borderColor: c.border }]}>
               <View style={[styles.phonePrefix, { borderRightColor: c.border }]}>
-                <Text style={styles.phonePrefixText}>{selectedCountry?.prefix}</Text>
+                <Text style={styles.phonePrefixText}>{selectedCountry?.phonePrefix ?? '—'}</Text>
               </View>
               <TextInput
                 style={[styles.input, { color: c.text }]}
@@ -296,6 +308,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+  paysErreur: { color: '#EF4444', fontSize: 12, marginTop: 6 },
   container: {
     flex: 1,
     backgroundColor: '#0F0F1A',

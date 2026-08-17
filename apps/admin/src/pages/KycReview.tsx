@@ -71,6 +71,35 @@ export default function KycReview() {
   };
 
   const submissions = data?.data.items || [];
+
+  /**
+   * Validation en lot.
+   *
+   * La route existait, plafonnee a cent comptes, et n'etait atteignable par
+   * personne : une file de cinquante dossiers se traitait un par un.
+   */
+  const [selection, setSelection] = useState<string[]>([]);
+  const [resultatLot, setResultatLot] = useState<string>('');
+
+  const bulkMutation = useMutation({
+    mutationFn: () => adminApi.bulkApproveKyc(selection),
+    onSuccess: (reponse) => {
+      const { succeeded, failed } = reponse.data.summary;
+      // On annonce les deux chiffres, pas seulement le succes : un lot a moitie
+      // passe qui se dit « traite » enverrait chercher les echecs a l'aveugle.
+      setResultatLot(
+        failed === 0
+          ? `${succeeded} dossier(s) validé(s).`
+          : `${succeeded} validé(s), ${failed} en échec — voir le détail ci-dessous.`
+      );
+      setSelection([]);
+      queryClient.invalidateQueries({ queryKey: ['kyc-submissions'] });
+    },
+    onError: (e: Error) => setResultatLot(e.message),
+  });
+
+  const basculer = (id: string) =>
+    setSelection((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const total = data?.data.total || 0;
   const hasMore = data?.data.hasMore || false;
 
@@ -121,11 +150,49 @@ export default function KycReview() {
         </div>
       ) : (
         <>
+          {resultatLot && (
+            <div className="p-3 rounded-lg border border-slate-700 bg-slate-800/50 text-sm text-slate-300 flex items-center justify-between gap-3">
+              <span>{resultatLot}</span>
+              <button className="underline text-xs" onClick={() => setResultatLot('')}>
+                Fermer
+              </button>
+            </div>
+          )}
+
+          {selection.length > 0 && (
+            <div className="p-3 rounded-lg border border-gold-500/30 bg-gold-500/10 flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-sm text-gold-300">
+                {selection.length} dossier(s) sélectionné(s)
+              </span>
+              <div className="flex gap-2">
+                <button className="btn-secondary text-sm" onClick={() => setSelection([])}>
+                  Tout désélectionner
+                </button>
+                <button
+                  className="btn-primary text-sm"
+                  disabled={bulkMutation.isPending}
+                  onClick={() => bulkMutation.mutate()}
+                >
+                  {bulkMutation.isPending ? 'Validation…' : `Valider ${selection.length} dossier(s)`}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* KYC Queue */}
           <div className="grid gap-4">
             {submissions.map((submission) => (
               <div key={submission.id} className="card hover:border-slate-700/80 transition-all duration-200">
                 <div className="flex flex-col md:flex-row md:items-start gap-5">
+                  <label className="flex items-center pt-1">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-gold-500"
+                      checked={selection.includes(submission.userId)}
+                      onChange={() => basculer(submission.userId)}
+                      aria-label={`Sélectionner ${submission.email ?? submission.userId}`}
+                    />
+                  </label>
                   {/* Selfie */}
                   <div className="flex-shrink-0">
                     <img

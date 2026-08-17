@@ -9,6 +9,7 @@ import type {
   PriceAlertsData,
   NotificationsData,
 } from '@tnc-trading/shared/contracts';
+import type { PasswordChangedData } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -1106,7 +1107,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         message: 'Mot de passe modifié avec succès',
         passwordStrength: passwordValidation.strength,
         sessionsInvalidated: true,
-      },
+      } satisfies PasswordChangedData,
       requestId,
     });
   } catch (error) {

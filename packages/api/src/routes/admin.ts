@@ -10,7 +10,9 @@ import type {
   PendingReconciliationData,
   ReconcileActionData,
   ReconciliationReportData,
+  BulkKycApproveData,
   StuckTransactionsData,
+  SuspendedUsersData,
   WalletDiscrepanciesData,
 } from '@tnc-trading/shared/contracts';
 import { z } from 'zod';
@@ -1483,7 +1485,7 @@ admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) =
       data: {
         results,
         summary: { total: results.length, succeeded: successCount, failed: results.length - successCount },
-      },
+      } satisfies BulkKycApproveData,
       requestId,
     });
   } catch (error) {
@@ -1529,7 +1531,7 @@ admin.get('/suspended-users', requirePermission('users', 'view'), async (c) => {
         page,
         limit,
         hasMore: offset + (suspendedUsers.results?.length || 0) < total,
-      },
+      } satisfies SuspendedUsersData,
       requestId,
     });
   } catch (error) {

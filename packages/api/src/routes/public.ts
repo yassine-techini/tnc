@@ -7,6 +7,7 @@
  * lot references only.
  */
 import { Hono } from 'hono';
+import type { PublicCountriesData } from '@tnc-trading/shared/contracts';
 import type { AppEnv } from '../types/env';
 import { AttestationService } from '../services/attestation.service';
 import { verifyAttestationSignature } from '../lib/attestation-signing';
@@ -210,7 +211,7 @@ publicRoutes.get('/countries', async (c) => {
         enabled: country.enabled,
         serviceable: isServiceable(country),
       })),
-    },
+    } satisfies PublicCountriesData,
     requestId,
   });
 });

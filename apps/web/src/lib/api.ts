@@ -12,6 +12,8 @@ import type {
   KycStatusData,
   NotificationPreferencesData,
   NotificationsData,
+  PasswordChangedData,
+  PublicCountriesData,
   DepositCancelledData,
   DepositStatusData,
   PendingDepositsData,
@@ -463,6 +465,17 @@ class ApiClient {
    * Ces trois routes existaient et n'étaient appelées par personne : un dépôt
    * mobile-money bloqué chez l'opérateur restait invisible et non annulable.
    */
+  /**
+   * Pays ouvrables — route PUBLIQUE, appelée avant toute session.
+   *
+   * L'inscription proposait une liste codée en dur : huit pays sur le mobile,
+   * cent quatre-vingt-dix sur le web. Or seuls les pays `serviceable` peuvent
+   * réellement encaisser un dépôt.
+   */
+  async getPublicCountries(authToken?: string) {
+    return this.request<PublicCountriesData>('/api/v1/public/countries', { token: authToken });
+  }
+
   async getPendingDeposits(authToken?: string) {
     return this.request<PendingDepositsData>('/api/v1/wallet/deposits/pending', {
       token: authToken,
@@ -727,10 +740,18 @@ class ApiClient {
     });
   }
 
+  /**
+   * Changement de mot de passe.
+   *
+   * Appelait `/api/v1/auth/change-password`, qui N'EXISTE PAS : la fonction
+   * renvoyait un 404 sur le web comme sur le mobile. La seule route est
+   * `POST /users/me/password`, et elle exige aussi la confirmation — sans quoi
+   * la validation refuse la requete.
+   */
   async changePassword(currentPassword: string, newPassword: string, authToken?: string) {
-    return this.request<{ message: string }>('/api/v1/auth/change-password', {
+    return this.request<PasswordChangedData>('/api/v1/users/me/password', {
       method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword, confirmPassword: newPassword }),
       token: authToken,
     });
   }
