@@ -18,13 +18,15 @@ trompeur. Chaque entrée porte un statut :
 | ⚠️ | Implémenté avec une réserve explicite — lire la colonne |
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
-**Volumétrie** : 13 modules API, 26 services métier, **31 migrations**, 8 jobs planifiés,
-4 Durable Objects, 4 applications front, **900 tests automatisés** (539 API, 298 `shared`, 34 web,
-29 mobile, portail État couvert par les tests d'API).
+**Volumétrie** : 14 modules API, 30 services métier, **31 migrations**, 11 jobs planifiés,
+4 Durable Objects, 5 applications front, **1 293 tests automatisés** (762 API, 314 `shared`,
+63 back-office, 61 mobile, 60 web, 33 portail État).
 
-Les 26 tests API non exécutés sont ceux d'`auth.service.test.ts` : le binding wasm d'argon2 fait
-tomber le worker de test sous Node 24. C'est un problème d'environnement de test, pas de code de
-production, et il préexiste à ce chantier.
+**Tous s'exécutent.** Les 26 tests d'`auth.service.test.ts` étaient jusqu'ici absents du
+décompte : `argon2-browser` faisait tomber le worker vitest sous Node ≥ 18, et un fichier
+qui meurt ne se signale pas en échec — il disparaît du total. `test/argon2-wasm.setup.ts`
+fournit désormais le wasm à la bibliothèque, et les tests s'exécutent contre le vrai argon2
+(constat S de [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)).
 
 ---
 
@@ -92,10 +94,10 @@ production, et il préexiste à ce chantier.
 | **Paiement du producteur en tokens** | ✅ | À la validation d'audit, atomique. Part configurable |
 | **Règlement en deux temps** | ✅ | Acompte à la réception à Dubaï (défaut 75 %, avec décote de prudence), solde à l'outturn. En tokens ou en XOF. Un acompte en tokens **alloue l'or qu'il émet**, donc l'invariant tient à chaque étape. Si l'essai ressort **sous** l'acompte : aucune reprise, et l'or que l'affinage n'a pas confirmé est **désalloué** de la réserve — la plateforme absorbe l'écart sur son stock libre, ou l'audit est refusé ([ADR 006](adr/006-essai-sous-acompte.md)) |
 | **Profil raffineur avec corridor** | ⚠️ | Type `REFINER` et corridor origine→destination en base ; écrans non branchés |
-| **Location d'or (6 %/an)** | ✅ | API `/lease` complète et **écrans web + mobile** : conditions, ouverture avec accord explicite, positions, relevé jour par jour, sortie. Accrual quotidien en **XOF** (cron 4 h UTC), règlement des sorties à T+3 jours ouvrés (cron 5 h UTC) avec notification. Les grammes loués **quittent le portefeuille** et alimentent `gold_on_loan`, donc l'attestation les divulgue. La sortie **rend l'or, elle ne le vend pas** ([ADR 004](adr/004-sortie-de-location.md)). L'avertissement affiché vient de l'API, jamais reformulé |
+| **Location d'or (6 %/an)** | ✅ | API `/lease` complète et **écrans web + mobile** : conditions, ouverture avec accord explicite, positions, relevé jour par jour, sortie. Accrual quotidien en **XOF** (cron 4 h UTC), avec **rattrapage d'un jour manqué au prix de ce jour-là** et reprise par position ([ADR 011](adr/011-rattrapage-des-jours-manques.md)), règlement des sorties à T+3 jours ouvrés (cron 5 h UTC) avec notification. Les grammes loués **quittent le portefeuille** et alimentent `gold_on_loan`, donc l'attestation les divulgue. La sortie **rend l'or, elle ne le vend pas** ([ADR 004](adr/004-sortie-de-location.md)). L'avertissement affiché vient de l'API, jamais reformulé |
 | **Relevé de règlement par lot (PDF)** | ✅ | `GET /producer/consignments/:id/statement.pdf` et l'équivalent back-office, **même document**. Poids déclaré, essai, part appliquée, acompte, solde, total, parcours du lot. Un lot encore en transit est documenté « en attente », pas réglé à zéro. Reprend aussi la **destination du lot** (vendu / loué / gardé) une fois réparti — et le dit explicitement quand la répartition est incomplète |
 | **Répartition d'un lot : vendre / louer / stocker** | ✅ | En **une instruction**, éventuellement les trois à la fois, **écrans web et mobile compris**. Le raffineur ne saisit que la vente et la location : le stockage est le reste, donc la règle « la somme couvre exactement le lot » est **structurelle** et non un message d'erreur. Chaque jambe délègue au chemin existant (vente marché, position de location) et porte son propre statut, donc une exécution partielle est **visible et reprenable**. Un lot ne se répartit qu'une fois. Les répartitions **incomplètes remontent au back-office** (`/admin/dispositions`), sinon un échec d'argent n'aurait été visible que du producteur |
-| **Frais de garde à Dubaï** | ✅ | 0,5 %/an prélevés **en XOF** sur l'or réellement gardé (cron 6 h UTC). L'or en location n'est **pas** facturé : il n'est pas en coffre et rémunère déjà son détenteur. Un frais que le solde espèces ne couvre pas devient une **dette lisible** plutôt que d'être perdu ou imposé ([ADR 005](adr/005-frais-de-garde-impayes.md)). S'applique aux profils `REFINER` par défaut. Ardoise visible côté producteur, jour par jour. Les arriérés sont consultables au back-office (`/admin/storage-fees/outstanding`), solde espèces joint — un arriéré sur un compte approvisionné signale un prélèvement en panne, pas un débiteur |
+| **Frais de garde à Dubaï** | ✅ | 0,5 %/an prélevés **en XOF** sur l'or réellement gardé (cron 6 h UTC). L'or en location n'est **pas** facturé : il n'est pas en coffre et rémunère déjà son détenteur. Un frais que le solde espèces ne couvre pas devient une **dette lisible** plutôt que d'être perdu ou imposé ([ADR 005](adr/005-frais-de-garde-impayes.md)). S'applique aux profils `REFINER` par défaut. Une défaillance sur un titulaire n'interrompt plus les suivants ; le jour manqué est **signalé et non reconstitué**, faute d'un relevé quotidien du solde ([ADR 011](adr/011-rattrapage-des-jours-manques.md) § 5). Ardoise visible côté producteur, jour par jour. Les arriérés sont consultables au back-office (`/admin/storage-fees/outstanding`), solde espèces joint — un arriéré sur un compte approvisionné signale un prélèvement en panne, pas un débiteur |
 | Traçabilité du montant payé par lot | ✅ | Visible producteur et back-office |
 | Suivi d'état par le producteur | ✅ | Web et mobile |
 

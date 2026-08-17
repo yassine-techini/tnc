@@ -570,7 +570,7 @@ les trois cas, avec la raison écrite à côté :
 (`EXISTS (… status = 'PENDING')`) est appliquée à **chacune** de ses instructions. C'est
 le contrat de lot gardé appliqué à la lettre.
 
-### R. Une défaillance en cours de boucle interrompt le reste — et le jour est perdu 🟠
+### R. Une défaillance en cours de boucle interrompt le reste — et le jour est perdu ✅
 
 `lease-accrual` et `storage-fee` parcourent leurs bénéficiaires sans **aucune gestion
 d'erreur par élément** :
@@ -604,6 +604,66 @@ catch (error) { await service.failExit(order.id, String(error)); continue; }
 
 Il ne manque que de l'appliquer aux deux autres — et de rendre l'écart visible, parce
 qu'aujourd'hui la seule trace est une ligne de journal `booked/total` que personne ne lit.
+
+**Corrigé** — [ADR 011](adr/011-rattrapage-des-jours-manques.md), six décisions.
+`src/lib/accrual-backfill.ts` fournit les deux briques qui manquaient : la liste des jours
+dus et le prix **de ce jour-là** (dernier relevé dans les bornes de la journée, et non le
+dernier prix connu). Les deux travaux traitent désormais chaque bénéficiaire dans son
+propre `try`, et tout écart part au journal en niveau erreur : échecs, jours sans prix,
+bénéficiaires encore en retard.
+
+Deux points tranchés en cours de route plutôt qu'en silence :
+
+- **Les frais de garde ne sont pas rattrapés** (§ 5). Une position de location fige son
+  `principal_g` à l'ouverture ; un frais de garde porte sur le solde **du moment**, et
+  aucune table ne conserve le solde jour par jour. Facturer un jour vieux de deux semaines
+  au solde d'aujourd'hui ferait payer la garde d'un or que le titulaire ne détenait
+  peut-être pas. Le jour manqué est signalé, pas reconstitué.
+- **Une position jamais créditée part de sa date d'ouverture** (§ 4). `last_accrued_on` à
+  `NULL` ne veut pas dire « depuis quand ? » : la position porte son `opened_at`. Sans
+  cela, une panne de cinq jours n'aurait rattrapé qu'une seule journée pour une position
+  récente.
+
+Le rattrapage est plafonné (`accrual_backfill_max_days`, 30 par défaut, migration 0034), et
+il garde les jours **les plus récents** : mieux vaut rattraper le proche et signaler le
+reste que s'enliser dans le plus ancien. Aucun rattrapage rétroactif des jours déjà
+perdus — décider qui est dû de quoi appartient à l'exploitant.
+
+19 tests, dont trois vérifiés par mutation : plafond qui garderait les jours les plus
+anciens, prix à zéro accepté comme un cours, et reprise au dernier jour traité au lieu du
+suivant (qui créditerait deux fois le même jour).
+
+### S. Vingt-six tests d'authentification ne s'exécutaient pas ✅
+
+Découvert en vérifiant R, pas en le cherchant. `pnpm test` affichait `736 passed (762)` :
+26 tests manquaient au total **sans être signalés en échec**, et sans que le fichier absent
+soit nommé nulle part.
+
+`argon2-browser@1.18` cherche son `.wasm` par `require('../dist/argon2.wasm')` — que vite
+lit comme du JavaScript — ou par `fetch(<chemin de fichier>)`, que Node refuse depuis qu'il
+a un `fetch` global. Emscripten répond à l'échec par `abort()`, qui tue le processus : le
+worker vitest meurt et `auth.service.test.ts` disparaît du décompte.
+
+Un test qui échoue se voit. Un test qui n'existe plus se compte comme absent, et le total
+descend sans que personne s'en aperçoive — c'est ce qui s'est produit sur plusieurs
+livraisons, y compris dans les chiffres rapportés à chaque phase.
+
+`test/argon2-wasm.setup.ts` fournit les octets à la bibliothèque avant qu'elle ne les
+cherche. Les tests s'exécutent donc contre le **vrai** argon2 : un bouchon aurait rendu la
+suite verte en cessant de vérifier quoi que ce soit du hachage des mots de passe.
+
+Une fois exécutés, trois de ces tests échouaient pour de bon — périmés faute d'avoir tourné :
+
+- `sub: 'user-123'` alors que `JwtPayloadSchema` exige un UUID (durcissement délibéré du
+  code, jamais répercuté sur les tests). Corrigé côté test.
+- `refreshAccessToken` renvoyait un jeton identique à l'octet près : `iat`/`exp` ont une
+  résolution d'une seconde et aucun `jti` n'est émis, donc deux jetons frappés dans la même
+  seconde pour le même sujet **sont** identiques. L'assertion testait une propriété que le
+  format ne fournit pas ; elle vérifie maintenant que le jeton rendu est utilisable et porte
+  la bonne identité. La révocation ne repose pas sur l'unicité du jeton mais sur l'époque
+  `invalidBefore`, elle aussi à la seconde — rien n'est affaibli.
+
+Suite API : **762/762**, 53/53 fichiers.
 
 ---
 

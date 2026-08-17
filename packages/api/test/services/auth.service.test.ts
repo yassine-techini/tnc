@@ -85,7 +85,7 @@ describe('AuthService', () => {
   // ─── JWT Token Generation ────────────────────────────────
   describe('generateTokens', () => {
     const payload = {
-      sub: 'user-123',
+      sub: '11111111-1111-4111-8111-111111111111',
       email: 'test@example.com',
       kycLevel: 'BASIC' as const,
     };
@@ -112,7 +112,7 @@ describe('AuthService', () => {
   // ─── JWT Token Verification ──────────────────────────────
   describe('verifyToken', () => {
     const payload = {
-      sub: 'user-123',
+      sub: '11111111-1111-4111-8111-111111111111',
       email: 'test@example.com',
       kycLevel: 'BASIC' as const,
     };
@@ -163,7 +163,7 @@ describe('AuthService', () => {
   // ─── Refresh Token ───────────────────────────────────────
   describe('refreshAccessToken', () => {
     const payload = {
-      sub: 'user-123',
+      sub: '11111111-1111-4111-8111-111111111111',
       email: 'test@example.com',
       kycLevel: 'STANDARD' as const,
     };
@@ -173,9 +173,17 @@ describe('AuthService', () => {
       const refreshed = await authService.refreshAccessToken(original.refreshToken);
 
       expect(refreshed).not.toBeNull();
-      expect(refreshed?.accessToken).toBeDefined();
+
+      // Ce qui compte est que le jeton rendu soit UTILISABLE et porte la meme
+      // identite — pas qu'il differe octet par octet de l'ancien. `iat` et `exp`
+      // ont une resolution d'une seconde et aucun `jti` n'est emis : deux jetons
+      // frappes dans la meme seconde pour le meme sujet sont forcement
+      // identiques. L'ancienne assertion `not.toBe(original.accessToken)`
+      // testait une propriete que le format ne fournit pas.
+      const verifie = await authService.verifyToken(refreshed!.accessToken);
+      expect(verifie?.sub).toBe(payload.sub);
+      expect(verifie?.type).toBe('access');
       expect(refreshed?.refreshToken).toBeDefined();
-      expect(refreshed?.accessToken).not.toBe(original.accessToken);
     });
 
     it('returns null when using access token', async () => {
