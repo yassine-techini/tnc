@@ -1,4 +1,6 @@
 import * as Application from 'expo-application';
+import type { PriceHistoryData } from '@tnc-trading/shared/contracts';
+import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { useAuthStore } from '../stores/auth';
@@ -385,10 +387,7 @@ class MobileApiClient {
     // `items`, pas `prices` : le champ déclaré n'existait pas, donc le
     // graphique de prix de l'écran Marché était vide en permanence — sans
     // erreur, sans état vide explicite, juste une courbe absente.
-    return this.request<{
-      items: { timestamp: string; priceXof: number }[];
-      period: string;
-    }>(`/api/v1/market/price/history?period=${period}`);
+    return this.request<PriceHistoryData>(`/api/v1/market/price/history?period=${period}`);
   }
 
   async getQuote(type: 'BUY' | 'SELL', amount: number, amountType: 'grams' | 'xof', token: string) {
@@ -743,13 +742,7 @@ class MobileApiClient {
     // externe utilisé pour les certificats enverrait la GRAINE TOTP de chaque
     // utilisateur à un tiers. Un code de vérification de certificat est public,
     // un secret 2FA ne l'est pas.
-    return this.request<{
-      secret: string;
-      /** otpauth://… — à ouvrir dans l'application d'authentification. */
-      uri: string;
-      issuer: string;
-      message: string;
-    }>('/api/v1/auth/2fa/setup', {
+    return this.request<TwoFactorSetupData>('/api/v1/auth/2fa/setup', {
       method: 'POST',
       token,
     });

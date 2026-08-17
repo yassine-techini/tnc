@@ -9,6 +9,9 @@ export * from './types/index.js';
 // Validators (Zod schemas)
 export * from './validators/index.js';
 
+// Contrats de reponse de l'API : le champ `data` de chaque endpoint couvert.
+export * from './contracts/index.js';
+
 // Utilities
 export * from './utils/index.js';
 

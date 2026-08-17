@@ -29,6 +29,10 @@
     "./utils/theme": {
       "import": "./src/utils/theme.ts",
       "types": "./src/utils/theme.ts"
+    },
+    "./contracts": {
+      "import": "./src/contracts/index.ts",
+      "types": "./src/contracts/index.ts"
     }
   },
   "scripts": {

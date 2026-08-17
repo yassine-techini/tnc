@@ -3,6 +3,7 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
+import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 
 interface ApiResponse<T> {
   success: true;
@@ -720,13 +721,7 @@ class ApiClient {
     // externe utilisé pour les certificats enverrait la GRAINE TOTP de chaque
     // utilisateur à un tiers. Un code de vérification de certificat est public,
     // un secret 2FA ne l'est pas.
-    return this.request<{
-      secret: string;
-      /** otpauth://… — à ouvrir dans l'application d'authentification. */
-      uri: string;
-      issuer: string;
-      message: string;
-    }>('/api/v1/auth/2fa/setup', {
+    return this.request<TwoFactorSetupData>('/api/v1/auth/2fa/setup', {
       method: 'POST',
       token: authToken,
     });

@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+// Contrats partagés : `satisfies` ci-dessous fait échouer la compilation si
+// la forme émise s'écarte de ce que les clients importent.
+import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -1326,8 +1329,10 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
         secret,
         uri,
         issuer: totpIssuer,
-        message: 'Scannez le QR code avec votre application d\'authentification',
-      },
+        // Aucune image de QR n'est produite : la faire générer par un service
+        // externe enverrait la graine TOTP à un tiers.
+        message: 'Ajoutez ce compte à votre application d\'authentification',
+      } satisfies TwoFactorSetupData,
       requestId,
     });
   } catch (error) {

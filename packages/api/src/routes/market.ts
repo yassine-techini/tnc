@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+// Contrats partagés : `satisfies` ci-dessous fait échouer la compilation si
+// la forme émise s'écarte de ce que les clients importent.
+import type { PriceHistoryData } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../types/env';
@@ -59,7 +62,7 @@ market.get('/price/history', async (c) => {
         priceXof: p.price_xof,
       })),
       period,
-    },
+    } satisfies PriceHistoryData,
     requestId,
   });
 });

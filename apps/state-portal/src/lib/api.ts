@@ -1,3 +1,14 @@
+// Contrats partagés avec l'API : ces formes ne sont plus redéclarées ici,
+// elles sont IMPORTÉES. Côté route, `satisfies` vérifie la même chose. Un
+// renommage casse donc la compilation des deux côtés à la fois — ce qui
+// manquait exactement quand ce portail affichait 0 g de réserve nationale.
+import type {
+  StateDashboardData,
+  StateStockData,
+  StateProofOfReserveData,
+  StateMonthlyReportData,
+} from '@tnc-trading/shared/contracts';
+
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
 
 interface ApiResponse<T> {
@@ -201,37 +212,12 @@ class StateApiClient {
     // 0 g de réserve et 0 % de couverture, avec l'alerte rouge qui va avec.
     // TypeScript ne pouvait rien voir — le mensonge était dans le paramètre de
     // type lui-même.
-    return this.request<{
-      totalUsers: number;
-      totalTokens: number;
-      totalVolume: number;
-      goldAllocated: number;
-      /** Or prêté, donc absent du coffre. */
-      goldOnLoan: number;
-      goldVaulted: number;
-      fullyVaulted: boolean;
-      coverageRatio: number;
-      monthlyVolume: number;
-      lastUpdate: string;
-    }>('/api/v1/state/dashboard', { token });
+    return this.request<StateDashboardData>('/api/v1/state/dashboard', { token });
   }
 
   // Stock
   async getStock(token?: string) {
-    return this.request<{
-      totalAllocated: number;
-      tokensIssued: number;
-      availableStock: number;
-      /** Alloué n'est pas détenu : cette part est due par une contrepartie. */
-      goldOnLoan: number;
-      goldVaulted: number;
-      fullyVaulted: boolean;
-      /** Avertissement de l'API sur le prêt — affiché tel quel. */
-      lendingNotice: string;
-      coverageRatio: number;
-      lastAuditDate: string | null;
-      lastAuditResult: string | null;
-    }>('/api/v1/state/stock', { token });
+    return this.request<StateStockData>('/api/v1/state/stock', { token });
   }
 
   // Reports
@@ -240,44 +226,14 @@ class StateApiClient {
     // totalAllocatedGold, totalTokensIssued, auditStatus et auditor — aucun
     // n'existait, si bien que le rapport de preuve de réserve montrait à un
     // ministère 0 g alloué, 0 g émis et un audit « En attente » permanent.
-    return this.request<{
-      reportDate: string;
-      goldAllocated: number;
-      tokensInCirculation: number;
-      coverageRatio: number;
-      lastAuditDate: string | null;
-      lastAuditResult: string | null;
-      certificationStatus: string;
-      walletDistribution: Array<{ range: string; count: number }>;
-      transactionSummary: Array<{ type: string; count: number; total: number }>;
-    }>('/api/v1/state/reports/por', { token });
+    return this.request<StateProofOfReserveData>('/api/v1/state/reports/por', { token });
   }
 
   async getMonthlyReport(month?: string, token?: string) {
     const params = month ? `?month=${month}` : '';
     // Les totaux se DÉRIVENT de `transactionStats`, groupé par type : la route
     // ne les pré-calcule pas, et le client prétendait les recevoir.
-    return this.request<{
-      month: string;
-      reportGeneratedAt: string;
-      transactionStats: Array<{
-        type: string;
-        count: number;
-        total_cash: number;
-        total_tokens: number;
-        total_fees: number;
-      }>;
-      newUsers: number;
-      activeUsers: number;
-      /** null quand aucun prix n'a été relevé ce mois-là. */
-      averagePrice: number | null;
-      kycStats: Array<{ kyc_level: string; count: number }>;
-      stockStatus: {
-        goldAllocated: number;
-        tokensInCirculation: number;
-        coverageRatio: number;
-      };
-    }>(`/api/v1/state/reports/monthly${params}`, { token });
+    return this.request<StateMonthlyReportData>(`/api/v1/state/reports/monthly${params}`, { token });
   }
 
   // Market

@@ -6,6 +6,15 @@ import { SecurityService } from '../services/security.service';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { isPortalToken } from '../lib/portal';
+// Contrats partagés : les mêmes types que ceux importés par le portail.
+// `satisfies` fait échouer la compilation si un champ manque ou change de
+// nom ici — c'est ce qui empêche la route et son client de diverger.
+import type {
+  StateDashboardData,
+  StateStockData,
+  StateProofOfReserveData,
+  StateMonthlyReportData,
+} from '@tnc-trading/shared/contracts';
 
 // Zod schemas for state endpoints
 const StateLoginSchema = z.object({
@@ -497,7 +506,7 @@ state.get('/dashboard', async (c) => {
         coverageRatio,
         monthlyVolume: monthlyVolumeResult?.total || 0,
         lastUpdate: new Date().toISOString(),
-      },
+      } satisfies StateDashboardData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -542,9 +551,9 @@ state.get('/stock', async (c) => {
         lendingNotice:
           "Une partie de la réserve peut être prêtée pour financer le rendement de la location. L'or prêté reste dû à la plateforme mais n'est pas physiquement en coffre : la couverture correspondante dépend du remboursement de la contrepartie.",
         coverageRatio,
-        lastAuditDate: stock?.last_audit_date,
-        lastAuditResult: stock?.last_audit_result,
-      },
+        lastAuditDate: stock?.last_audit_date ?? null,
+        lastAuditResult: stock?.last_audit_result ?? null,
+      } satisfies StateStockData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -702,15 +711,15 @@ state.get('/reports/por', async (c) => {
         goldAllocated: stock?.total_allocated || 0,
         tokensInCirculation: tokensResult?.total || 0,
         coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
-        lastAuditDate: stock?.last_audit_date,
-        lastAuditResult: stock?.last_audit_result,
+        lastAuditDate: stock?.last_audit_date ?? null,
+        lastAuditResult: stock?.last_audit_result ?? null,
         walletDistribution: walletDistribution.results || [],
         transactionSummary: transactionSummary.results || [],
         // Derived from real coverage + audit state, not hardcoded.
         certificationStatus: (stock?.total_allocated || 0) >= (tokensResult?.total || 0)
           ? (stock?.last_audit_date ? 'CERTIFIED' : 'PENDING_AUDIT')
           : 'UNDER_COLLATERALIZED',
-      },
+      } satisfies StateProofOfReserveData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -811,7 +820,7 @@ state.get('/reports/monthly', async (c) => {
           tokensInCirculation: tokensResult?.total || 0,
           coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
         },
-      },
+      } satisfies StateMonthlyReportData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {

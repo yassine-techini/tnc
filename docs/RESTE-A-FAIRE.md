@@ -41,7 +41,35 @@ Deux applications n'ont aucun test d'écran :
 
 Prérequis : installer `jsdom` et `@testing-library/*`, donc une modification du lockfile.
 
-## 3. Alertes opérationnelles sans destinataire 🟠
+## 3. Contrats de réponse — étendre la couverture 🟠
+
+Les quatre clients déclaraient à la main ce qu'ils croyaient recevoir, sans lien de compilation
+avec les routes. Cinq défauts en sont sortis, tous invisibles au compilateur. Le mécanisme qui
+ferme la catégorie est en place dans `packages/shared/src/contracts/` :
+
+```ts
+// route
+return c.json({ success: true, data: { … } satisfies StateStockData, requestId });
+// client
+this.request<StateStockData>('/api/v1/state/stock');
+```
+
+`satisfies` fait échouer la compilation de l'API si un champ manque ou change de nom ; le client
+importe le **même** type. Vérifié en renommant volontairement un champ : l'API ne compile plus.
+
+**Couvert** : les six endpoints qui avaient produit un défaut (tableau de bord, stock, preuve de
+réserve et rapport mensuel de l'État ; configuration 2FA ; historique de prix).
+
+**Reste** : les autres endpoints. Étendre est une **addition** — déclarer le contrat, ajouter
+`satisfies` côté route, remplacer le type en ligne côté client — jamais une refonte. Priorité aux
+endpoints dont un écran lit la réponse.
+
+> Hono expose un client typé (`hc<AppType>`) qui supprimerait la déclaration manuelle. Il exige
+> des routes **chaînées** (`app.get().post()`) pour inférer ; celles-ci sont écrites en
+> instructions séparées, donc l'adopter voudrait dire réécrire 159 endpoints. À reconsidérer lors
+> d'une refonte, pas avant.
+
+## 4. Alertes opérationnelles sans destinataire 🟠
 
 `durable-objects/analytics-hub.ts` déclenche des alertes, les diffuse en WebSocket et les
 journalise. Aucune n'est envoyée par email, SMS ou webhook — donc **personne n'est prévenu
@@ -54,25 +82,25 @@ mort, notifications in-app mortes, crons jamais déclarés).
 
 À décider avant de coder : qui reçoit, par quel canal, et à partir de quelle sévérité.
 
-## 4. Recouvrement des frais de garde 🟡
+## 5. Recouvrement des frais de garde 🟡
 
 Un arriéré n'empêche ni de vendre ni de retirer. Aucune relance, aucune pénalité, aucun
 blocage ([ADR 005](adr/005-frais-de-garde-impayes.md)). Le back-office sait désormais qui doit
 quoi (`/admin/storage-fees/outstanding`), ce qui est le minimum ; la suite est une décision à
 prendre avec le juridique, pas dans un job.
 
-## 5. Volume de l'export État 🟡
+## 6. Volume de l'export État 🟡
 
 `/state/reports/data/export` est plafonné à 100 000 lignes et désormais tracé
 (`action=STATE_EXPORT`). Tracer rend l'exfiltration visible ; **borner** est un autre débat, et
 il est maintenant instruit : on sait qui exporte combien.
 
-## 6. Doublon de vitrine 🔵
+## 7. Doublon de vitrine 🔵
 
 `apps/landing` et `apps/web/src/pages/landing/` coexistent. À trancher : deux vitrines à
 maintenir, ou une seule.
 
-## 7. Restes ponctuels 🔵
+## 8. Restes ponctuels 🔵
 
 - `services/analytics.service.ts` — les tailles de requête et de réponse valent `0` quand
   `Content-Length` est absent (réponse en flux). Documenté comme « inconnu », pas comme
