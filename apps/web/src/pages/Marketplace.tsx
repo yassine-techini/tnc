@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import type { QuoteData } from '@tnc-trading/shared/contracts';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
@@ -41,16 +42,9 @@ function useCountdown(expiresAt: string | null) {
 type TabType = 'buy' | 'sell';
 type ViewState = 'form' | 'confirm' | 'success';
 
-interface Quote {
-  quoteId: string;
-  type: 'BUY' | 'SELL';
-  tokenAmount: number;
-  cashAmount: number;
-  pricePerGram: number;
-  fees: number;
-  total: number;
-  expiresAt: string;
-}
+// Le devis vient du contrat partage : une copie locale rederiverait la meme
+// forme a la main, ce qui est precisement la source des defauts corriges.
+type Quote = QuoteData;
 
 export default function Marketplace() {
   const queryClient = useQueryClient();

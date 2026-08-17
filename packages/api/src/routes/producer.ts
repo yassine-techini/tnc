@@ -3,6 +3,7 @@
  * Authenticated users whose `role` is 'producer'.
  */
 import { Hono, Context, Next } from 'hono';
+import type { StorageFeesData } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -430,11 +431,21 @@ producer.get('/storage-fees', async (c) => {
     service.totalOutstandingXof(userId),
   ]);
 
+  // Typé explicitement : sans cela `.all()` rend des Record<string, unknown>,
+  // et le contrat ne pourrait rien vérifier de ce que la ligne contient.
   const recent = await c.env.DB.prepare(
     `SELECT accrual_date, stored_g, price_per_gram, amount_xof, status
      FROM storage_fee_accruals WHERE user_id = ?
      ORDER BY accrual_date DESC LIMIT 90`
-  ).bind(userId).all();
+  )
+    .bind(userId)
+    .all<{
+      accrual_date: string;
+      stored_g: number;
+      price_per_gram: number;
+      amount_xof: number;
+      status: 'PAID' | 'OUTSTANDING';
+    }>();
 
   return c.json({
     success: true,
@@ -445,7 +456,7 @@ producer.get('/storage-fees', async (c) => {
       accruals: recent.results || [],
       notice:
         "Les frais de garde sont prélevés sur votre solde espèces. Lorsqu'il est insuffisant, le frais reste dû et sera prélevé automatiquement dès que votre solde le permettra.",
-    },
+    } satisfies StorageFeesData,
   });
 });
 

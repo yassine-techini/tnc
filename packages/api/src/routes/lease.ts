@@ -6,6 +6,14 @@
  * holder who may not trade may not lend either.
  */
 import { Hono } from 'hono';
+// Contrats partages : `satisfies` fait echouer la compilation si la forme
+// emise s ecarte de ce que les clients importent.
+import type {
+  LeaseTermsData,
+  LeasePositionsData,
+  LeaseAccrualsData,
+  LeaseExitData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv } from '../types/env';
@@ -44,7 +52,7 @@ lease.get('/terms', async (c) => {
       // than metal sitting in the vault.
       disclosure:
         "Le rendement est financé par la mise en prêt de votre or. Pendant la location, votre or est prêté à une contrepartie : il n'est plus en coffre et n'est pas vendable tant que la position est ouverte. La sortie vous rend vos grammes après le délai de rappel, elle ne les vend pas.",
-    },
+    } satisfies LeaseTermsData,
   });
 });
 
@@ -84,7 +92,7 @@ lease.get('/positions', async (c) => {
       totalAccruedXof: Math.round(
         positions.reduce((sum, p) => sum + p.accrued_xof, 0)
       ),
-    },
+    } satisfies LeasePositionsData,
   });
 });
 
@@ -128,7 +136,7 @@ lease.get('/positions/:id/accruals', async (c) => {
         annualRate: r.annual_rate,
         amountXof: r.amount_xof,
       })),
-    },
+    } satisfies LeaseAccrualsData,
   });
 });
 
@@ -236,7 +244,7 @@ lease.post('/positions/:id/exit', async (c) => {
       positionId,
       settlesOn: result.settlesOn,
       message: `Vos grammes reviendront dans votre portefeuille le ${result.settlesOn}, avec le rendement accumulé.`,
-    },
+    } satisfies LeaseExitData,
   });
 });
 

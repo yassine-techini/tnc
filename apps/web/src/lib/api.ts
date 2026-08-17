@@ -3,6 +3,26 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787' : '');
+// Contrats partages avec l API (packages/shared/src/contracts).
+import type {
+  LeaseAccrualsData,
+  LeaseExitData,
+  LeasePositionsData,
+  LeaseTermsData,
+  StorageFeesData,
+} from '@tnc-trading/shared/contracts';
+// Contrats partages avec l API (packages/shared/src/contracts).
+import type {
+  QuoteData,
+  TradeExecutionData,
+} from '@tnc-trading/shared/contracts';
+// Contrats partagés avec l'API (packages/shared/src/contracts).
+// Côté route, `satisfies` vérifie la même forme : les deux ne peuvent
+// plus diverger en silence.
+import type {
+  MarketStockData,
+  WalletData,
+} from '@tnc-trading/shared/contracts';
 import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 
 interface ApiResponse<T> {
@@ -333,26 +353,11 @@ class ApiClient {
   }
 
   async getStock() {
-    return this.request<{
-      totalAllocated: number;
-      tokensIssued: number;
-      availableStock: number;
-      coverage: number | null;
-      lastAuditDate: string | null;
-    }>('/api/v1/market/stock');
+    return this.request<MarketStockData>('/api/v1/market/stock');
   }
 
   async getQuote(type: 'BUY' | 'SELL', amount: number, amountType: 'grams' | 'xof', token?: string) {
-    return this.request<{
-      quoteId: string;
-      type: 'BUY' | 'SELL';
-      tokenAmount: number;
-      cashAmount: number;
-      pricePerGram: number;
-      fees: number;
-      total: number;
-      expiresAt: string;
-    }>('/api/v1/market/quote', {
+    return this.request<QuoteData>('/api/v1/market/quote', {
       method: 'POST',
       body: JSON.stringify({ type, amount, amountType }),
       token,
@@ -360,13 +365,7 @@ class ApiClient {
   }
 
   async executeBuy(quoteId: string, paymentMethod: string, token?: string) {
-    return this.request<{
-      transactionId: string;
-      type: 'BUY';
-      tokenAmount: number;
-      cashAmount: number;
-      status: string;
-    }>('/api/v1/market/buy', {
+    return this.request<TradeExecutionData>('/api/v1/market/buy', {
       method: 'POST',
       body: JSON.stringify({ quoteId, paymentMethod }),
       token,
@@ -374,13 +373,7 @@ class ApiClient {
   }
 
   async executeSell(quoteId: string, paymentMethod: string, token?: string) {
-    return this.request<{
-      transactionId: string;
-      type: 'SELL';
-      tokenAmount: number;
-      cashAmount: number;
-      status: string;
-    }>('/api/v1/market/sell', {
+    return this.request<TradeExecutionData>('/api/v1/market/sell', {
       method: 'POST',
       body: JSON.stringify({ quoteId, paymentMethod }),
       token,
@@ -389,18 +382,7 @@ class ApiClient {
 
   // Wallet
   async getWallet(token?: string) {
-    return this.request<{
-      id: string;
-      userId: string;
-      tokenBalance: number;
-      cashBalance: number;
-      estimatedValue: number;
-      averageBuyPrice: number;
-      profitLoss: number;
-      profitLossPercent: number;
-      createdAt: string;
-      updatedAt: string;
-    }>('/api/v1/wallet', { token });
+    return this.request<WalletData>('/api/v1/wallet', { token });
   }
 
   async getTransactions(page = 1, limit = 20, token?: string) {
@@ -534,33 +516,20 @@ class ApiClient {
   }
 
   async getStorageFees() {
-    return this.request<{
-      outstandingCount: number;
-      outstandingXof: number;
-      accruals: StorageFeeAccrual[];
-      notice: string;
-    }>('/api/v1/producer/storage-fees');
+    return this.request<StorageFeesData>('/api/v1/producer/storage-fees');
   }
 
   // ── Gold lease (location d'or) ──
   async getLeaseTerms() {
-    return this.request<LeaseTerms>('/api/v1/lease/terms');
+    return this.request<LeaseTermsData>('/api/v1/lease/terms');
   }
 
   async getLeasePositions() {
-    return this.request<{
-      positions: LeasePosition[];
-      totalPrincipalG: number;
-      totalAccruedXof: number;
-    }>('/api/v1/lease/positions');
+    return this.request<LeasePositionsData>('/api/v1/lease/positions');
   }
 
   async getLeaseAccruals(positionId: string) {
-    return this.request<{
-      positionId: string;
-      accruedXof: number;
-      accruals: LeaseAccrual[];
-    }>(`/api/v1/lease/positions/${positionId}/accruals`);
+    return this.request<LeaseAccrualsData>(`/api/v1/lease/positions/${positionId}/accruals`);
   }
 
   async openLeasePosition(grams: number) {
@@ -577,7 +546,7 @@ class ApiClient {
   }
 
   async requestLeaseExit(positionId: string) {
-    return this.request<{ positionId: string; settlesOn: string; message: string }>(
+    return this.request<LeaseExitData>(
       `/api/v1/lease/positions/${positionId}/exit`,
       { method: 'POST' }
     );

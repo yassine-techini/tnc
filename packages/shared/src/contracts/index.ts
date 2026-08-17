@@ -125,6 +125,186 @@ export interface StateMonthlyReportData {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Portefeuille — le chemin de l'argent
+// ─────────────────────────────────────────────────────────────
+
+/** `GET /api/v1/wallet` */
+export interface WalletData {
+  id: string;
+  userId: string;
+  /** Grammes détenus. Exclut ce qui est placé en location. */
+  tokenBalance: number;
+  cashBalance: number;
+  estimatedValue: number;
+  averageBuyPrice: number;
+  profitLoss: number;
+  profitLossPercent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  type: string;
+  status: string;
+  tokenAmount: number | null;
+  cashAmount: number;
+  pricePerGram: number | null;
+  fees: number | null;
+  paymentMethod: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+/** `GET /api/v1/wallet/transactions` */
+export interface WalletTransactionsData {
+  items: WalletTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+/** `POST /api/v1/wallet/deposit` */
+export interface DepositData {
+  transactionId: string;
+  amount: number;
+  paymentMethod: string;
+  /** Absent selon le prestataire : certains renvoient un code USSD à la place. */
+  paymentUrl?: string;
+  paymentToken?: string;
+  ussdCode?: string;
+  status: string;
+  expiresIn: number;
+}
+
+/** `POST /api/v1/wallet/withdraw` */
+export interface WithdrawData {
+  withdrawalId: string;
+  transactionId: string;
+  amount: number;
+  fees: number;
+  netAmount: number;
+  paymentMethod: string;
+  status: string;
+  /** Délai indicatif, dépendant du canal de paiement. */
+  estimatedTime: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Marché
+// ─────────────────────────────────────────────────────────────
+
+/** `GET /api/v1/market/stock` */
+export interface MarketStockData {
+  totalAllocated: number;
+  tokensIssued: number;
+  availableStock: number;
+  /** Ratio, pas un pourcentage. `coverageRatio` côté État — noms distincts. */
+  coverage: number;
+  lastAuditDate: string | null;
+}
+
+export type TradeSide = 'BUY' | 'SELL';
+
+/** `POST /api/v1/market/quote` */
+export interface QuoteData {
+  quoteId: string;
+  /** Contraint par le CHECK de la table `quotes` — le contrat le reflete. */
+  type: TradeSide;
+  tokenAmount: number;
+  cashAmount: number;
+  pricePerGram: number;
+  fees: number;
+  total: number;
+  /** Un devis expire : un prix accepté hier n'engage personne aujourd'hui. */
+  expiresAt: string;
+}
+
+/** `POST /api/v1/market/buy` et `POST /api/v1/market/sell` */
+export interface TradeExecutionData {
+  transactionId: string;
+  type: TradeSide;
+  tokenAmount: number;
+  cashAmount: number;
+  status: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Location d or et repartition d un lot
+// ─────────────────────────────────────────────────────────────
+
+/** `GET /api/v1/lease/terms` */
+export interface LeaseTermsData {
+  annualRate: number;
+  annualRatePercent: number;
+  exitSettlementBusinessDays: number;
+  minimumGrams: number;
+  /** Avertissement en clair sur le pret. Affiche verbatim, jamais reformule. */
+  disclosure: string;
+}
+
+export type LeasePositionStatus = 'ACTIVE' | 'EXITING' | 'CLOSED';
+
+export interface LeasePositionView {
+  id: string;
+  principalG: number;
+  annualRate: number;
+  /** Rendement accumule, en XOF. Le principal reste en grammes. */
+  accruedXof: number;
+  principalValueXof: number;
+  lastAccruedOn: string | null;
+  status: LeasePositionStatus;
+  openedAt: string;
+  closedAt: string | null;
+}
+
+/** `GET /api/v1/lease/positions` */
+export interface LeasePositionsData {
+  positions: LeasePositionView[];
+  totalPrincipalG: number;
+  totalAccruedXof: number;
+}
+
+export interface LeaseAccrualView {
+  date: string;
+  principalG: number;
+  pricePerGram: number;
+  annualRate: number;
+  amountXof: number;
+}
+
+/** `GET /api/v1/lease/positions/:id/accruals` */
+export interface LeaseAccrualsData {
+  positionId: string;
+  accruedXof: number;
+  /** Jour par jour : le total se recalcule au lieu d etre cru. */
+  accruals: LeaseAccrualView[];
+}
+
+/** `POST /api/v1/lease/positions/:id/exit` */
+export interface LeaseExitData {
+  positionId: string;
+  /** Date de reglement en jours ouvres — le rappel du pret. */
+  settlesOn: string;
+  message: string;
+}
+
+/** `GET /api/v1/producer/storage-fees` */
+export interface StorageFeesData {
+  outstandingCount: number;
+  outstandingXof: number;
+  accruals: Array<{
+    accrual_date: string;
+    stored_g: number;
+    price_per_gram: number;
+    amount_xof: number;
+    status: 'PAID' | 'OUTSTANDING';
+  }>;
+  notice: string;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Authentification
 // ─────────────────────────────────────────────────────────────
 

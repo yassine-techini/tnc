@@ -1,4 +1,12 @@
 import { Hono } from 'hono';
+// Contrats partagés avec les clients : `satisfies` fait échouer la
+// compilation si la forme émise s'écarte de ce qu'ils importent.
+import type {
+  WalletData,
+  WalletTransactionsData,
+  DepositData,
+  WithdrawData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../types/env';
@@ -71,7 +79,7 @@ wallet.get('/', async (c) => {
       profitLossPercent: Math.round(profitLossPercent * 100) / 100,
       createdAt: walletData.created_at,
       updatedAt: walletData.updated_at,
-    },
+    } satisfies WalletData,
     requestId,
   });
 });
@@ -116,7 +124,7 @@ wallet.get('/transactions', async (c) => {
       page: pageNum,
       limit: limitNum,
       hasMore: offset + transactions.length < total,
-    },
+    } satisfies WalletTransactionsData,
     requestId,
   });
 });
@@ -307,7 +315,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
         ussdCode: paymentResult.ussdCode,
         status: 'PENDING',
         expiresIn: await configService.getNumber('payment_expiry_seconds', 1800),
-      },
+      } satisfies DepositData,
       requestId,
     });
   } catch (error) {
@@ -504,7 +512,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
         estimatedTime: body.paymentMethod === 'bank'
           ? await configService.get('withdrawal_time_bank', '2-3 jours ouvrables')
           : await configService.get('withdrawal_time_mobile', '24-48h'),
-      },
+      } satisfies WithdrawData,
       requestId,
     });
   } finally {

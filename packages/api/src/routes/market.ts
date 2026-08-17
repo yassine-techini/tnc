@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 // Contrats partagés : `satisfies` ci-dessous fait échouer la compilation si
 // la forme émise s'écarte de ce que les clients importent.
-import type { PriceHistoryData } from '@tnc-trading/shared/contracts';
+import type {
+  PriceHistoryData,
+  MarketStockData,
+  QuoteData,
+  TradeExecutionData,
+} from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppEnv, Env } from '../types/env';
@@ -83,7 +88,7 @@ market.get('/stock', async (c) => {
         availableStock: 0,
         coverage: 0,
         lastAuditDate: null,
-      },
+      } satisfies MarketStockData,
       requestId,
     });
   }
@@ -100,8 +105,8 @@ market.get('/stock', async (c) => {
       tokensIssued: stock.tokens_issued,
       availableStock: availableStock,
       coverage: Math.round(coverage * 100) / 100,
-      lastAuditDate: stock.last_audit_date,
-    },
+      lastAuditDate: stock.last_audit_date ?? null,
+    } satisfies MarketStockData,
     requestId,
   });
 });
@@ -220,7 +225,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
       fees: quote.fees,
       total: quote.total,
       expiresAt: quote.expires_at,
-    },
+    } satisfies QuoteData,
     requestId,
   });
 });
@@ -396,7 +401,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       tokenAmount: quote.token_amount,
       cashAmount: quote.total,
       status: 'COMPLETED',
-    },
+    } satisfies TradeExecutionData,
     requestId,
   };
 
@@ -560,7 +565,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       tokenAmount: quote.token_amount,
       cashAmount: quote.total,
       status: 'COMPLETED',
-    },
+    } satisfies TradeExecutionData,
     requestId,
   };
 

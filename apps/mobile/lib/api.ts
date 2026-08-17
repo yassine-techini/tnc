@@ -1,4 +1,23 @@
 import * as Application from 'expo-application';
+// Contrats partages avec l API (packages/shared/src/contracts).
+import type {
+  LeaseAccrualsData,
+  LeaseExitData,
+  LeasePositionsData,
+  LeaseTermsData,
+  StorageFeesData,
+} from '@tnc-trading/shared/contracts';
+// Contrats partages avec l API (packages/shared/src/contracts).
+import type {
+  QuoteData,
+  WalletData,
+} from '@tnc-trading/shared/contracts';
+// Contrats partagés avec l'API (packages/shared/src/contracts).
+// Côté route, `satisfies` vérifie la même forme : les deux ne peuvent
+// plus diverger en silence.
+import type {
+  MarketStockData,
+} from '@tnc-trading/shared/contracts';
 import type { PriceHistoryData } from '@tnc-trading/shared/contracts';
 import type { TwoFactorSetupData } from '@tnc-trading/shared/contracts';
 import * as SecureStore from 'expo-secure-store';
@@ -375,12 +394,7 @@ class MobileApiClient {
   }
 
   async getStock() {
-    return this.request<{
-      totalAllocated: number;
-      tokensIssued: number;
-      availableStock: number;
-      coverage: number | null;
-    }>('/api/v1/market/stock');
+    return this.request<MarketStockData>('/api/v1/market/stock');
   }
 
   async getPriceHistory(period: '24h' | '7d' | '30d' = '24h') {
@@ -391,16 +405,7 @@ class MobileApiClient {
   }
 
   async getQuote(type: 'BUY' | 'SELL', amount: number, amountType: 'grams' | 'xof', token: string) {
-    return this.request<{
-      quoteId: string;
-      type: 'BUY' | 'SELL';
-      tokenAmount: number;
-      cashAmount: number;
-      pricePerGram: number;
-      fees: number;
-      total: number;
-      expiresAt: string;
-    }>('/api/v1/market/quote', {
+    return this.request<QuoteData>('/api/v1/market/quote', {
       method: 'POST',
       body: JSON.stringify({ type, amount, amountType }),
       token,
@@ -439,16 +444,7 @@ class MobileApiClient {
 
   // Wallet
   async getWallet(token: string) {
-    return this.request<{
-      id: string;
-      userId: string;
-      tokenBalance: number;
-      cashBalance: number;
-      estimatedValue: number;
-      averageBuyPrice: number;
-      profitLoss: number;
-      profitLossPercent: number;
-    }>('/api/v1/wallet', { token });
+    return this.request<WalletData>('/api/v1/wallet', { token });
   }
 
   async getTransactions(token: string, page = 1, limit = 20) {
@@ -617,29 +613,20 @@ class MobileApiClient {
   }
 
   async getStorageFees() {
-    return this.request<{
-      outstandingCount: number;
-      outstandingXof: number;
-      accruals: StorageFeeAccrual[];
-      notice: string;
-    }>('/api/v1/producer/storage-fees');
+    return this.request<StorageFeesData>('/api/v1/producer/storage-fees');
   }
 
   // Gold lease (location d'or)
   async getLeaseTerms() {
-    return this.request<LeaseTerms>('/api/v1/lease/terms');
+    return this.request<LeaseTermsData>('/api/v1/lease/terms');
   }
 
   async getLeasePositions() {
-    return this.request<{
-      positions: LeasePosition[];
-      totalPrincipalG: number;
-      totalAccruedXof: number;
-    }>('/api/v1/lease/positions');
+    return this.request<LeasePositionsData>('/api/v1/lease/positions');
   }
 
   async getLeaseAccruals(positionId: string) {
-    return this.request<{ positionId: string; accruedXof: number; accruals: LeaseAccrual[] }>(
+    return this.request<LeaseAccrualsData>(
       `/api/v1/lease/positions/${positionId}/accruals`
     );
   }
@@ -658,7 +645,7 @@ class MobileApiClient {
   }
 
   async requestLeaseExit(positionId: string) {
-    return this.request<{ positionId: string; settlesOn: string; message: string }>(
+    return this.request<LeaseExitData>(
       `/api/v1/lease/positions/${positionId}/exit`,
       { method: 'POST' }
     );
