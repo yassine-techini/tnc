@@ -409,6 +409,59 @@ que rien ne la confronte au schéma.
 
 ---
 
+## Cinquième audit — 17 août 2026, la valeur se conserve-t-elle ?
+
+Angle propre au domaine : toute écriture qui déplace de l'or ou de l'argent est-elle
+**atomique** ? Le contrat posé par la mission est clair — une mutation de valeur
+multi-instructions passe par `db.batch`, chaque instruction porte la même garde, et le
+basculement d'état vient en dernier. Une suite de `.run()` indépendants n'offre aucune de
+ces garanties : un échec au milieu laisse la moitié du mouvement écrite.
+
+Le signal retenu : une instruction passée à `db.batch` **ne s'exécute jamais seule** et
+n'appelle donc pas `.run()`. Un `.prepare(…).run()` sur une table de valeur est une
+écriture exécutée isolément.
+
+### P. Le rappel de paiement complète la transaction avant de créditer 🔴
+
+`routes/webhooks.ts`, branche `SUCCESS` :
+
+1. `UPDATE transactions SET status = 'COMPLETED', …` — **validé**
+2. puis, pour un dépôt, `UPDATE wallets SET cash_balance = cash_balance + ?`
+
+Deux validations distinctes. Un échec entre les deux laisse une transaction **complétée
+et jamais créditée** : le client a payé, le registre dit que c'est fait, le solde n'a pas
+bougé.
+
+Et ce n'est pas réservé au cas de panne. Le contrôle d'écart de montant intervient
+**après** le marquage `COMPLETED` et renvoie 400 : un rappel au montant divergent laisse
+donc durablement une transaction complétée sans crédit, sur une entrée parfaitement
+plausible.
+
+### Q. Le rejet d'un retrait fait trois écritures séparées 🔴
+
+`routes/admin.ts`, branche de rejet : rembourser le portefeuille, marquer la transaction
+`CANCELLED`, marquer le retrait `REJECTED` — trois `.run()` successifs.
+
+Une garde existe en amont (`status !== 'PENDING'` → refus), ce qui bloque un rejeu
+séquentiel. Mais elle est **lue avant** d'écrire. Si le remboursement passe et que le
+marquage échoue, la transaction reste `PENDING` : la reprise franchit la garde et
+**rembourse une seconde fois**.
+
+C'est exactement ce que le contrat de lot gardé élimine — même garde sur chaque
+instruction, basculement d'état en dernier, et le second essai ne touche aucune ligne.
+
+### Ce que cet audit a confirmé de sain
+
+- **27 écritures de valeur passent par `db.batch`** : `wallet.service` (achat, vente),
+  `lease.service`, `consignment.service`, `storage-fee.service`. Le contrat de lot gardé
+  est appliqué partout où la mission l'a posé. Les chemins non protégés sont ceux qu'elle
+  n'a jamais touchés — le rappel de paiement et le traitement administratif des retraits.
+- **Aucune promesse d'écriture de valeur lancée sans `await`.**
+- **Trois blocs `catch` muets seulement**, tous sur une lecture de cache de prix
+  d'affichage, avec repli explicite à `null`. Rien qui avale une erreur d'écriture.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
