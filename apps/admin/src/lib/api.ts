@@ -2,6 +2,7 @@ const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://l
 // Contrats partages avec l API.
 import type {
   AdminDashboardData,
+  RealtimeMetricsData,
   AdminPermissionsData,
   AdminStockData,
 } from '@tnc-trading/shared/contracts';
@@ -628,28 +629,7 @@ class AdminApiClient {
   }
 
   async getRealtimeMetrics(token?: string) {
-    return this.request<{
-      metrics: {
-        requestsLast5Min: number;
-        requestsLast1Hr: number;
-        requestsLast24Hr: number;
-        errorsLast5Min: number;
-        errorsLast1Hr: number;
-        avgLatencyMs: number;
-        p95LatencyMs: number;
-        p99LatencyMs: number;
-        transactionsLast5Min: number;
-        transactionsLast1Hr: number;
-        volumeLast24Hr: number;
-        activeUsers: number;
-        errorRateLast5Min: number;
-        goldStockCoverage: number;
-        pendingKyc: number;
-        pendingWithdrawals: number;
-      };
-      connectedClients: number;
-      lastUpdate: string;
-    }>('/api/v1/admin/analytics/realtime', { token });
+    return this.request<RealtimeMetricsData>('/api/v1/admin/analytics/realtime', { token });
   }
 
   async getAnalyticsHistory(period: '24h' | '7d' | '30d' = '24h', token?: string) {

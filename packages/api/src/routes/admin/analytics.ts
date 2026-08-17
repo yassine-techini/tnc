@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono';
+import type { RealtimeMetricsData } from '@tnc-trading/shared/contracts';
 import type { AppEnv } from '../../types/env';
 import { requirePermission } from '../../middleware/rbac';
 import { LogArchiverService } from '../../services/log-archiver.service';
@@ -37,7 +38,10 @@ analytics.get('/realtime', requirePermission('analytics', 'view'), async (c) => 
       }, 500);
     }
 
-    const data = await response.json();
+    // Typee plutot que relayee en `unknown` : la route ne construit pas cette
+    // forme, mais elle ne doit pas la blanchir non plus. Le Durable Object la
+    // verifie a la source (voir computeMetrics).
+    const data = (await response.json()) as RealtimeMetricsData;
 
     return c.json({
       success: true,

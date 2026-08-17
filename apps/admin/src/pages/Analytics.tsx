@@ -100,7 +100,10 @@ export default function Analytics() {
   });
 
   const dashboard = dashboardData?.data;
-  const realtime = realtimeData?.data?.metrics;
+  // La reponse est PLATE : il n y a jamais eu de cle `metrics`. La lire ici
+  // rendait `realtime` toujours undefined, donc chaque carte temps reel
+  // affichait 0 en permanence.
+  const realtime = realtimeData?.data;
   const transactions = transactionData?.data?.results || [];
   const logs = logsData?.data?.logs || [];
   const logStats = logStatsData?.data;
@@ -177,7 +180,7 @@ export default function Analytics() {
             {[
               { label: 'Requetes (5min)', value: realtime?.requestsLast5Min || 0, icon: '🔄', color: 'bg-blue-500/15' },
               { label: 'Erreurs (5min)', value: realtime?.errorsLast5Min || 0, icon: '⚠️', color: 'bg-red-500/15', alert: (realtime?.errorsLast5Min || 0) > 0 },
-              { label: 'Latence moy.', value: `${realtime?.avgLatencyMs?.toFixed(0) || 0}ms`, icon: '⚡', color: 'bg-amber-500/15' },
+              { label: 'Latence moy.', value: `${realtime?.avgLatencyLast5Min?.toFixed(0) || 0}ms`, icon: '⚡', color: 'bg-amber-500/15' },
               { label: 'Taux erreur', value: `${realtime?.errorRateLast5Min?.toFixed(1) || 0}%`, icon: '📊', color: 'bg-purple-500/15', alert: (realtime?.errorRateLast5Min || 0) > 5 },
             ].map((metric) => (
               <div key={metric.label} className={`card ${metric.alert ? 'border-red-500/30' : ''}`}>

@@ -4,27 +4,12 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
+import type { RealtimeMetricsData } from '@tnc-trading/shared/contracts';
 
-// Metrics tracked in real-time
-export interface RealtimeMetrics {
-  timestamp: string;
-  activeConnections: number;
-  transactionsLastHour: number;
-  transactionsLast5Min: number;
-  buyVolumeLastHour: number;
-  sellVolumeLastHour: number;
-  buyVolumeLast24h: number;
-  sellVolumeLast24h: number;
-  errorRateLast5Min: number;
-  requestsLast5Min: number;
-  errorsLast5Min: number;
-  avgLatencyLast5Min: number;
-  pendingKyc: number;
-  pendingWithdrawals: number;
-  goldStockCoverage: number;
-  newUsersToday: number;
-  transactionFailureRate: number;
-}
+// La forme temps reel vient du contrat partage : c'est ICI qu'elle est
+// construite, donc c'est ici qu'elle doit etre verifiee. La route qui la
+// sert n'est qu'un relais et ne peut rien garantir.
+export type RealtimeMetrics = RealtimeMetricsData;
 
 // Event received from API
 interface MetricEvent {

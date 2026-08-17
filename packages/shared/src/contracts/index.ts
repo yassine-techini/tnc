@@ -442,6 +442,44 @@ export interface AdminPermissionsData {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Analytique temps réel
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * `GET /api/v1/admin/analytics/realtime`
+ *
+ * Forme PLATE, telle que le Durable Object la construit. La route n'est qu'un
+ * relais (`await response.json()`), donc `satisfies` n'y prouverait rien : le
+ * contrat est applique a la SOURCE, sur `computeMetrics()`.
+ *
+ * Le client admin declarait une structure imbriquee `{ metrics: { … },
+ * connectedClients, lastUpdate }` avec des noms qui n'existaient pas
+ * (requestsLast1Hr, avgLatencyMs, p95LatencyMs, volumeLast24Hr…). L'ecran lisait
+ * `data.metrics`, absent de la reponse : tout le tableau de bord temps reel
+ * affichait donc 0 en permanence.
+ */
+export interface RealtimeMetricsData {
+  timestamp: string;
+  activeConnections: number;
+  transactionsLastHour: number;
+  transactionsLast5Min: number;
+  buyVolumeLastHour: number;
+  sellVolumeLastHour: number;
+  buyVolumeLast24h: number;
+  sellVolumeLast24h: number;
+  errorRateLast5Min: number;
+  requestsLast5Min: number;
+  errorsLast5Min: number;
+  /** Millisecondes. Le client attendait `avgLatencyMs` — nom inexistant. */
+  avgLatencyLast5Min: number;
+  pendingKyc: number;
+  pendingWithdrawals: number;
+  goldStockCoverage: number;
+  newUsersToday: number;
+  transactionFailureRate: number;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Authentification
 // ─────────────────────────────────────────────────────────────
 
