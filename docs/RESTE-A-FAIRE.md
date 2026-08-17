@@ -223,6 +223,73 @@ Les **files d'attente** et les **trois Durable Objects** déclarés sont tous co
 
 ---
 
+## Troisième audit — 17 août 2026, quatre angles neufs
+
+Les deux audits précédents allaient de la spécification vers le code, puis de l'API
+vers les clients. Refaire l'un des deux n'aurait rien dit. Quatre angles inédits :
+**les clients vers l'API** (l'inverse du deuxième), les **gardes d'autorisation**, la
+**validation des entrées**, et l'**intégrité du schéma**.
+
+### J. La vérification de compte ne fonctionne pas sur le web 🟠
+
+Cinq points d'appel, **aucun ne peut aboutir**. C'est l'angle « clients vers API » qui
+les révèle : le compilateur ne lit pas une chaîne de caractères, et un chemin faux ne
+se voit qu'à l'exécution.
+
+| Appel | Problème |
+|---|---|
+| `verifyEmail(token)` | Bon chemin, mauvaise charge : envoie `{token}`, le schéma exige `{email, code}` |
+| `resendVerificationEmail()` | `/auth/resend-verification` **n'existe pas** |
+| `sendPhoneVerification()` | `/auth/verify-phone/send` **n'existe pas** |
+| `verifyPhone(code)` | Bon chemin, mauvaise charge : envoie `{code}`, le schéma exige `{phone, code}` |
+| `usePhoneVerification` | `/verify-phone/send` et `/verify-phone/confirm`, **ni l'un ni l'autre n'existe** |
+
+Les vraies routes : `POST /auth/resend-code` avec `{type: 'email'|'phone', identifier}`,
+puis `POST /auth/verify-email` avec `{email, code}` ou `POST /auth/verify-phone` avec
+`{phone, code}`.
+
+Cela explique aussi pourquoi le deuxième audit voyait `/auth/resend-code` « inutilisé » :
+c'est la route que ces fonctions auraient dû appeler.
+
+**Portée réelle** : aucun middleware ni limite KYC n'exige `emailVerified` ou
+`phoneVerified` — ils sont rapportés, jamais appliqués. Rien n'est donc bloqué ; c'est
+une fonctionnalité promise qui reste inopérante, et un drapeau qui ne passera jamais à
+vrai dans la fiche que consulte un administrateur.
+
+### K. Un ajustement de stock refusé se lit « Erreur interne » 🟡
+
+`POST /admin/stock/adjust` calcule `total_allocated + amount` et écrit sans vérifier que
+le total reste supérieur aux tokens émis.
+
+**La base rattrape** : `CHECK (tokens_issued <= total_allocated)` est en place, et
+`available_stock` est une colonne générée. Les données ne peuvent pas être corrompues —
+c'est l'échec fermé qui fonctionne.
+
+Mais la route renvoie un `INTERNAL_ERROR` générique. Un administrateur qui tente de
+réduire l'allocation sous ce qui est déjà émis lit « Erreur lors de l'ajustement du
+stock », au lieu de « impossible : X g sont déjà émis ». Le garde-fou tient, l'explication
+manque.
+
+Second point : l'écriture du stock et celle de la piste d'audit sont deux `.run()`
+successifs, pas un `db.batch`. Un échec entre les deux ajuste le stock sans laisser de
+trace — l'inverse du motif retenu partout ailleurs.
+
+### Ce que cet audit a confirmé de sain
+
+- **Portail État** : `state.use('/*', stateJwtMiddleware)` est posé **avant** toutes les
+  routes de données ; les trois routes pré-authentification (connexion, 2FA) sont
+  légitimement au-dessus. L'ordre compte en Hono, et il est correct. Plus une liste d'IP
+  au montage.
+- **Back-office** : aucune route sans garde de permission, hors connexion, 2FA et
+  `/me/permissions` — qui renvoie ses propres droits.
+- **`PATCH /admin/config/:key`** : refuse une clé qui n'existe pas déjà (on ne peut pas
+  inventer de configuration) et journalise clé et valeur dans la piste d'audit.
+- **Tables `_new`** (`admins_new`, `transactions_new`, `producer_profiles_new`) : motif
+  SQLite standard — créer, copier, renommer. Elles ne persistent pas.
+- **Invariant du stock** : contrainte `CHECK` en base, pas seulement en code.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
