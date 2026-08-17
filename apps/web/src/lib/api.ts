@@ -11,6 +11,7 @@ import type {
 import type {
   KycStatusData,
   NotificationPreferencesData,
+  NotificationsData,
   PriceAlertsData,
   UserProfileData,
 } from '@tnc-trading/shared/contracts';
@@ -815,6 +816,34 @@ class ApiClient {
   }
 
   // Notification Preferences
+  /**
+   * Boite de reception.
+   *
+   * La route existait depuis le debut et la table se remplissait ; aucun client
+   * ne la lisait. Une notification manquee etait donc perdue — il ne restait que
+   * l'email ou le SMS, quand ils etaient configures.
+   */
+  async getNotifications(page = 1, limit = 20, authToken?: string) {
+    return this.request<NotificationsData>(
+      `/api/v1/users/me/notifications?page=${page}&limit=${limit}`,
+      { token: authToken }
+    );
+  }
+
+  async markNotificationRead(id: string, authToken?: string) {
+    return this.request<{ message: string }>(
+      `/api/v1/users/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: 'PATCH', token: authToken }
+    );
+  }
+
+  async markAllNotificationsRead(authToken?: string) {
+    return this.request<{ message: string }>('/api/v1/users/me/notifications/read-all', {
+      method: 'POST',
+      token: authToken,
+    });
+  }
+
   async getNotificationPreferences(authToken?: string) {
     return this.request<NotificationPreferencesData>('/api/v1/users/me/preferences/notifications', { token: authToken });
   }

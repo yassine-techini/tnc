@@ -10,7 +10,7 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 |---|---|---|
 | `packages/api` | 13 modules de routes, 616 tests | Le plus mature |
 | `apps/admin` | 19 écrans, 53 tests | Complet |
-| `apps/web` | 13 pages + auth + vitrine, 34 tests | Complet |
+| `apps/web` | 14 pages + auth + vitrine, 47 tests | Complet |
 | `apps/mobile` | 4 onglets + producteur + location + répartition, 61 tests | Complet ; parcours bout-en-bout écrits, jamais exécutés |
 | `apps/state-portal` | 5 écrans, 33 tests | Complet |
 
@@ -58,8 +58,18 @@ existaient et n'étaient lus par **aucun** client. L'écran mobile prévu par
 `CLAUDE.md` existe désormais (`app/(inbox)`), avec une cloche et un compteur de
 non-lues sur l'accueil. La réponse est sous contrat partagé (`NotificationsData`).
 
-**Reste ouvert** : la même boîte de réception côté web — l'API et le contrat sont
-prêts, seul l'écran manque.
+La boîte de réception **web** est faite aussi (`/notifications`, cloche et compteur
+dans l'en-tête, 13 tests d'écran).
+
+Trouvé en la faisant : `formatRelativeTime` de `packages/shared` lisait
+`datetime('now')` de SQLite — de l'UTC **sans marqueur de fuseau** — comme une
+heure locale. Le même piège avait déjà faussé l'âge du prix de l'or. Corrigé à la
+racine (`parseApiDate`, appliqué aux 11 fonctions du module) plutôt que dans
+chaque écran.
+
+**Reste** : `apps/web/src/lib/formatters.ts` porte encore sa propre copie privée de
+`formatRelativeTime`, avec le même défaut de fuseau. Elle sert ailleurs dans
+l'application web ; la remplacer par la fonction partagée est un nettoyage à part.
 
 ### D. La sauvegarde D1 automatique est à la checklist, pas dans le code 🟡
 
@@ -96,7 +106,7 @@ qu'un composant affiche une valeur déjà vérifiée ailleurs.
 
 | Application | Tests | Portée |
 |---|---|---|
-| `apps/web` | 34 | hook de formulaire, vérification d'attestation |
+| `apps/web` | 47 | hook de formulaire, vérification d'attestation, boîte de réception |
 | `apps/admin` | 53 | client API, magasin de session |
 | `apps/state-portal` | 33 | client API, session, écrans Stock / Tableau de bord / Connexion |
 | `apps/mobile` | 61 | session et jetons, validation de saisie, épinglage SSL, formatage, sélecteurs bout-en-bout |

@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import InlineMessage from '../../components/InlineMessage';
+import { formatRelativeTime } from '@tnc-trading/shared';
 import api from '../../lib/api';
 import { useAuthStore } from '../../stores/auth';
 import { useThemeColors } from '../../stores/theme';
@@ -46,19 +47,6 @@ function apparence(type: string): { icone: IoniconsName; couleur: string } {
   return { icone: 'notifications', couleur: '#9CA3AF' };
 }
 
-/** Horodatage relatif court, sans dependance de formatage. */
-function ilYA(iso: string): string {
-  const instant = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`).getTime();
-  if (!Number.isFinite(instant)) return '';
-  const minutes = Math.floor((Date.now() - instant) / 60000);
-  if (minutes < 1) return "a l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const heures = Math.floor(minutes / 60);
-  if (heures < 24) return `il y a ${heures} h`;
-  const jours = Math.floor(heures / 24);
-  if (jours < 30) return `il y a ${jours} j`;
-  return new Date(instant).toLocaleDateString('fr-FR');
-}
 
 export default function NotificationsScreen() {
   const c = useThemeColors();
@@ -160,7 +148,7 @@ export default function NotificationsScreen() {
                   {item.title}
                 </Text>
                 <Text style={[styles.ligneCorps, { color: c.textSecondary }]}>{item.body}</Text>
-                <Text style={[styles.date, { color: c.textTertiary }]}>{ilYA(item.createdAt)}</Text>
+                <Text style={[styles.date, { color: c.textTertiary }]}>{formatRelativeTime(item.createdAt)}</Text>
               </View>
               {/* Le point ne disparait qu'une fois le serveur d'accord : marquer
                   lu localement ferait croire a un etat qui n'existe pas. */}

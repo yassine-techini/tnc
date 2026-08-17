@@ -122,6 +122,44 @@ describe('Date Utilities', () => {
   });
 
   // ─── Month Formatting ───────────────────────────────────
+describe('Dates sans fuseau venant de SQLite', () => {
+    /**
+     * `datetime('now')` produit « 2026-03-09 12:00:00 » : de l'UTC, sans le dire.
+     * Lu comme heure locale, tout se decale d'un fuseau — c'est ce qui avait
+     * fausse l'age du prix de l'or, et ce qui aurait fausse l'horodatage des
+     * notifications.
+     */
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-09T12:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('lit la forme SQLite comme de l UTC', () => {
+      expect(formatRelativeTime('2026-03-09 11:55:00')).toBe('Il y a 5 minutes');
+    });
+
+    it('lit la forme ISO sans Z comme de l UTC', () => {
+      expect(formatRelativeTime('2026-03-09T11:55:00')).toBe('Il y a 5 minutes');
+    });
+
+    it('respecte un fuseau deja indique', () => {
+      // Deja explicite : on n'y touche pas, sous peine de decaler deux fois.
+      expect(formatRelativeTime('2026-03-09T11:55:00Z')).toBe('Il y a 5 minutes');
+      expect(formatRelativeTime('2026-03-09T12:55:00+01:00')).toBe('Il y a 5 minutes');
+    });
+
+    it('donne le meme resultat qu un objet Date equivalent', () => {
+      const chaine = formatRelativeTime('2026-03-09 09:00:00');
+      const objet = formatRelativeTime(new Date('2026-03-09T09:00:00Z'));
+
+      expect(chaine).toBe(objet);
+    });
+  });
+
   describe('formatMonth', () => {
     it('returns French month name with year', () => {
       expect(formatMonth(new Date(2026, 0, 1))).toBe('janvier 2026');
