@@ -51,12 +51,36 @@ export async function chargeStorageFees(env: Env, _ctx: ExecutionContext): Promi
   let paid = 0;
   let totalXof = 0;
 
+  let enEchec = 0;
+
   for (const holder of holders) {
-    const result = await service.accrueDay(holder, date, price.price_xof, annualRate);
-    if (!result.accrued) continue;
-    charged++;
-    totalXof += result.amountXof;
-    if (result.paid) paid++;
+    // Chaque détenteur dans son propre try : une erreur passagère sur l'un ne
+    // doit pas dispenser de garde tous ceux qui le suivent dans la liste.
+    try {
+      const result = await service.accrueDay(holder, date, price.price_xof, annualRate);
+      if (!result.accrued) continue;
+      charged++;
+      totalXof += result.amountXof;
+      if (result.paid) paid++;
+    } catch (error) {
+      enEchec++;
+      console.error(`[StorageFee] détenteur ${holder.user_id} a échoué`, String(error));
+    }
+  }
+
+  /**
+   * Pas de rattrapage ici, contrairement au rendement de location — ADR 011 § 5.
+   *
+   * Un frais de garde porte sur `wallets.token_balance`, le solde DU MOMENT, et
+   * aucune table ne conserve le solde d'un détenteur jour par jour. Facturer un
+   * jour ancien au solde d'aujourd'hui ferait payer la garde d'un or qu'il ne
+   * détenait peut-être pas alors. Le jour manqué est signalé, pas reconstitué.
+   */
+  if (enEchec > 0) {
+    console.error(
+      `[StorageFee] ${enEchec} détenteur(s) en échec — leur garde du ${date} n'est pas facturée, ` +
+        "et elle ne sera pas rattrapée : le solde de ce jour-là n'est pas conservé"
+    );
   }
 
   // Second temps : les arriérés de ceux qui ont désormais de quoi payer. Fait
