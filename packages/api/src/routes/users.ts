@@ -7,6 +7,7 @@ import type {
   KycSubmitData,
   NotificationPreferencesData,
   PriceAlertsData,
+  NotificationsData,
 } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
@@ -691,7 +692,7 @@ users.get('/me/notifications', async (c) => {
         unread: unreadResult?.count || 0,
         page,
         limit,
-      },
+      } satisfies NotificationsData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {

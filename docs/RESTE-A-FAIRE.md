@@ -16,56 +16,54 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 
 ---
 
-## Écarts relevés à l'audit du 17 août 2026
+## Écarts relevés à l'audit du 17 août 2026 — A, B et C traités ✅
 
-Audit de la spécification (`CLAUDE.md`) contre le code. **Ce qui va bien d'abord** :
-les 38 endpoints promis existent tous (219 handlers au total), les 15 codes d'erreur
-métier sont implémentés, les 11 crons déclarés sont tous traités, les intégrations
-externes sont réelles et échouent fermé quand la clé manque, et il n'y a **aucun
-TODO, FIXME ni amorce abandonnée** dans le code applicatif.
+Audit de la spécification (`CLAUDE.md`) contre le code. **Ce qui allait bien** :
+les 38 endpoints promis existent tous (219 handlers), les 15 codes d'erreur métier
+sont implémentés, les 11 crons déclarés sont tous traités, les intégrations externes
+sont réelles et échouent fermé quand la clé manque, et il n'y a **aucun TODO, FIXME
+ni amorce abandonnée** dans le code applicatif.
 
-Quatre écarts subsistent. La numérotation en lettres évite de renuméroter les
-sections suivantes, auxquelles des ADR font référence.
+Quatre écarts avaient été relevés. Trois sont corrigés.
 
-### A. Aucun 2FA sur les transactions 🔴
+### A. Aucun 2FA sur les transactions ✅
 
-`CLAUDE.md` ligne 246 : « 2FA obligatoire pour transactions > seuil ». Le TOTP est
-exigé pour l'administration, le portail État et la connexion — **jamais sur le chemin
-de l'argent**. Un retrait de 5 000 000 XOF ne demande pas de second facteur.
+Corrigé — [ADR 009](./adr/009-second-facteur-sur-les-transactions.md).
 
-Un utilisateur peut activer le 2FA dans ses réglages : il protège son ouverture de
-session, et rien d'autre. Le seuil lui-même n'existe nulle part, ni en configuration
-ni en constante.
+Le plus notable : **tout existait déjà** (`HIGH_VALUE_THRESHOLD_XOF`, la clé de
+configuration `high_value_threshold_xof`, `isHighValueTransaction()`,
+`verifyTotpCode()` avec garde anti-rejeu). `isHighValueTransaction()` n'était
+appelée par personne : le garde-fou avait été construit puis jamais branché.
 
-Ce qu'il faut : un seuil configurable (par niveau KYC, comme les limites existantes),
-une vérification TOTP sur `POST /market/buy`, `/market/sell` et `/wallet/withdraw`
-au-delà, et le code `AUTH_2FA_REQUIRED` renvoyé pour que les clients sachent
-demander le code.
+Le seuil (1 000 000 XOF par défaut, ajustable en base) s'applique désormais à
+`POST /market/buy`, `/market/sell` et `/wallet/withdraw`. Un compte sans facteur
+enrôlé est **refusé**, pas dispensé. La vérification a lieu **avant** la
+consommation du devis, pour qu'un code mal saisi ne coûte pas un nouveau prix. Les
+quatre clients demandent le code en ligne.
 
-### B. Les préférences de notification mobiles ne remontent jamais 🟠
+### B. Les préférences de notification mobiles ne remontaient jamais ✅
 
-`apps/mobile/app/(settings)/notifications.tsx` écrit les réglages dans `SecureStore`,
-sur l'appareil. Il n'appelle jamais `PATCH /users/me/preferences/notifications`.
+Corrigé. L'écran mobile écrivait dans `SecureStore` et n'appelait jamais l'API :
+couper « alertes de prix » ne changeait rien, le serveur n'en savait rien. Il lit
+et écrit maintenant `/users/me/preferences/notifications`, comme le web.
 
-Or c'est le **serveur** qui décide quoi envoyer. Couper « alertes de prix » sur mobile
-ne change donc rien : les notifications continuent d'arriver. Les réglages ne suivent
-pas non plus l'utilisateur sur un nouvel appareil.
+Les bascules « Actualités » et « Sécurité » ont disparu : **aucune colonne ne leur
+correspondait côté serveur**. Elles ne faisaient rien, et les garder aurait conservé
+le mensonge plutôt que de le corriger.
 
-L'application web, elle, synchronise correctement — l'endpoint existe et fonctionne.
-C'est l'écran mobile qui parle à la mauvaise destination.
+### C. La boîte de réception n'était affichée nulle part ✅
 
-### C. La boîte de réception de notifications n'est affichée nulle part 🟡
+Corrigé. `GET /users/me/notifications`, `PATCH …/:id/read` et `POST …/read-all`
+existaient et n'étaient lus par **aucun** client. L'écran mobile prévu par
+`CLAUDE.md` existe désormais (`app/(inbox)`), avec une cloche et un compteur de
+non-lues sur l'accueil. La réponse est sous contrat partagé (`NotificationsData`).
 
-`GET /users/me/notifications` existe, la table `notifications` existe et se remplit.
-**Aucun client ne lit cet endpoint.** `CLAUDE.md` prévoit pourtant un écran
-`Notifications` dans le `HomeStack` mobile.
-
-Conséquence : une notification manquée est définitivement perdue pour l'utilisateur —
-il n'y a aucun historique consultable, seulement le push éphémère du système.
+**Reste ouvert** : la même boîte de réception côté web — l'API et le contrat sont
+prêts, seul l'écran manque.
 
 ### D. La sauvegarde D1 automatique est à la checklist, pas dans le code 🟡
 
-« Backup automatique D1 activé » figure à la checklist avant déploiement.
+Non traité. « Backup automatique D1 activé » figure à la checklist avant déploiement.
 `docs/deployment.md` ne documente qu'un `wrangler d1 export` **manuel**, et aucun des
 11 crons ne fait de sauvegarde.
 

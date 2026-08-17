@@ -5,6 +5,8 @@ import type {
 } from '@tnc-trading/shared/contracts';
 import type {
   KycStatusData,
+  NotificationPreferencesData,
+  NotificationsData,
   PriceAlertsData,
   UserProfileData,
 } from '@tnc-trading/shared/contracts';
@@ -859,6 +861,56 @@ class MobileApiClient {
   }
 
   // Price Alerts
+  /**
+   * Boite de reception. La route existait depuis le debut sans qu'aucun client
+   * ne la lise : une notification manquee etait perdue.
+   */
+  async getNotifications(token: string, page = 1, limit = 20) {
+    return this.request<NotificationsData>(
+      `/api/v1/users/me/notifications?page=${page}&limit=${limit}`,
+      { token }
+    );
+  }
+
+  async markNotificationRead(id: string, token: string) {
+    return this.request<{ message: string }>(
+      `/api/v1/users/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: 'PATCH', token }
+    );
+  }
+
+  async markAllNotificationsRead(token: string) {
+    return this.request<{ message: string }>('/api/v1/users/me/notifications/read-all', {
+      method: 'POST',
+      token,
+    });
+  }
+
+  /**
+   * Preferences de notification — cote SERVEUR.
+   *
+   * L'ecran mobile les ecrivait dans SecureStore, sur l'appareil. Or c'est le
+   * serveur qui decide quoi envoyer : couper « alertes de prix » ne changeait
+   * donc rien, et les reglages ne suivaient pas l'utilisateur d'un telephone a
+   * l'autre.
+   */
+  async getNotificationPreferences(token: string) {
+    return this.request<NotificationPreferencesData>('/api/v1/users/me/preferences/notifications', {
+      token,
+    });
+  }
+
+  async updateNotificationPreferences(
+    preferences: Partial<NotificationPreferencesData>,
+    token: string
+  ) {
+    return this.request<NotificationPreferencesData>('/api/v1/users/me/preferences/notifications', {
+      method: 'PATCH',
+      body: JSON.stringify(preferences),
+      token,
+    });
+  }
+
   async getPriceAlerts(token: string, includeTriggered = false) {
     return this.request<{
       items: Array<{

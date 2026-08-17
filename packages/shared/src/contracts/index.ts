@@ -361,6 +361,31 @@ export interface KycSubmitData {
 }
 
 /** `GET|PATCH /api/v1/users/me/preferences/notifications` */
+export interface NotificationView {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  /** Charge utile libre, deja analysee. `null` si absente ou illisible. */
+  data: unknown;
+  read: boolean;
+  createdAt: string;
+}
+
+/**
+ * `GET /api/v1/users/me/notifications`
+ *
+ * Cette route existait, se remplissait, et n'etait lue par AUCUN client : une
+ * notification manquee etait perdue pour de bon, faute d'historique consultable.
+ */
+export interface NotificationsData {
+  items: NotificationView[];
+  total: number;
+  unread: number;
+  page: number;
+  limit: number;
+}
+
 export interface NotificationPreferencesData {
   email: boolean;
   sms: boolean;

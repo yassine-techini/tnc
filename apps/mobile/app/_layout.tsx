@@ -191,6 +191,7 @@ function RootLayoutContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="(kyc)" options={{ headerShown: false }} />
         <Stack.Screen name="(wallet)" options={{ headerShown: false }} />
+        <Stack.Screen name="(inbox)" options={{ headerShown: false }} />
       </Stack>
     </View>
   );

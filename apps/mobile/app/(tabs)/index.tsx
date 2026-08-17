@@ -14,6 +14,14 @@ export default function HomeScreen() {
   const { user, tokens } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
 
+  // Compteur de non-lues : la pastille doit refleter le serveur, pas un etat local.
+  const { data: notificationsData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.getNotifications(tokens!.accessToken),
+    enabled: Boolean(tokens?.accessToken),
+  });
+  const nonLues = notificationsData?.data?.unread ?? 0;
+
   const { data: priceData, isLoading: priceLoading, refetch: refetchPrice } = useQuery({
     queryKey: ['price'],
     queryFn: () => api.getPrice(),
@@ -54,6 +62,20 @@ export default function HomeScreen() {
           <Text style={[styles.greeting, { color: c.text }]}>Bonjour {user?.email?.split('@')[0] || ''}</Text>
           <Text style={[styles.subtitle, { color: c.textTertiary }]}>Bienvenue sur TNC Trading</Text>
         </View>
+        {/* Acces a la boite de reception. Sans elle, une notification manquee
+            etait perdue : il ne restait que la banniere systeme, ephemere. */}
+        <TouchableOpacity
+          testID="accueil-notifications"
+          style={styles.bellButton}
+          onPress={() => router.push('/(inbox)')}
+        >
+          <Ionicons name="notifications-outline" size={22} color={c.text} />
+          {nonLues > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{nonLues > 9 ? '9+' : nonLues}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.avatarButton, { borderColor: c.gold }]}
           onPress={() => router.push('/(tabs)/profile')}
@@ -267,6 +289,20 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  bellButton: { padding: 8, marginRight: 4 },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: '#0F0F1A',
