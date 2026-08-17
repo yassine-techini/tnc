@@ -16,6 +16,65 @@ travail déjà livré, ce qui est le principal danger d'un backlog qu'on ne tien
 
 ---
 
+## Écarts relevés à l'audit du 17 août 2026
+
+Audit de la spécification (`CLAUDE.md`) contre le code. **Ce qui va bien d'abord** :
+les 38 endpoints promis existent tous (219 handlers au total), les 15 codes d'erreur
+métier sont implémentés, les 11 crons déclarés sont tous traités, les intégrations
+externes sont réelles et échouent fermé quand la clé manque, et il n'y a **aucun
+TODO, FIXME ni amorce abandonnée** dans le code applicatif.
+
+Quatre écarts subsistent. La numérotation en lettres évite de renuméroter les
+sections suivantes, auxquelles des ADR font référence.
+
+### A. Aucun 2FA sur les transactions 🔴
+
+`CLAUDE.md` ligne 246 : « 2FA obligatoire pour transactions > seuil ». Le TOTP est
+exigé pour l'administration, le portail État et la connexion — **jamais sur le chemin
+de l'argent**. Un retrait de 5 000 000 XOF ne demande pas de second facteur.
+
+Un utilisateur peut activer le 2FA dans ses réglages : il protège son ouverture de
+session, et rien d'autre. Le seuil lui-même n'existe nulle part, ni en configuration
+ni en constante.
+
+Ce qu'il faut : un seuil configurable (par niveau KYC, comme les limites existantes),
+une vérification TOTP sur `POST /market/buy`, `/market/sell` et `/wallet/withdraw`
+au-delà, et le code `AUTH_2FA_REQUIRED` renvoyé pour que les clients sachent
+demander le code.
+
+### B. Les préférences de notification mobiles ne remontent jamais 🟠
+
+`apps/mobile/app/(settings)/notifications.tsx` écrit les réglages dans `SecureStore`,
+sur l'appareil. Il n'appelle jamais `PATCH /users/me/preferences/notifications`.
+
+Or c'est le **serveur** qui décide quoi envoyer. Couper « alertes de prix » sur mobile
+ne change donc rien : les notifications continuent d'arriver. Les réglages ne suivent
+pas non plus l'utilisateur sur un nouvel appareil.
+
+L'application web, elle, synchronise correctement — l'endpoint existe et fonctionne.
+C'est l'écran mobile qui parle à la mauvaise destination.
+
+### C. La boîte de réception de notifications n'est affichée nulle part 🟡
+
+`GET /users/me/notifications` existe, la table `notifications` existe et se remplit.
+**Aucun client ne lit cet endpoint.** `CLAUDE.md` prévoit pourtant un écran
+`Notifications` dans le `HomeStack` mobile.
+
+Conséquence : une notification manquée est définitivement perdue pour l'utilisateur —
+il n'y a aucun historique consultable, seulement le push éphémère du système.
+
+### D. La sauvegarde D1 automatique est à la checklist, pas dans le code 🟡
+
+« Backup automatique D1 activé » figure à la checklist avant déploiement.
+`docs/deployment.md` ne documente qu'un `wrangler d1 export` **manuel**, et aucun des
+11 crons ne fait de sauvegarde.
+
+Pour une plateforme dont la base de données *est* le registre de propriété de l'or,
+la fréquence de sauvegarde et sa destination sont une décision à prendre
+explicitement, pas à laisser à une ligne de checklist non cochée.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
