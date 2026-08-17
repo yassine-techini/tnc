@@ -303,6 +303,72 @@ l'ajustement.
 
 ---
 
+## Quatrième audit — 17 août 2026, le code parle-t-il à un schéma qui existe ?
+
+Angle inédit, et le plus productif des quatre : reconstituer le schéma final depuis les
+29 migrations, puis vérifier que chaque `INSERT` et chaque `UPDATE` du code ne nomme que
+des colonnes qui existent. Une colonne absente est un **500 garanti à l'exécution**, que
+ni le compilateur ni les tests actuels ne voient.
+
+Trois écarts, tous **bloquants**, tous sur des écrans câblés.
+
+> **Réserve honnête.** Ces colonnes pourraient exister dans une base déployée où
+> quelqu'un les aurait ajoutées à la main. Ce serait alors une dérive de schéma — un
+> environnement non reproductible depuis les migrations — ce qui est un défaut d'une
+> autre nature, pas une absence de défaut.
+
+### L. Traiter un retrait échoue 🔴
+
+`PATCH /admin/withdrawals/:id` exécute deux `UPDATE` :
+
+```sql
+UPDATE withdrawals SET status = ?, provider_reference = ?, processed_at = datetime('now') …
+UPDATE withdrawals SET status = 'CANCELLED', rejection_reason = ?, processed_at = datetime('now') …
+```
+
+La table `withdrawals` ne porte **ni `processed_at`, ni `rejection_reason`** : elle a
+`approved_at`, `completed_at` et `failure_reason`. Et `'CANCELLED'` n'appartient pas aux
+statuts autorisés par sa contrainte `CHECK` (`PENDING`, `APPROVED`, `PROCESSING`,
+`COMPLETED`, `FAILED`, `REJECTED`).
+
+Les boutons **Approuver** et **Rejeter** de l'écran Retraits sont câblés à cette route.
+Un retrait client ne peut donc être ni approuvé ni rejeté depuis le back-office.
+
+### M. Valider un dossier KYC depuis l'écran de revue échoue 🔴
+
+Trois colonnes inexistantes — `verification_status`, `verification_job_id`,
+`verification_result` — sont utilisées dans **douze instructions SQL vivantes**
+(`admin.ts`, `kyc.service.ts`, `webhooks.ts`). La table `kyc_documents` porte `status`,
+`provider_job_id` et `provider_result`.
+
+Les deux plus graves : `POST /admin/kyc/:id/review` (validation et rejet) et
+`GET /admin/kyc/:id` (détail d'un dossier). `KycReview.tsx` appelle les deux.
+
+Un chemin parallèle fonctionne — `PATCH /users/:id/kyc` écrit `users.kyc_status`, avec
+les bonnes colonnes — donc la plateforme n'est pas entièrement bloquée. Mais **l'écran
+dédié à la revue KYC l'est**, ainsi que le rappel du fournisseur d'identité.
+
+### N. La connexion sans mot de passe échoue 🔴
+
+`auth.ts` écrit dans une table `refresh_tokens` **qui n'existe dans aucune migration** :
+
+- `INSERT INTO refresh_tokens (…)` dans `POST /auth/passwordless/verify`, appelé par le
+  mobile **et** le web ;
+- `DELETE FROM refresh_tokens WHERE user_id = ?` dans deux blocs de révocation de session,
+  au sein d'un `Promise.all` — l'échec d'une branche fait échouer l'ensemble.
+
+L'insertion est inconditionnelle et se situe avant la création de session : la connexion
+sans mot de passe ne peut pas aboutir.
+
+### Pourquoi trois audits ne l'avaient pas vu
+
+Chacun regardait une frontière différente — spécification/code, API/clients,
+clients/API. Aucun ne regardait **code/base**. Une requête SQL est une chaîne de
+caractères : elle traverse le typage, les contrats partagés et les tests d'écran sans
+que rien ne la confronte au schéma.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
