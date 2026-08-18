@@ -1859,7 +1859,7 @@ montrait donc la forme correcte ; ma formulation laissait entendre que les trois
 L'achat et la vente sont désormais enveloppés de même. Une libération dispersée dépend de
 l'exhaustivité du lecteur ; un `finally` n'en dépend pas.
 
-### AQ. L'implémentation correcte existe et n'est jamais appelée 🔵
+### AQ. L'implémentation correcte existe et n'est jamais appelée ✅
 
 `MarketService.atomicPurchaseStock` fait exactement ce qu'il faut — incrément relatif et garde
 de disponibilité dans la **même** instruction :
@@ -1887,6 +1887,31 @@ quinze minutes plus tard.
 Ce n'est pas un défaut introduit ici : c'est le même compromis que la révocation à la fermeture
 de compte (ADR 015), et le middleware ne touche volontairement pas la base. Mais il vaut d'être
 écrit, parce qu'il borne ce que « suspendre immédiatement » veut dire.
+
+**Corrigé** — [ADR 023](adr/023-un-seul-dispositif-de-reservation.md).
+
+Les deux méthodes sont **retirées**, pas branchées — et la raison n'est pas que le code mort
+dérange. **Un seul des deux emplacements peut être correct** : réserver le stock, débiter les
+espèces et écrire la transaction doivent réussir ou échouer ensemble, ce qui n'est possible que
+dans un lot unique. Une méthode séparée réserve dans sa propre transaction, donc réserve
+parfois sans que l'achat aboutisse.
+
+**Trouvé en le corrigeant** : le motif d'un échec était déduit du **texte de l'erreur**
+(`msg.includes('tokens_issued')`). Mesuré — nommer la contrainte, chose banale dans une
+migration, donne « CHECK constraint failed: stock_couvert », et `INSUFFICIENT_STOCK` serait
+devenu `CONFLICT` en silence : le titulaire s'entendant dire « réessayez » alors qu'il n'y a pas
+assez d'or. `raisonDeLEchec` relit désormais l'**état**, qui — le lot ayant été annulé — est
+celui d'avant la tentative, donc exactement celui qui explique l'échec.
+
+**Un faux pas à signaler** : ma première version de ces tests passait par `executeBuyAtomic` et
+**la mutation ne les faisait pas échouer**. Le contrôle préalable en JavaScript court-circuite
+avant la contrainte, si bien qu'ils n'atteignaient jamais la fonction qu'ils prétendaient
+tester — des tests verts qui ne vérifiaient rien, exactement le défaut que ce constat traite.
+Réécrits pour appeler la fonction directement, et la mutation en fait échouer deux.
+
+Les tests des méthodes retirées disparaissent avec elles : le chemin réel est couvert sur une
+vraie base par `atomicity.test.ts`, qui épingle `INSUFFICIENT_STOCK` sur un stock court comme
+sur un second achat.
 
 ---
 

@@ -382,52 +382,15 @@ describe('MarketService', () => {
     });
   });
 
-  // ─── Atomic Stock Operations ─────────────────────────────
-  describe('atomicPurchaseStock', () => {
-    it('returns true when stock reserved', async () => {
-      mockDb = createMockD1Database({ changes: 1 });
-      marketService = new MarketService(mockDb, mockKv, 'development');
-
-      const result = await marketService.atomicPurchaseStock(10);
-
-      expect(result).toBe(true);
-      expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('tokens_issued = ROUND(tokens_issued + ?, 3)')
-      );
-    });
-
-    it('returns false when insufficient stock', async () => {
-      mockDb = createMockD1Database({ changes: 0 });
-      marketService = new MarketService(mockDb, mockKv, 'development');
-
-      const result = await marketService.atomicPurchaseStock(10000);
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('atomicSellStock', () => {
-    it('returns true when stock released', async () => {
-      mockDb = createMockD1Database({ changes: 1 });
-      marketService = new MarketService(mockDb, mockKv, 'development');
-
-      const result = await marketService.atomicSellStock(10);
-
-      expect(result).toBe(true);
-      expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('tokens_issued = ROUND(tokens_issued - ?, 3)')
-      );
-    });
-
-    it('returns false when negative tokens_issued would result', async () => {
-      mockDb = createMockD1Database({ changes: 0 });
-      marketService = new MarketService(mockDb, mockKv, 'development');
-
-      const result = await marketService.atomicSellStock(10000);
-
-      expect(result).toBe(false);
-    });
-  });
+  /**
+   * `atomicPurchaseStock` et `atomicSellStock` etaient testes ici, et n'avaient
+   * AUCUN appelant — c'est precisement pour cela qu'ils ont survecu : des tests
+   * verts sur du code mort ressemblent a une couverture (ADR 023).
+   *
+   * Le chemin d'achat reel est couvert sur une VRAIE base par
+   * `test/integration/atomicity.test.ts`, qui epingle `INSUFFICIENT_STOCK` sur
+   * un stock court comme sur un second achat concurrent.
+   */
 
   // ─── 24h Change ──────────────────────────────────────────
   describe('get24hChange', () => {

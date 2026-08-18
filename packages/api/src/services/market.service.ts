@@ -406,43 +406,19 @@ export class MarketService {
   }
 
   /**
-   * Atomically reserve stock for a purchase.
-   * Returns true if stock was successfully reserved, false if insufficient.
-   * Prevents race condition: only one concurrent request can claim the same stock.
+   * `atomicPurchaseStock` et `atomicSellStock` vivaient ici — une reservation
+   * de stock correcte, avec increment relatif et garde de disponibilite dans la
+   * meme instruction — et n'avaient AUCUN appelant (ADR 023).
+   *
+   * Le chemin d'achat reel passe par `WalletService.executeBuyAtomic`, ou la
+   * reservation vit dans le meme lot que le debit et l'ecriture de la
+   * transaction. C'est ce qui rend l'operation tout ou rien : deux dispositifs
+   * corrects, mais un seul peut l'etre au sein d'une transaction unique.
+   *
+   * Ils sont retires plutot que branches : un lecteur cherchant comment le stock
+   * est reserve trouvait d'abord la methode nommee pour cela, et en tirait une
+   * conclusion fausse sur ce qui s'execute.
    */
-  async atomicPurchaseStock(tokenAmount: number): Promise<boolean> {
-    const result = await this.db
-      .prepare(
-        `UPDATE gold_stock
-         SET tokens_issued = ROUND(tokens_issued + ?, 3),
-             updated_at = datetime('now')
-         WHERE id = ?
-           AND (total_allocated - tokens_issued) >= ?`
-      )
-      .bind(tokenAmount, GOLD_STOCK_ID, tokenAmount)
-      .run();
-
-    return result.meta.changes > 0;
-  }
-
-  /**
-   * Atomically release stock after a sale or rollback.
-   * Returns true if stock was successfully released.
-   */
-  async atomicSellStock(tokenAmount: number): Promise<boolean> {
-    const result = await this.db
-      .prepare(
-        `UPDATE gold_stock
-         SET tokens_issued = ROUND(tokens_issued - ?, 3),
-             updated_at = datetime('now')
-         WHERE id = ?
-           AND tokens_issued >= ?`
-      )
-      .bind(tokenAmount, GOLD_STOCK_ID, tokenAmount)
-      .run();
-
-    return result.meta.changes > 0;
-  }
 
   /**
    * Get 24h price change

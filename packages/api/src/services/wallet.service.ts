@@ -11,18 +11,48 @@ export type TradeFailureReason = 'INSUFFICIENT_BALANCE' | 'INSUFFICIENT_STOCK' |
 export type TradeResult = { ok: boolean; reason: TradeFailureReason | null };
 
 /**
- * Map a D1 batch failure to a business reason. CHECK-constraint violations
- * surface the offending column name in the error message; we use that to give
- * a precise error. Anything unrecognized is treated as a transient CONFLICT.
+ * Pourquoi un lot a echoue — determine par l'ETAT, pas par le texte de l'erreur
+ * (ADR 023).
+ *
+ * La version precedente cherchait un nom de colonne dans le message :
+ *
+ *     if (msg.includes('tokens_issued') || msg.includes('total_allocated'))
+ *
+ * Cela marche tant que SQLite recopie l'expression de la contrainte. Nommer la
+ * contrainte — chose banale dans une migration — donne « CHECK constraint
+ * failed: stock_couvert », et `INSUFFICIENT_STOCK` devient silencieusement
+ * `CONFLICT` : le titulaire s'entend dire « reessayez » alors qu'il n'y a pas
+ * assez d'or.
+ *
+ * Le lot ayant ete annule, l'etat relu est celui d'avant la tentative — donc
+ * exactement celui qui explique l'echec. Une requete de plus, sur un chemin qui
+ * a deja echoue.
  */
-function classifyTradeError(e: unknown): TradeFailureReason {
-  const msg = String((e as Error)?.message ?? '').toLowerCase();
-  if (msg.includes('cash_balance') || (msg.includes('token_balance') && msg.includes('check'))) {
-    return 'INSUFFICIENT_BALANCE';
+export async function raisonDeLEchec(
+  db: D1Database,
+  p: { walletId: string; besoinTokensG?: number; besoinEspeces?: number; stockDemandeG?: number }
+): Promise<TradeFailureReason> {
+  const wallet = await db
+    .prepare('SELECT token_balance, cash_balance FROM wallets WHERE id = ?')
+    .bind(p.walletId)
+    .first<{ token_balance: number; cash_balance: number }>();
+
+  if (p.stockDemandeG !== undefined) {
+    const stock = await db
+      .prepare('SELECT total_allocated, tokens_issued FROM gold_stock WHERE id = ?')
+      .bind(GOLD_STOCK_ID)
+      .first<{ total_allocated: number; tokens_issued: number }>();
+    if (!stock || stock.total_allocated - stock.tokens_issued < p.stockDemandeG) {
+      return 'INSUFFICIENT_STOCK';
+    }
   }
-  if (msg.includes('tokens_issued') || msg.includes('total_allocated')) {
-    return 'INSUFFICIENT_STOCK';
-  }
+
+  if (!wallet) return 'CONFLICT';
+  if (p.besoinTokensG !== undefined && wallet.token_balance < p.besoinTokensG) return 'INSUFFICIENT_BALANCE';
+  if (p.besoinEspeces !== undefined && wallet.cash_balance < p.besoinEspeces) return 'INSUFFICIENT_BALANCE';
+
+  // L'etat autorise l'operation : l'echec vient d'ailleurs — une ecriture
+  // concurrente, le plus souvent. C'est bien un conflit.
   return 'CONFLICT';
 }
 
@@ -372,8 +402,16 @@ export class WalletService {
           .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null, p.walletId),
       ]);
       return { ok: true, reason: null };
-    } catch (e) {
-      return { ok: false, reason: classifyTradeError(e) };
+    } catch {
+      return {
+        ok: false,
+        // L'achat debite des especes et reserve du stock.
+        reason: await raisonDeLEchec(this.db, {
+          walletId: p.walletId,
+          besoinEspeces: p.total,
+          stockDemandeG: p.tokenAmount,
+        }),
+      };
     }
   }
 
@@ -433,8 +471,15 @@ export class WalletService {
           .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null, p.walletId),
       ]);
       return { ok: true, reason: null };
-    } catch (e) {
-      return { ok: false, reason: classifyTradeError(e) };
+    } catch {
+      return {
+        ok: false,
+        // La vente debite des grammes ; le stock, lui, diminue.
+        reason: await raisonDeLEchec(this.db, {
+          walletId: p.walletId,
+          besoinTokensG: p.tokenAmount,
+        }),
+      };
     }
   }
 
@@ -486,8 +531,15 @@ export class WalletService {
           .bind(p.amount, p.walletId),
       ]);
       return { ok: true, reason: null };
-    } catch (e) {
-      return { ok: false, reason: classifyTradeError(e) };
+    } catch {
+      return {
+        ok: false,
+        // Le retrait ne touche que les especes.
+        reason: await raisonDeLEchec(this.db, {
+          walletId: p.walletId,
+          besoinEspeces: p.amount,
+        }),
+      };
     }
   }
 

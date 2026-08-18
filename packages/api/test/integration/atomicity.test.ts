@@ -5,7 +5,7 @@
  * rollback and invariant guarantees the financial flows depend on.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WalletService } from '../../src/services/wallet.service';
+import { WalletService, raisonDeLEchec } from '../../src/services/wallet.service';
 import { PaymentService, type WebhookPayload } from '../../src/services/payment.service';
 import { createTestD1, seedWallet, seedStock, type TestD1 } from '../helpers/real-d1';
 import { createMockKVNamespace } from '../setup';
@@ -70,6 +70,81 @@ describe('Atomicity & invariants (real D1)', () => {
       expect(r).toEqual({ ok: false, reason: 'INSUFFICIENT_STOCK' });
       expect(getStock(db)!.tokens_issued).toBe(0);
       expect(getWallet(db, 'w1')!.cash_balance).toBe(1_000_000);
+    });
+  });
+
+  // ─── LE MOTIF NE DEPEND PLUS DU TEXTE DE L'ERREUR ───────
+  describe("pourquoi un lot a echoue", () => {
+    /**
+     * Le motif etait deduit du MESSAGE de l'erreur :
+     *
+     *     if (msg.includes('tokens_issued') || msg.includes('total_allocated'))
+     *
+     * Cela tient tant que SQLite recopie l'expression de la contrainte. Nommer
+     * celle-ci — chose banale dans une migration — donne « CHECK constraint
+     * failed: stock_couvert », et `INSUFFICIENT_STOCK` devenait silencieusement
+     * `CONFLICT` : le titulaire s'entendait dire « reessayez » alors qu'il n'y
+     * avait pas assez d'or (ADR 023).
+     */
+    /**
+     * Testee DIRECTEMENT, et non a travers `executeBuyAtomic` : celui-ci fait un
+     * controle prealable en JavaScript qui court-circuite avant la contrainte,
+     * si bien qu'un test passant par lui n'atteindrait jamais cette fonction et
+     * passerait au vert sans rien verifier.
+     */
+    it('reconnait le manque de stock sans lire le message', async () => {
+      const d = createTestD1();
+      seedStock(d, { totalAllocated: 100, tokensIssued: 95 });
+      seedWallet(d, { id: 'w', userId: 'u', cash: 1_000_000, tokens: 0 });
+
+      const motif = await raisonDeLEchec(asD1(d), { walletId: 'w', stockDemandeG: 50, besoinEspeces: 1 });
+
+      expect(motif).toBe('INSUFFICIENT_STOCK');
+    });
+
+    it('distingue le solde du stock', async () => {
+      const d = createTestD1();
+      seedStock(d, { totalAllocated: 1000, tokensIssued: 0 });
+      seedWallet(d, { id: 'w', userId: 'u', cash: 10, tokens: 0 });
+
+      const motif = await raisonDeLEchec(asD1(d), { walletId: 'w', stockDemandeG: 1, besoinEspeces: 5_000 });
+
+      expect(motif).toBe('INSUFFICIENT_BALANCE');
+    });
+
+    it('ne depend pas du texte de l erreur, donc une contrainte NOMMEE ne change rien', async () => {
+      // Le motif etait deduit du message : nommer la contrainte donnait
+      // « CHECK constraint failed: stock_couvert », et `INSUFFICIENT_STOCK`
+      // devenait silencieusement `CONFLICT`. Ici aucun message n'est lu.
+      const d = createTestD1();
+      seedStock(d, { totalAllocated: 10, tokensIssued: 10 });
+      seedWallet(d, { id: 'w', userId: 'u', cash: 1_000_000, tokens: 0 });
+
+      const motif = await raisonDeLEchec(asD1(d), { walletId: 'w', stockDemandeG: 1, besoinEspeces: 1 });
+
+      expect(motif).toBe('INSUFFICIENT_STOCK');
+    });
+
+    it("rend CONFLICT quand l'etat autorisait pourtant l'operation", async () => {
+      // Chemin complet : ni le stock ni le solde ne manquent, l'echec vient
+      // d'ailleurs — et c'est bien un conflit, pas un manque qu'on aurait
+      // invente.
+      const d = createTestD1();
+      seedStock(d, { totalAllocated: 1000, tokensIssued: 0 });
+      seedWallet(d, { id: 'w', userId: 'u', cash: 1_000_000, tokens: 0 });
+      const w = new WalletService(asD1(d));
+
+      // Un identifiant de transaction deja pris : le lot echoue sur la cle.
+      await w.executeBuyAtomic({
+        transactionId: 'doublon', userId: 'u', walletId: 'w',
+        tokenAmount: 1, cashAmount: 1, total: 1, pricePerGram: 1, fees: 0,
+      });
+      const r = await w.executeBuyAtomic({
+        transactionId: 'doublon', userId: 'u', walletId: 'w',
+        tokenAmount: 1, cashAmount: 1, total: 1, pricePerGram: 1, fees: 0,
+      });
+
+      expect(r).toEqual({ ok: false, reason: 'CONFLICT' });
     });
   });
 
