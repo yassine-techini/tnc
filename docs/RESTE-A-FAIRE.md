@@ -667,6 +667,159 @@ Suite API : **762/762**, 53/53 fichiers.
 
 ---
 
+## Huitième audit — 18 août 2026, l'arithmétique elle-même
+
+Sept audits ont regardé les flux, les droits, la rejouabilité. Aucun n'a regardé **les
+chiffres**. Or ici tout est conversion : le gramme a trois décimales, le XOF n'en a aucune,
+et le solde est un flottant. Chaque conversion arrondit, et un arrondi a toujours un
+bénéficiaire.
+
+### Ce que cet audit a confirmé de sain
+
+**L'invariant fondamental est dans la base, pas dans le code** :
+
+```sql
+available_stock REAL GENERATED ALWAYS AS (total_allocated - tokens_issued) VIRTUAL,
+CHECK (tokens_issued <= total_allocated)
+```
+
+Une colonne générée ne peut pas diverger de ses composantes, et la contrainte ne peut pas
+être oubliée par un appelant. `token_balance >= 0` et `cash_balance >= 0` sont également
+des `CHECK`. `canPurchase` lit bien `total_allocated - tokens_issued` : **l'émission
+automatique est correcte**, aucun des constats ci-dessous ne permet d'émettre un jeton non
+couvert.
+
+`generateQuote` quantifie explicitement, avec la raison écrite à côté — grammes au
+milligramme, argent au XOF entier — et le devis est recalculé à partir de la quantité
+tronquée, si bien que l'utilisateur paie exactement ce qu'il reçoit.
+
+L'attestation signée est l'artefact le plus rigoureux du dépôt : elle distingue
+`totalAllocatedG`, `tokensIssuedG`, `vaultedG` (alloué − prêté) et `onLoanG`, et publie
+`invariantHolds` et `fullyVaulted` comme des affirmations vérifiables.
+
+### T. Le solde affiché n'est pas vendable 🟠
+
+`token_balance` est un `REAL`, et chaque achat fait `token_balance = token_balance + ?`.
+L'addition flottante de valeurs pourtant quantifiées au milligramme dérive.
+
+Mesuré, pas supposé — **trois achats suffisent** :
+
+```
+0.018 + 2.106 + 4.337
+  solde stocké  = 6.4609999999999994102
+  affiché       = 6.461 g          (formatGrams -> toFixed(3))
+  token_balance >= 6.461  ->  FAUX  (il manque 8.9e-16 g)
+```
+
+L'écran montre `6.461 g`. L'utilisateur saisit `6.461`. Le garde `WHERE id = ? AND
+token_balance >= ?` ne change aucune ligne, et la contrainte `token_balance >= 0` refuserait
+de toute façon le débit. Réponse : **solde insuffisant**, sur le solde exact que l'interface
+vient d'afficher.
+
+Ce n'est pas théorique et quelqu'un l'a déjà rencontré : `disposition.service.ts:174`
+compare avec une tolérance —
+
+```ts
+if (wallet.token_balance + 0.0005 < g(sellG + leaseG)) return fail('INSUFFICIENT_BALANCE');
+```
+
+— mais c'est le **seul** endroit. La vente (`wallet.service.ts:267`), la mise en location
+(`lease.service.ts:140`) et le pré-contrôle d'`executeSellAtomic` comparent sans tolérance.
+Une correction a donc été appliquée là où le problème est apparu, pas là où il vit.
+
+Le correctif n'est pas d'ajouter trois epsilons de plus. La demi-tolérance du milligramme
+est une **règle métier** — « à un demi-milligramme près, c'est le même poids » — et elle
+mérite un seul endroit qui la porte, comme `xof()` porte l'arrondi de la monnaie. À noter
+au passage : `xof = (n) => Math.round(n)` est recopié **à l'identique dans quatre services**.
+Quatre copies de la règle d'arrondi de la monnaie, c'est quatre endroits où elle peut
+diverger.
+
+### U. « Tokens Émis » exclut l'or en location — au portail de l'État 🔴
+
+La location **sort les grammes du portefeuille** et alimente `gold_on_loan`, sans toucher à
+`tokens_issued` : le jeton existe toujours, il est seulement prêté. C'est correct.
+
+Mais le tableau de bord de l'État, le rapport mensuel et la preuve de réserve calculent
+tous leurs chiffres sur `SUM(wallets.token_balance)` — la somme des portefeuilles, qui est
+`tokens_issued − gold_on_loan`. Et `apps/state-portal` étiquette ce nombre **« Tokens
+Émis »**.
+
+Avec 1 000 g alloués, 900 g émis, 400 g placés en location :
+
+| | Affiché à l'État | Réel |
+|---|---|---|
+| « Tokens Émis » | **500 g** | 900 g |
+| « Disponible » | **500 g** | 100 g |
+| Couverture | **200,0 %** | 111,1 % |
+
+L'écart n'est pas un arrondi : c'est exactement l'or en location, et l'erreur va dans le
+sens flatteur. Le portail annonce une réserve deux fois couverte quand elle l'est à 1,11
+fois, et cinq fois plus d'or disponible qu'il n'y en a.
+
+`GET /admin/stock` fait la même substitution : il sélectionne `tokens_issued` puis renvoie
+la somme des portefeuilles à sa place, et calcule `availableStock` en ignorant la colonne
+générée `available_stock` qui donne pourtant la bonne valeur.
+
+**Ce n'est pas une faille d'émission** — `canPurchase` lit la bonne source et la contrainte
+`CHECK` tient. C'est le chiffre sur lequel un ministère décide qui est faux, dans le sens
+qui rassure. C'est précisément la promesse sur laquelle repose le projet.
+
+Le test existant (`state-payload.test.ts`) épingle les **noms** de champs — il est né de la
+confusion `coverage` / `coverageRatio` qui affichait 0 %. Il ne dit rien de ce que le
+chiffre contient. La confusion de nommage a été corrigée ; la confusion de sens ne l'a pas
+été.
+
+### V. « Couverture » désigne trois grandeurs, « entièrement en coffre » deux 🟠
+
+Quatre définitions coexistent pour le même mot :
+
+| Endroit | Formule | Sens |
+|---|---|---|
+| `market.ts:98` (public) | `alloué / émis` | ratio ≥ 1 — combien d'or garantit un jeton |
+| `admin.ts:1628` | `Σ portefeuilles / alloué` | fraction ≤ 1 — **l'inverse** |
+| `admin.ts:2091` | `alloué / Σ portefeuilles` | ratio, sur le mauvais dénominateur |
+| `state.ts:483` | `alloué / Σ portefeuilles` | ratio, sur le mauvais dénominateur |
+
+Les deux premières sont **réciproques l'une de l'autre**. Un lecteur qui rapproche l'écran
+public de l'écran d'administration compare 1,11 à 0,90 en croyant lire deux fois la même
+chose.
+
+`fullyVaulted` est pire, parce que les deux définitions se contredisent le même jour :
+
+```
+attestation      fullyVaulted = tokens_issued <= (alloué − prêté)
+tableau de bord  fullyVaulted = (gold_on_loan === 0)
+```
+
+Avec 1 000 g alloués, 900 g émis et 50 g en location : l'attestation signée répond **oui**
+(900 ≤ 950), le tableau de bord répond **non** (50 ≠ 0), et le portail affiche l'alerte
+rouge. L'État dispose donc de deux artefacts qui se contredisent sur la même question, dont
+l'un est signé.
+
+Ici le tableau de bord est le plus sévère — c'est le bon sens pour une alerte. Mais avec
+`coverageRatio` l'erreur va dans l'autre sens sur le même écran. Des divergences de
+directions opposées sont plus difficiles à démêler qu'une erreur franche : elles se
+compensent visuellement sans jamais se corriger.
+
+### W. `MIN_XOF = 100` suppose un prix de l'or, sans le dire 🔵
+
+Un achat exprimé en XOF est converti puis **tronqué** au milligramme :
+
+```ts
+tokenAmount = Math.floor(body.amount / pricePerGram * 1000) / 1000;
+```
+
+Le minimum de 100 XOF ne produit une quantité non nulle que tant que le gramme vaut moins
+de 100 000 XOF. Au cours actuel (~53 000 XOF/g) la marge est d'un facteur deux. Au-delà,
+`tokenAmount` vaut `0`, et rien sur le chemin d'exécution ne refuse un devis à zéro : ni
+`canPurchase(0)`, ni `generateQuote`, ni `/market/buy`.
+
+Latent, pas actif. Mais la constante encode une hypothèse sur le prix de l'or sans la
+nommer, et l'échéance est un doublement du cours — pas une impossibilité sur la durée de
+vie d'une plateforme souveraine.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
