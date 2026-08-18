@@ -88,6 +88,19 @@ describe('Les routes ne recalculent plus l arithmetique de la reserve', () => {
   }
 });
 
+/** Le source prive de ses commentaires — la prose n'est pas du code. */
+function sansCommentaires(source: string): string {
+  // `String.fromCharCode(10)` plutot que le litteral : ecrit autrement, la
+  // sequence d'echappement se fait manger par l'outillage avant d'atteindre le
+  // fichier, et la chaine se retrouve coupee en deux lignes.
+  const RETOUR = String.fromCharCode(10);
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split(RETOUR)
+    .map((l) => l.replace(/\/\/.*$/, ''))
+    .join(RETOUR);
+}
+
 describe('Le vocabulaire', () => {
   it('n emploie plus `coverage` tout court dans une charge utile', () => {
     // Deux contrats portaient un champ `coverage` de sens RECIPROQUE : ratio
@@ -101,6 +114,10 @@ describe('Le vocabulaire', () => {
   it('n emploie plus `Infinity` comme couverture', () => {
     // `JSON.stringify(Infinity)` vaut `null` : le contrat annoncait `number` et
     // la route livrait `null`, sur le chemin le plus public de la plateforme.
-    expect(source('market.ts')).not.toMatch(/Infinity/);
+    //
+    // Le controle porte sur le CODE, pas sur la prose : la premiere version
+    // interdisait le mot partout et s'est declenchee sur un commentaire qui
+    // expliquait precisement pourquoi `Infinity` est un piege.
+    expect(sansCommentaires(source('market.ts'))).not.toMatch(/Infinity/);
   });
 });

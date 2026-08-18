@@ -275,6 +275,7 @@ export const ERROR_CODES = {
   TRADING_PRICE_EXPIRED: 'TRADING_PRICE_EXPIRED',
   TRADING_QUOTE_EXPIRED: 'TRADING_QUOTE_EXPIRED',
   TRADING_QUOTE_INVALID: 'TRADING_QUOTE_INVALID',
+  TRADING_AMOUNT_TOO_SMALL: 'TRADING_AMOUNT_TOO_SMALL',
   
   // Payment
   PAYMENT_FAILED: 'PAYMENT_FAILED',
@@ -327,6 +328,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   TRADING_PRICE_EXPIRED: 'Prix expiré. Veuillez actualiser.',
   TRADING_QUOTE_EXPIRED: 'Devis expiré. Veuillez en demander un nouveau.',
   TRADING_QUOTE_INVALID: 'Devis invalide',
+  TRADING_AMOUNT_TOO_SMALL: 'Montant trop faible pour acheter un milligramme',
   
   // Payment
   PAYMENT_FAILED: 'Paiement échoué',

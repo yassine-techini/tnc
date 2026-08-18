@@ -275,6 +275,15 @@ export class MarketService {
     // (milligram) precision. Storing/charging fractional XOF accumulates
     // rounding drift across the ledger; quantizing here keeps amounts exact.
     const quantizedTokens = Math.round(tokenAmount * 1000) / 1000;
+
+    // Un devis a quantite nulle n'a pas de sens et ne doit pas atteindre la base.
+    // La route garde deja l'entree (plancher deduit du cours), mais la regle
+    // appartient a la fonction qui ECRIT le devis : c'est elle que tout nouvel
+    // appelant utilisera.
+    if (!(quantizedTokens > 0)) {
+      throw new Error('generateQuote: quantite nulle apres arrondi au milligramme');
+    }
+
     const cashAmount = Math.round(quantizedTokens * pricePerGram);
     const fees = Math.round(cashAmount * txFeePercent);
     const total = type === 'BUY' ? cashAmount + fees : cashAmount - fees;

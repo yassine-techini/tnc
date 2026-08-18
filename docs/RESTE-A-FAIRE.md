@@ -669,8 +669,8 @@ Suite API : **762/762**, 53/53 fichiers.
 
 ## Huitième audit — 18 août 2026, l'arithmétique elle-même
 
-Sept audits ont regardé les flux, les droits, la rejouabilité. Aucun n'a regardé **les
-chiffres**. Or ici tout est conversion : le gramme a trois décimales, le XOF n'en a aucune,
+**Les six constats sont traités.** Sept audits ont regardé les flux, les droits, la
+rejouabilité. Aucun n'a regardé **les chiffres**. Or ici tout est conversion : le gramme a trois décimales, le XOF n'en a aucune,
 et le solde est un flottant. Chaque conversion arrondit, et un arrondi a toujours un
 bénéficiaire.
 
@@ -885,7 +885,7 @@ chiffres. Les recalculer demanderait un `gold_on_loan` jour par jour qu'aucune t
 conserve — la même limite qu'en ADR 011 § 5. Un rapport transmis se corrige par un
 rectificatif, pas par une réécriture silencieuse.
 
-### W. `MIN_XOF = 100` suppose un prix de l'or, sans le dire 🔵
+### W. `MIN_XOF = 100` suppose un prix de l'or, sans le dire ✅
 
 Un achat exprimé en XOF est converti puis **tronqué** au milligramme :
 
@@ -901,6 +901,46 @@ de 100 000 XOF. Au cours actuel (~53 000 XOF/g) la marge est d'un facteur deux. 
 Latent, pas actif. Mais la constante encode une hypothèse sur le prix de l'or sans la
 nommer, et l'échéance est un doublement du cours — pas une impossibilité sur la durée de
 vie d'une plateforme souveraine.
+
+**Corrigé.** Le plancher se **déduit du cours** au lieu de le supposer :
+
+```ts
+export function planchierXof(pricePerGram: number): number {
+  if (!Number.isFinite(pricePerGram) || pricePerGram <= 0) return MIN_XOF;
+  return Math.max(MIN_XOF, Math.ceil(MIN_GRAMS * pricePerGram));
+}
+```
+
+`MIN_XOF` ne disparaît pas — il devient ce qu'il aurait dû rester : un minimum de bon sens,
+indépendant du marché. Ce qui garantit qu'un ordre achète au moins un milligramme, c'est le
+plancher dérivé.
+
+Arrondi au XOF **supérieur** : au XOF inférieur, le montant annoncé à l'utilisateur serait
+lui-même refusé par le contrôle suivant.
+
+`Number.isFinite` et pas seulement `> 0` : `Infinity > 0` est vrai et produirait un plancher
+infini, c'est-à-dire un marché fermé à tout le monde. Ce défaut était dans ma première version
+du helper, et un test trop indulgent (`>= 100`) l'acceptait — l'assertion est maintenant exacte.
+
+**Deux remparts** plutôt qu'un :
+
+- la route refuse le montant avec `TRADING_AMOUNT_TOO_SMALL`, un message qui **nomme le minimum
+  au cours du moment** (« il faut au moins 150 XOF pour 0.001 g au cours actuel ») et un contrôle
+  de quantité nulle après troncature, quel que soit le chemin d'entrée ;
+- `generateQuote` refuse d'écrire un devis à quantité nulle. La route garde l'entrée, mais la
+  règle appartient à la fonction qui **écrit** le devis : c'est elle que tout nouvel appelant
+  utilisera.
+
+Les clients relaient le message de l'API tel quel : aucun n'a besoin de connaître le plancher,
+donc aucun ne peut le désynchroniser.
+
+Pas d'ADR : contrairement aux constats U, V et T, il n'y avait pas de choix contesté à trancher
+— une borne qui dépend d'un prix se calcule à partir de ce prix. Multiplier les ADR sur des
+évidences les dévaluerait.
+
+5 tests, dont un qui balaie les cours de 1 000 à 12 345 678 XOF/g et vérifie qu'à chacun le
+plancher achète effectivement au moins un milligramme. Vérifié par mutation : replacer la
+constante, ou arrondir vers le bas, fait échouer les tests.
 
 ### X. L'écran Preuve de Réserve du back-office plante au chargement ✅
 

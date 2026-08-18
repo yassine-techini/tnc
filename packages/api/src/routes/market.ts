@@ -122,7 +122,34 @@ market.get('/stock', async (c) => {
 const MAX_GRAMS = 10000;
 const MIN_GRAMS = 0.001;
 const MAX_XOF = 500_000_000;
+
+/**
+ * Plancher ABSOLU d'un ordre exprime en XOF.
+ *
+ * Il ne suffit pas a garantir une quantite non nulle : `tokenAmount` est tronque
+ * au milligramme, donc 100 XOF n'achetent un milligramme que tant que le gramme
+ * vaut moins de 100 000 XOF. Au cours actuel (~53 000 XOF/g) la marge est d'un
+ * facteur deux — pas d'une impossibilite sur la duree de vie d'une plateforme
+ * souveraine.
+ *
+ * La constante encodait donc une hypothese sur le prix de l'or sans la nommer.
+ * Le vrai plancher est desormais DERIVE du cours (`planchierXof`) ; celui-ci ne
+ * reste qu'un minimum de bon sens, independant du marche.
+ */
 const MIN_XOF = 100;
+
+/**
+ * Le montant minimal qui achete encore un milligramme, au cours du moment.
+ *
+ * Arrondi au XOF SUPERIEUR : au XOF inferieur, le montant annonce a
+ * l'utilisateur serait lui-meme refuse.
+ */
+export function planchierXof(pricePerGram: number): number {
+  // `Number.isFinite` et pas seulement `> 0` : `Infinity > 0` est vrai, et
+  // produirait un plancher infini — donc un marche ferme a tout le monde.
+  if (!Number.isFinite(pricePerGram) || pricePerGram <= 0) return MIN_XOF;
+  return Math.max(MIN_XOF, Math.ceil(MIN_GRAMS * pricePerGram));
+}
 
 const quoteSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
@@ -196,8 +223,39 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
   } else {
     // Convert XOF to grams
     const pricePerGram = body.type === 'BUY' ? price.buy_price : price.sell_price;
+
+    // Le plancher se DEDUIT du cours. `MIN_XOF` seul laissait passer un montant
+    // qui, tronque au milligramme, donnait zero gramme : le devis valait alors
+    // 0 g pour 0 XOF, et rien sur le chemin d'execution ne le refusait.
+    const plancher = planchierXof(pricePerGram);
+    if (body.amount < plancher) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'TRADING_AMOUNT_TOO_SMALL',
+          message: `Montant trop faible : il faut au moins ${plancher} XOF pour ${MIN_GRAMS} g au cours actuel.`,
+          details: { minimumXof: plancher, minimumGrams: MIN_GRAMS, pricePerGram },
+        },
+        requestId,
+      }, 400);
+    }
+
     tokenAmount = body.amount / pricePerGram;
     tokenAmount = Math.floor(tokenAmount * 1000) / 1000; // Round to 3 decimals
+  }
+
+  // Dernier rempart, quel que soit le chemin d'entree : un devis a quantite nulle
+  // n'a pas de sens et ne doit pas exister en base.
+  if (!(tokenAmount > 0)) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'TRADING_AMOUNT_TOO_SMALL',
+        message: `Quantité nulle après arrondi au milligramme. Minimum : ${MIN_GRAMS} g.`,
+        details: { minimumGrams: MIN_GRAMS },
+      },
+      requestId,
+    }, 400);
   }
 
   // Check stock for buy orders
