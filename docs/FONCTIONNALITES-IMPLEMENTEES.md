@@ -19,8 +19,8 @@ trompeur. Chaque entrée porte un statut :
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
 **Volumétrie** : 14 modules API, 30 services métier, **31 migrations**, 11 jobs planifiés,
-4 Durable Objects, 5 applications front, **1 320 tests automatisés** (788 API, 314 `shared`,
-63 back-office, 61 mobile, 60 web, 34 portail État).
+4 Durable Objects, 5 applications front, **1 334 tests automatisés** (797 API, 314 `shared`,
+68 back-office, 61 mobile, 60 web, 34 portail État).
 
 **Tous s'exécutent.** Les 26 tests d'`auth.service.test.ts` étaient jusqu'ici absents du
 décompte : `argon2-browser` faisait tomber le worker vitest sous Node ≥ 18, et un fichier
@@ -74,7 +74,7 @@ fournit désormais le wasm à la bibliothèque, et les tests s'exécutent contre
 
 | Fonctionnalité | Statut | Détail |
 |---|---|---|
-| Soldes tokens et XOF | ✅ | |
+| Soldes tokens et XOF | ✅ | Les grammes sont quantifiés **à l'écriture** (`ROUND(…, 3)`) : sans cela trois achats suffisaient à faire dériver le solde sous la valeur affichée, et la vente de la totalité était refusée pour « solde insuffisant » ([ADR 013](adr/013-quantifier-les-grammes-a-l-ecriture.md)). `pnpm check:grams` refuse toute accumulation non arrondie |
 | Historique des transactions | ✅ | Web et mobile |
 | Dépôts | ⚙️ | Orange Money, Moov Money, CinetPay, Stripe — webhooks signés implémentés ; inactifs sans clés |
 | Retraits | ✅ | Débit atomique, plafonds par niveau KYC, validation admin |
@@ -105,7 +105,7 @@ fournit désormais le wasm à la bibliothèque, et les tests s'exécutent contre
 
 | Fonctionnalité | Statut | Détail |
 |---|---|---|
-| Rapport Proof of Reserve | ⚠️ | Chiffres corrigés : « jetons émis » vient de `tokens_issued`, plus de la somme des portefeuilles — qui en excluait l'or placé en location et surévaluait la couverture d'autant ([ADR 012](adr/012-un-seul-vocabulaire-pour-la-reserve.md)). **L'écran back-office reste inutilisable** : il lit une forme imbriquée que la route n'émet pas (constat X) |
+| Rapport Proof of Reserve | ✅ | « Jetons émis » vient de `tokens_issued`, plus de la somme des portefeuilles — qui en excluait l'or placé en location et surévaluait la couverture d'autant ([ADR 012](adr/012-un-seul-vocabulaire-pour-la-reserve.md)). L'écran back-office levait une `TypeError` au chargement : il lisait une forme imbriquée que la route n'émettait pas. Contrat désormais partagé (`AdminProofOfReserveData`), prix issus de `gold_prices`, et l'empreinte publiée est celle de **l'attestation signée** au lieu d'un condensé sans source |
 | Export du rapport | ✅ | JSON **et PDF** (`GET /admin/reports/por.pdf`), générateur sans dépendance. Le PDF porte la divulgation du prêt et renvoie à l'attestation vérifiable |
 | **Attestations signées et chaînées** | ⚙️ | Pipeline vérifié de bout en bout avec une vraie clé ES256. Inertes sans `ATTESTATION_SIGNING_JWK` et sans le cron `30 0 * * *` |
 | **Divulgation or en coffre / or prêté** | ✅ | La location étant financée par le prêt de l'or, l'attestation distingue `vaultedG` de `onLoanG`, expose `fullyVaulted` et **nomme les contreparties**. Le tableau de bord État répondait à la même question par « aucun gramme n'est prêté » et contredisait l'attestation signée ; il suit désormais sa définition |

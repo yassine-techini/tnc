@@ -697,7 +697,7 @@ L'attestation signée est l'artefact le plus rigoureux du dépôt : elle disting
 `totalAllocatedG`, `tokensIssuedG`, `vaultedG` (alloué − prêté) et `onLoanG`, et publie
 `invariantHolds` et `fullyVaulted` comme des affirmations vérifiables.
 
-### T. Le solde affiché n'est pas vendable 🟠
+### T. Le solde affiché n'est pas vendable ✅
 
 `token_balance` est un `REAL`, et chaque achat fait `token_balance = token_balance + ?`.
 L'addition flottante de valeurs pourtant quantifiées au milligramme dérive.
@@ -733,6 +733,48 @@ mérite un seul endroit qui la porte, comme `xof()` porte l'arrondi de la monnai
 au passage : `xof = (n) => Math.round(n)` est recopié **à l'identique dans quatre services**.
 Quatre copies de la règle d'arrondi de la monnaie, c'est quatre endroits où elle peut
 diverger.
+
+**Corrigé** — [ADR 013](adr/013-quantifier-les-grammes-a-l-ecriture.md).
+
+La quantification se fait à l'**écriture**, en SQL : `token_balance = ROUND(token_balance + ?, 3)`.
+Ajouter des tolérances aux comparaisons n'aurait pas suffi — le garde qui décide n'est pas le
+`if` en JavaScript mais la contrainte `CHECK (token_balance >= 0)`, et débiter 6,461 d'un solde
+de 6,4609999999999994 produit −8,9 × 10⁻¹⁶. Une tolérance en amont aurait laissé passer le
+pré-contrôle pour échouer plus loin, avec un message pire.
+
+Vérifié sur le moteur, pas déduit :
+
+```
+sans arrondi : 6.4609999999999994   → vendre 6.461 modifie 0 ligne
+avec arrondi : 6.4610000000000003   → vendre 6.461 modifie 1 ligne  (et vaut === 6.461)
+```
+
+**Les quatre colonnes de grammes**, pas seulement les portefeuilles : `token_balance`,
+`tokens_issued`, `gold_on_loan`, `total_allocated`. Les deux dernières sont comparées entre
+elles par `CHECK (tokens_issued <= total_allocated)` — si l'une dérive et l'autre non, la
+contrainte refuse une émission légitime. Corriger les portefeuilles seuls aurait corrigé
+l'instance, pas la catégorie, soit le reproche même fait à la tolérance isolée de
+`disposition.service.ts` — laquelle est retirée : elle masquerait désormais un retour de la
+dérive au lieu de la compenser.
+
+Le XOF n'est pas concerné : `cash_balance` accumule des entiers, exacts en flottant jusqu'à
+2⁵³. Y ajouter un arrondi aurait suggéré un risque inexistant.
+
+`pnpm check:grams` refuse toute accumulation écrite sans `ROUND(..., 3)` et tourne avant la
+suite avec `check:sql` et `check:ownership` — dix-huit requêtes portent la règle, et une règle
+répétée dix-huit fois est une règle qu'on oubliera la dix-neuvième. **Le contrôle ne comporte
+aucune expression régulière** : la première version construisait la sienne dans une chaîne
+gabarit, où `` est l'échappement « backspace » — elle ne trouvait rien et se déclarait
+satisfaite. Le piège est documenté dans `state-payload.test.ts` ; j'y suis retombé en écrivant
+le contrôle censé s'en prémunir.
+
+Migration 0035 : la dérive déjà accumulée est requantifiée en place. **Aucun solde ne change de
+valeur** — 6,4609999999999994 devient 6,461, le même poids au millionième de milligramme près.
+Ce qui change, c'est la comparabilité.
+
+7 tests sur une **vraie base SQLite**, dont un qui vérifie qu'un portefeuille vidé retombe
+exactement à zéro : un résidu de 10⁻¹⁵ g le laissait compté comme détenteur par les écrans et
+suivi par les frais de garde.
 
 ### U. « Tokens Émis » exclut l'or en location — au portail de l'État ✅
 
@@ -860,7 +902,7 @@ Latent, pas actif. Mais la constante encode une hypothèse sur le prix de l'or s
 nommer, et l'échéance est un doublement du cours — pas une impossibilité sur la durée de
 vie d'une plateforme souveraine.
 
-### X. L'écran Preuve de Réserve du back-office plante au chargement 🔴
+### X. L'écran Preuve de Réserve du back-office plante au chargement ✅
 
 Trouvé en corrigeant U, pas en le cherchant, et **antérieur à ce correctif**.
 
@@ -885,6 +927,32 @@ C'est la forme exacte du défaut du quatrième audit : un type déclaré localem
 plutôt qu'un contrat partagé, donc invisible à TypeScript. Corriger demande de trancher
 entre enrichir la route ou réduire la page, et de mettre le résultat sous contrat partagé —
 c'est un chantier à part, pas un effet de bord de U.
+
+**Corrigé.** Le contrat `AdminProofOfReserveData` est désormais partagé, la route l'épingle par
+`satisfies`, et le type déclaré localement dans le client a disparu — c'était lui la cause :
+un type écrit côté client ne vérifie rien, il décrit un espoir.
+
+Tout ce qu'émet la route est adossé à des données qui existent. Deux blocs n'avaient aucune
+source et ont été remplacés plutôt qu'inventés :
+
+- `pricing` vient de `gold_prices` (cours, prix d'achat et de vente, spreads, source, horodatage)
+  et vaut `null` tant qu'aucun relevé n'existe — un tableau de prix à zéro se lirait comme un
+  marché à l'arrêt. La page masque alors le bloc et affiche « Aucun cours relevé ».
+- `verification.checksum` n'avait aucune source. Ce qui est vérifiable existe pourtant déjà :
+  l'**empreinte de l'attestation signée**, celle que la page publique `/reserve` recalcule dans
+  le navigateur. Le rapport publie ce numéro de séquence et cette empreinte, ou dit qu'aucune
+  attestation n'a été émise.
+
+Les trois fenêtres de transactions (24 h / 7 j / 30 j) sont calculées **en une seule passe** :
+trois requêtes séparées pourraient tomber de part et d'autre d'une transaction en cours et ne
+pas se recouper.
+
+Le PDF (`/admin/reports/por.pdf`) passe lui aussi par `chiffresReserve` : il recalculait sa
+propre version de « en coffre » et de l'invariant.
+
+5 tests d'écran. **Vérifié par mutation** : servir à la page l'ancienne charge plate reproduit
+exactement le défaut d'origine — `TypeError: Cannot read properties of undefined (reading
+'coverageRatio')`.
 
 ### Y. Les fixtures de test étaient hors du typecheck ✅
 

@@ -725,6 +725,80 @@ export interface AdminStockData {
   utilisationRate: number | null;
 }
 
+/**
+ * `GET /api/v1/admin/reports/por`
+ *
+ * L'ecran du back-office declarait cette forme LOCALEMENT, dans le type inline de
+ * `getProofOfReserve` — et la route en emettait une autre, plate. Aucune des six
+ * cles lues n'existait dans la reponse, si bien que `report.goldStock.isCovered`
+ * levait une TypeError des que la requete aboutissait : l'ecran ne montrait pas
+ * des zeros, il ne s'affichait pas. Un type declare cote client ne verifie rien,
+ * il decrit un espoir.
+ *
+ * Tout ce qui suit est adosse a des donnees qui existent. Le bloc `attestation`
+ * remplace un `verification.checksum` qui n'avait aucune source : l'empreinte
+ * publiee est celle de l'attestation signee, pas un condense recalcule pour
+ * l'occasion.
+ */
+export interface AdminProofOfReserveData {
+  generatedAt: string;
+  goldStock: {
+    totalAllocated: number;
+    tokensIssued: number;
+    availableStock: number;
+    goldVaulted: number;
+    goldOnLoan: number;
+    /** `alloue / emis`, `null` si rien n'est emis (ADR 012 SS 5). */
+    coverageRatio: number | null;
+    /** `emis / alloue`. L'INVERSE : ne jamais tester `>= 1` dessus. */
+    utilisationRate: number | null;
+    /** `emis <= alloue`, garanti par une contrainte CHECK. */
+    isCovered: boolean;
+    /** `emis <= or en coffre` — la definition de l'attestation signee. */
+    fullyVaulted: boolean;
+  };
+  tokenHolders: {
+    totalHolders: number;
+    averageHolding: number;
+    distribution: Array<{ range: string; count: number; totalTokens: number }>;
+  };
+  transactions: {
+    last24h: ProofOfReserveWindow;
+    last7d: ProofOfReserveWindow;
+    last30d: ProofOfReserveWindow;
+  };
+  /** `null` tant qu'aucun prix n'a ete releve : l'ecran affiche « — ». */
+  pricing: {
+    priceXof: number;
+    buyPrice: number;
+    sellPrice: number;
+    spreadBuy: number;
+    spreadSell: number;
+    source: string;
+    timestamp: string;
+  } | null;
+  audit: {
+    lastAuditDate: string | null;
+    lastAuditResult: string | null;
+    nextAuditDue: string | null;
+  };
+  /** `null` tant que la chaine d'attestations n'a pas demarre. */
+  attestation: {
+    sequence: number;
+    digest: string;
+    signedAt: string;
+    /** `false` quand la cle de signature manque : l'attestation existe, non signee. */
+    signed: boolean;
+    anchorTxHash: string | null;
+  } | null;
+}
+
+export interface ProofOfReserveWindow {
+  buys: number;
+  sells: number;
+  volumeXof: number;
+}
+
 /** `GET /api/v1/admin/me/permissions` */
 export interface AdminPermissionsData {
   permissions: Record<string, string[]>;

@@ -20,23 +20,58 @@ function source(fichier: string): string {
 }
 
 /**
- * Les sommes de portefeuilles legitimes : celles qui repondent a une question
- * portant reellement sur les portefeuilles. Une repartition par tranche compte
- * des portefeuilles, pas des jetons emis.
+ * Une somme de soldes est LEGITIME quand la question porte reellement sur les
+ * portefeuilles : une repartition par tranche compte des portefeuilles, pas des
+ * jetons emis. Ce qui distingue les deux n'est pas le nom de l'alias — la
+ * premiere version de ce controle s'y fiait et a lache des qu'un alias a change
+ * — mais la presence d'un `GROUP BY` dans la meme requete.
  */
-const REPARTITIONS_LEGITIMES = /COALESCE\(SUM\(token_balance\), 0\) as total(_tokens)?\s*\n\s*FROM wallets\s*\n\s*GROUP BY/g;
+function sommesNonGroupees(source: string): string[] {
+  const trouvees: string[] = [];
+  const aiguille = 'SUM(token_balance)';
+  let depuis = 0;
+
+  for (;;) {
+    const at = source.indexOf(aiguille, depuis);
+    if (at === -1) break;
+    depuis = at + aiguille.length;
+
+    // La requete autour : large assez pour porter son GROUP BY, assez etroite
+    // pour ne pas emprunter celui de la requete suivante.
+    const fenetre = source.slice(at, Math.min(source.length, at + 500));
+    const finRequete = fenetre.search(/`|'\)|"\)/);
+    const requete = finRequete === -1 ? fenetre : fenetre.slice(0, finRequete);
+
+    if (!/GROUP BY/i.test(requete)) {
+      trouvees.push(source.slice(Math.max(0, at - 120), at + 80).trim());
+    }
+  }
+
+  return trouvees;
+}
 
 describe('Les jetons emis ne viennent jamais d une somme de portefeuilles', () => {
   for (const fichier of ['state.ts', 'admin.ts', 'market.ts']) {
     it(`${fichier} n interroge les portefeuilles que pour les repartir`, () => {
-      const s = source(fichier).replace(REPARTITIONS_LEGITIMES, '');
-
-      // Ce qui reste ne doit plus contenir aucune somme de soldes : toute autre
-      // utilisation confondrait « emis » et « detenu en portefeuille ».
-      expect(s).not.toMatch(/SUM\(token_balance\)/);
-      expect(s).not.toMatch(/SUM\(w\.token_balance\)/);
+      // Toute somme de soldes hors repartition confondrait « emis » et « detenu
+      // en portefeuille » — l'ecart etant exactement l'or place en location.
+      expect(sommesNonGroupees(source(fichier))).toEqual([]);
     });
   }
+
+  it('sait reperer une somme qui ne repartit rien', () => {
+    // Sans ce controle du controle, un detecteur casse rendrait zero probleme et
+    // les tests ci-dessus passeraient au vert sans rien avoir verifie.
+    const faute = "db.prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')";
+
+    expect(sommesNonGroupees(faute)).toHaveLength(1);
+  });
+
+  it('laisse passer une repartition par tranche', () => {
+    const licite = "db.prepare(`SELECT tier, SUM(token_balance) as total FROM wallets GROUP BY tier`)";
+
+    expect(sommesNonGroupees(licite)).toEqual([]);
+  });
 });
 
 describe('Les routes ne recalculent plus l arithmetique de la reserve', () => {

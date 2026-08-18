@@ -15,6 +15,22 @@ export default function ProofOfReserve() {
 
   const report = data?.data;
 
+  /**
+   * `pricing` vaut `null` tant qu'aucun cours n'a ete releve — un `0` inventerait
+   * un prix. Les cartes de prix ne s'affichent alors pas plutot que d'annoncer
+   * une valeur qui n'existe pas.
+   */
+  const prix = report?.pricing;
+
+  /**
+   * `coverageRatio` vaut `null` quand rien n'est emis : le ratio est sans objet,
+   * et non « zero pour cent » (ADR 012 SS 5).
+   */
+  const couverturePct =
+    report?.goldStock.coverageRatio != null
+      ? `${(report.goldStock.coverageRatio * 100).toFixed(1)}%`
+      : '—';
+
   const [pdfEnCours, setPdfEnCours] = useState(false);
   const [pdfErreur, setPdfErreur] = useState('');
 
@@ -167,7 +183,7 @@ export default function ProofOfReserve() {
                     : 'Alerte de Couverture - Stock insuffisant pour couvrir tous les tokens'}
                 </p>
                 <p className="text-sm text-slate-400 mt-1">
-                  Taux de couverture: <span className="font-bold">{report.goldStock.coveragePercent}</span>
+                  Taux de couverture: <span className="font-bold">{couverturePct}</span>
                 </p>
               </div>
             </div>
@@ -221,7 +237,7 @@ export default function ProofOfReserve() {
                 <p className="stat-label">Taux de Couverture</p>
               </div>
               <p className={`text-3xl font-bold tracking-tight ${report.goldStock.isCovered ? 'text-emerald-400' : 'text-red-400'}`}>
-                {report.goldStock.coveragePercent}
+                {couverturePct}
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
                 {report.goldStock.isCovered ? 'Réserves suffisantes' : 'Réserves insuffisantes'}
@@ -239,10 +255,10 @@ export default function ProofOfReserve() {
                 <p className="stat-label">Prix Actuel</p>
               </div>
               <p className="text-3xl font-bold text-white tracking-tight">
-                {formatCurrency(report.pricing.currentPrice)}
+                {prix ? formatCurrency(prix.priceXof) : '—'}
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                Par gramme d'or ({report.pricing.priceSource})
+                {prix ? `Par gramme d'or (${prix.source})` : 'Aucun cours relevé'}
               </p>
             </div>
           </div>
@@ -258,7 +274,7 @@ export default function ProofOfReserve() {
                     : 'bg-gradient-to-r from-red-500 to-red-400'
                 }`}
                 style={{
-                  width: `${Math.min(report.goldStock.coverage * 100, 100)}%`,
+                  width: `${Math.min((report.goldStock.coverageRatio ?? 0) * 100, 100)}%`,
                 }}
               />
             </div>
@@ -324,7 +340,7 @@ export default function ProofOfReserve() {
                       <p className="text-[10px] text-slate-500">Ventes</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last24h.volume)}</p>
+                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last24h.volumeXof)}</p>
                       <p className="text-[10px] text-slate-500">Volume (g)</p>
                     </div>
                   </div>
@@ -343,7 +359,7 @@ export default function ProofOfReserve() {
                       <p className="text-[10px] text-slate-500">Ventes</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last7d.volume)}</p>
+                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last7d.volumeXof)}</p>
                       <p className="text-[10px] text-slate-500">Volume (g)</p>
                     </div>
                   </div>
@@ -362,7 +378,7 @@ export default function ProofOfReserve() {
                       <p className="text-[10px] text-slate-500">Ventes</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last30d.volume)}</p>
+                      <p className="text-lg font-bold text-blue-400">{formatNumber(report.transactions.last30d.volumeXof)}</p>
                       <p className="text-[10px] text-slate-500">Volume (g)</p>
                     </div>
                   </div>
@@ -373,32 +389,35 @@ export default function ProofOfReserve() {
 
           {/* Pricing & Audit Info */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Pricing Details */}
+            {/* Détails des prix — masqués tant qu'aucun cours n'a été relevé :
+                un tableau de zéros se lirait comme un marché à l'arrêt. */}
+            {prix && (
             <div className="card">
               <h2 className="text-sm font-semibold text-white mb-4">Détails des Prix</h2>
               <div className="space-y-3">
                 <div className="flex justify-between items-center p-3 bg-slate-800/40 rounded-xl">
                   <span className="text-sm text-slate-400">Prix d'achat</span>
-                  <span className="text-sm font-bold text-emerald-400">{formatCurrency(report.pricing.buyPrice)}/g</span>
+                  <span className="text-sm font-bold text-emerald-400">{formatCurrency(prix.buyPrice)}/g</span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-slate-800/40 rounded-xl">
                   <span className="text-sm text-slate-400">Prix de vente</span>
-                  <span className="text-sm font-bold text-orange-400">{formatCurrency(report.pricing.sellPrice)}/g</span>
+                  <span className="text-sm font-bold text-orange-400">{formatCurrency(prix.sellPrice)}/g</span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-slate-800/40 rounded-xl">
                   <span className="text-sm text-slate-400">Spread</span>
-                  <span className="text-sm font-bold text-white">{(report.pricing.spread * 100).toFixed(2)}%</span>
+                  <span className="text-sm font-bold text-white">{((prix.spreadBuy + prix.spreadSell) * 100).toFixed(2)}%</span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-slate-800/40 rounded-xl">
                   <span className="text-sm text-slate-400">Source du prix</span>
-                  <span className="text-sm font-bold text-white">{report.pricing.priceSource}</span>
+                  <span className="text-sm font-bold text-white">{prix.source}</span>
                 </div>
                 <div className="flex justify-between items-center p-3 bg-slate-800/40 rounded-xl">
                   <span className="text-sm text-slate-400">Dernière mise à jour</span>
-                  <span className="text-sm font-bold text-white">{formatDate(report.pricing.lastUpdate)}</span>
+                  <span className="text-sm font-bold text-white">{formatDate(prix.timestamp)}</span>
                 </div>
               </div>
             </div>
+            )}
 
             {/* Audit Info */}
             <div className="card">
@@ -425,7 +444,7 @@ export default function ProofOfReserve() {
                   )}
                 </div>
 
-                {report.audit.nextScheduledAudit && (
+                {report.audit.nextAuditDue && (
                   <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
                     <div className="flex items-center gap-3">
                       <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -433,7 +452,7 @@ export default function ProofOfReserve() {
                       </svg>
                       <div>
                         <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Prochain audit prévu</p>
-                        <p className="text-sm font-medium text-blue-400">{formatDate(report.audit.nextScheduledAudit)}</p>
+                        <p className="text-sm font-medium text-blue-400">{formatDate(report.audit.nextAuditDue)}</p>
                       </div>
                     </div>
                   </div>
@@ -442,21 +461,31 @@ export default function ProofOfReserve() {
             </div>
           </div>
 
-          {/* Report Verification */}
+          {/* Vérification.
+              La page affichait un « checksum » qu'aucune route ne produisait. Ce
+              qui est vérifiable existe pourtant déjà : l'empreinte de
+              l'attestation signée, que la page publique /reserve recalcule dans
+              le navigateur. On publie celle-là, ou on dit qu'il n'y en a pas. */}
           <div className="card">
             <h2 className="text-sm font-semibold text-white mb-4">Vérification du Rapport</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-3 bg-slate-800/40 rounded-xl">
                 <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1">Généré le</p>
-                <p className="text-sm font-medium text-white">{formatDate(report.verification.generatedAt)}</p>
+                <p className="text-sm font-medium text-white">{formatDate(report.generatedAt)}</p>
               </div>
               <div className="p-3 bg-slate-800/40 rounded-xl">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1">Généré par</p>
-                <p className="text-sm font-medium text-white">{report.verification.generatedBy}</p>
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1">Attestation</p>
+                <p className="text-sm font-medium text-white">
+                  {report.attestation
+                    ? `nº ${report.attestation.sequence}${report.attestation.signed ? ' (signée)' : ' (non signée)'}`
+                    : 'Aucune émise'}
+                </p>
               </div>
               <div className="p-3 bg-slate-800/40 rounded-xl">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1">Checksum</p>
-                <p className="text-sm font-mono text-slate-400 truncate">{report.verification.checksum}</p>
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1">Empreinte</p>
+                <p className="text-sm font-mono text-slate-400 truncate">
+                  {report.attestation ? report.attestation.digest : '—'}
+                </p>
               </div>
             </div>
           </div>

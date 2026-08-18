@@ -2,6 +2,7 @@ import { Hono, Context, Next } from 'hono';
 import type {
   AdminDashboardData,
   AdminStockData,
+  AdminProofOfReserveData,
   AdminPermissionsData,
 } from '@tnc-trading/shared/contracts';
 import type {
@@ -2012,14 +2013,12 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
 // GET /admin/reports/por - Proof of Reserve (Enhanced)
 admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
   try {
-    // Get gold stock
     const stock = await c.env.DB
-      .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
+      .prepare('SELECT id, total_allocated, tokens_issued, gold_on_loan, last_audit_date, last_audit_result, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    // Get total tokens in circulation
-
-    // Get wallet distribution by tier
+    // La repartition porte bien sur les PORTEFEUILLES : la somme des soldes y est
+    // la bonne mesure, contrairement aux jetons emis (ADR 012).
     const walletDistribution = await c.env.DB
       .prepare(`
         SELECT
@@ -2029,98 +2028,121 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
             WHEN token_balance < 100 THEN 'medium'
             WHEN token_balance < 1000 THEN 'large'
             ELSE 'whale'
-          END as tier,
+          END as range,
           COUNT(*) as count,
-          COALESCE(SUM(token_balance), 0) as total_tokens
+          COALESCE(SUM(token_balance), 0) as totalTokens
         FROM wallets
-        GROUP BY tier
-        ORDER BY total_tokens DESC
+        GROUP BY range
+        ORDER BY totalTokens DESC
       `)
-      .all<{ tier: string; count: number; total_tokens: number }>();
+      .all<{ range: string; count: number; totalTokens: number }>();
 
-    // Get transaction summary (last 30 days)
-    const transactionSummary = await c.env.DB
+    // Les trois fenetres en une passe : trois requetes separees pourraient tomber
+    // de part et d'autre d'une transaction en cours et ne pas se recouper.
+    const fenetres = await c.env.DB
       .prepare(`
         SELECT
+          CASE WHEN created_at > datetime('now', '-1 day') THEN '24h'
+               WHEN created_at > datetime('now', '-7 days') THEN '7d'
+               ELSE '30d' END as fenetre,
           type,
           COUNT(*) as count,
-          COALESCE(SUM(cash_amount), 0) as total_amount,
-          COALESCE(SUM(token_amount), 0) as total_tokens
+          COALESCE(SUM(cash_amount), 0) as volume
         FROM transactions
-        WHERE status = 'COMPLETED' AND created_at > datetime('now', '-30 days')
-        GROUP BY type
+        WHERE status = 'COMPLETED'
+          AND type IN ('BUY', 'SELL')
+          AND created_at > datetime('now', '-30 days')
+        GROUP BY fenetre, type
       `)
-      .all<{ type: string; count: number; total_amount: number; total_tokens: number }>();
+      .all<{ fenetre: string; type: string; count: number; volume: number }>();
 
-    // Get user statistics
-    const userStats = await c.env.DB
-      .prepare(`
-        SELECT
-          kyc_level,
-          COUNT(*) as count
-        FROM users
-        GROUP BY kyc_level
-      `)
-      .all<{ kyc_level: string; count: number }>();
-
-    // Get total users with holdings
     const holdersResult = await c.env.DB
       .prepare('SELECT COUNT(*) as count FROM wallets WHERE token_balance > 0')
       .first<{ count: number }>();
 
-    // Get average holding
     const avgHoldingResult = await c.env.DB
       .prepare('SELECT AVG(token_balance) as avg FROM wallets WHERE token_balance > 0')
       .first<{ avg: number }>();
 
+    const prix = await c.env.DB
+      .prepare('SELECT price_xof, buy_price, sell_price, spread_buy, spread_sell, source, timestamp FROM gold_prices ORDER BY timestamp DESC LIMIT 1')
+      .first<{ price_xof: number; buy_price: number; sell_price: number; spread_buy: number; spread_sell: number; source: string; timestamp: string }>();
+
+    const attestation = await new AttestationService(c.env.DB).getLatest();
+
     const reserve = chiffresReserve(stock);
-    const goldAllocated = reserve.alloueG;
-    const tokensInCirculation = reserve.emisG;
+
+    /**
+     * Les fenetres sont IMBRIQUEES : ce qui est tombe dans « 24h » appartient
+     * aussi aux 7 et 30 jours. Le regroupement SQL les rend disjointes, on les
+     * recompose ici.
+     */
+    const cumul = (...cles: string[]) => {
+      const lignes = (fenetres.results || []).filter((r) => cles.includes(r.fenetre));
+      return {
+        buys: lignes.filter((r) => r.type === 'BUY').reduce((n, r) => n + r.count, 0),
+        sells: lignes.filter((r) => r.type === 'SELL').reduce((n, r) => n + r.count, 0),
+        volumeXof: Math.round(lignes.reduce((n, r) => n + (r.volume || 0), 0)),
+      };
+    };
 
     return c.json({
       success: true,
       data: {
-        reportDate: new Date().toISOString(),
-        reportType: 'PROOF_OF_RESERVE',
-
-        // Core PoR metrics
-        goldAllocated,
-        tokensInCirculation,
-        availableStock: reserve.disponibleG,
-        goldVaulted: reserve.enCoffreG,
-        goldOnLoan: reserve.preteG,
-        fullyVaulted: reserve.entierementEnCoffre,
-        coverageRatio: reserve.couverture,
-        isCovered: reserve.invariantTenu,
-
-        // Audit information
-        lastAuditDate: stock?.last_audit_date,
-        lastAuditResult: stock?.last_audit_result,
-
-        // Wallet distribution
-        walletDistribution: walletDistribution.results || [],
-        totalHolders: holdersResult?.count || 0,
-        averageHolding: avgHoldingResult?.avg || 0,
-
-        // Transaction summary (30 days)
-        transactionSummary: transactionSummary.results || [],
-
-        // User breakdown by KYC level
-        usersByKycLevel: userStats.results || [],
-
-        // Certification status
-        certificationStatus: {
-          isFullyBacked: reserve.invariantTenu,
-          // `null` quand rien n'est emis : le taux est sans objet, et non 100 %.
-          coveragePercentage: reserve.couverture === null
-            ? null
-            : Math.round(reserve.couverture * 10000) / 100,
-          lastVerified: stock?.last_audit_date || null,
+        generatedAt: new Date().toISOString(),
+        goldStock: {
+          totalAllocated: reserve.alloueG,
+          tokensIssued: reserve.emisG,
+          availableStock: reserve.disponibleG,
+          goldVaulted: reserve.enCoffreG,
+          goldOnLoan: reserve.preteG,
+          coverageRatio: reserve.couverture,
+          utilisationRate: reserve.utilisation,
+          isCovered: reserve.invariantTenu,
+          fullyVaulted: reserve.entierementEnCoffre,
+        },
+        tokenHolders: {
+          totalHolders: holdersResult?.count || 0,
+          averageHolding: avgHoldingResult?.avg || 0,
+          distribution: walletDistribution.results || [],
+        },
+        transactions: {
+          last24h: cumul('24h'),
+          last7d: cumul('24h', '7d'),
+          last30d: cumul('24h', '7d', '30d'),
+        },
+        // `null` plutot qu'un prix a zero : aucun releve n'est une information,
+        // un cours nul est un mensonge.
+        pricing: prix
+          ? {
+              priceXof: prix.price_xof,
+              buyPrice: prix.buy_price,
+              sellPrice: prix.sell_price,
+              spreadBuy: prix.spread_buy,
+              spreadSell: prix.spread_sell,
+              source: prix.source,
+              timestamp: prix.timestamp,
+            }
+          : null,
+        audit: {
+          lastAuditDate: stock?.last_audit_date ?? null,
+          lastAuditResult: stock?.last_audit_result ?? null,
           nextAuditDue: stock?.last_audit_date
             ? new Date(new Date(stock.last_audit_date).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
             : null,
         },
-      },
+        // L'empreinte PUBLIEE, celle de l'attestation signee — pas un condense
+        // recalcule pour l'occasion, qui ne prouverait rien de verifiable.
+        attestation: attestation
+          ? {
+              sequence: attestation.sequence,
+              digest: attestation.digest,
+              signedAt: attestation.created_at,
+              signed: attestation.signature !== null,
+              anchorTxHash: attestation.anchor_tx_hash,
+            }
+          : null,
+      } satisfies AdminProofOfReserveData,
       requestId: crypto.randomUUID(),
     });
   } catch (error) {
@@ -2134,984 +2156,6 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
       requestId: crypto.randomUUID(),
     }, 500);
   }
-});
-
-// ============================================
-// RECONCILIATION ENDPOINTS
-// ============================================
-
-// GET /admin/reconciliation/stuck - Get stuck transactions
-admin.get('/reconciliation/stuck', requirePermission('reconciliation', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    // SECURITY: Validate threshold with bounds (1 minute to 24 hours)
-    const thresholdMinutes = Math.max(1, Math.min(1440, parseInt(c.req.query('threshold') || '60', 10) || 60));
-    const reconciliationService = new ReconciliationService(c.env.DB);
-
-    const stuckTransactions = await reconciliationService.getStuckTransactions(thresholdMinutes);
-
-    return c.json({
-      success: true,
-      data: {
-        items: stuckTransactions,
-        total: stuckTransactions.length,
-        thresholdMinutes,
-      } satisfies StuckTransactionsData,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Get stuck transactions error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération des transactions bloquées',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// GET /admin/reconciliation/pending - Get transactions pending reconciliation
-admin.get('/reconciliation/pending', requirePermission('reconciliation', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const reconciliationService = new ReconciliationService(c.env.DB);
-    const pendingTransactions = await reconciliationService.getPendingReconciliation();
-
-    return c.json({
-      success: true,
-      data: {
-        items: pendingTransactions,
-        total: pendingTransactions.length,
-      } satisfies PendingReconciliationData,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Get pending reconciliation error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération des transactions en attente',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// POST /admin/reconciliation/transaction/:id - Reconcile a transaction
-admin.post('/reconciliation/transaction/:id', requirePermission('reconciliation', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    const body = await c.req.json();
-    const { action, externalReference, reason } = body;
-
-    if (!action || !['complete', 'fail', 'cancel'].includes(action)) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_ACTION',
-          message: 'Action invalide (complete, fail, cancel)',
-        },
-        requestId,
-      }, 400);
-    }
-
-    const notificationService = new NotificationService(c.env.DB, {
-      resendApiKey: c.env.RESEND_API_KEY,
-      sendgridApiKey: c.env.SENDGRID_API_KEY,
-      twilioAccountSid: c.env.TWILIO_ACCOUNT_SID,
-      twilioAuthToken: c.env.TWILIO_AUTH_TOKEN,
-      twilioPhoneNumber: c.env.TWILIO_PHONE_NUMBER,
-    });
-
-    const reconciliationService = new ReconciliationService(c.env.DB, notificationService);
-    const result = await reconciliationService.reconcileTransaction(
-      id,
-      action,
-      externalReference,
-      reason,
-      c.get('adminId')
-    );
-
-    if (!result.reconciled) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'RECONCILIATION_FAILED',
-          message: result.message,
-        },
-        requestId,
-      }, 400);
-    }
-
-    return c.json({
-      success: true,
-      data: result,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Reconcile transaction error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la réconciliation',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// GET /admin/reconciliation/report - Generate reconciliation report
-admin.get('/reconciliation/report', requirePermission('reconciliation', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const periodStart = c.req.query('start') || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const periodEnd = c.req.query('end') || new Date().toISOString();
-
-    const reconciliationService = new ReconciliationService(c.env.DB);
-    const report: ReconciliationReportData = await reconciliationService.generateReport(periodStart, periodEnd);
-
-    return c.json({
-      success: true,
-      data: report,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Generate reconciliation report error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la génération du rapport',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// GET /admin/reconciliation/discrepancies - Check wallet balance discrepancies
-admin.get('/reconciliation/discrepancies', requirePermission('reconciliation', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const reconciliationService = new ReconciliationService(c.env.DB);
-    const discrepancies = await reconciliationService.checkWalletDiscrepancies();
-
-    return c.json({
-      success: true,
-      data: {
-        items: discrepancies,
-        total: discrepancies.length,
-        hasDiscrepancies: discrepancies.length > 0,
-      } satisfies WalletDiscrepanciesData,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Check discrepancies error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la vérification des écarts',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// GET /admin/reconciliation/daily - Get daily transaction summary
-admin.get('/reconciliation/daily', requirePermission('reconciliation', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const reconciliationService = new ReconciliationService(c.env.DB);
-    const summary = await reconciliationService.getDailySummary();
-
-    return c.json({
-      success: true,
-      data: summary,
-      requestId,
-    });
-  } catch (error) {
-    console.error('Get daily summary error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération du résumé journalier',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// POST /admin/reconciliation/bulk - Bulk reconcile multiple transactions
-admin.post('/reconciliation/bulk', requirePermission('reconciliation', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const body = await c.req.json();
-    const { transactions } = body;
-
-    if (!Array.isArray(transactions) || transactions.length === 0) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_INPUT',
-          message: 'Liste de transactions requise',
-        },
-        requestId,
-      }, 400);
-    }
-
-    if (transactions.length > 50) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'TOO_MANY_TRANSACTIONS',
-          message: 'Maximum 50 transactions par requête',
-        },
-        requestId,
-      }, 400);
-    }
-
-    const notificationService = new NotificationService(c.env.DB, {
-      resendApiKey: c.env.RESEND_API_KEY,
-      sendgridApiKey: c.env.SENDGRID_API_KEY,
-      twilioAccountSid: c.env.TWILIO_ACCOUNT_SID,
-      twilioAuthToken: c.env.TWILIO_AUTH_TOKEN,
-      twilioPhoneNumber: c.env.TWILIO_PHONE_NUMBER,
-    });
-
-    const reconciliationService = new ReconciliationService(c.env.DB, notificationService);
-    const results: any[] = [];
-
-    for (const tx of transactions) {
-      if (!tx.id || !tx.action) {
-        results.push({
-          transactionId: tx.id || 'unknown',
-          reconciled: false,
-          message: 'ID et action requis',
-        });
-        continue;
-      }
-
-      const result = await reconciliationService.reconcileTransaction(
-        tx.id,
-        tx.action,
-        tx.externalReference,
-        tx.reason,
-        c.get('adminId')
-      );
-
-      results.push(result);
-    }
-
-    const successCount = results.filter(r => r.reconciled).length;
-    const failCount = results.filter(r => !r.reconciled).length;
-
-    return c.json({
-      success: true,
-      data: {
-        results,
-        summary: {
-          total: results.length,
-          succeeded: successCount,
-          failed: failCount,
-        },
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Bulk reconciliation error:', error);
-    return c.json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la réconciliation en masse',
-      },
-      requestId,
-    }, 500);
-  }
-});
-
-// ============================================
-// ADMIN PERMISSIONS (current admin)
-// ============================================
-
-// GET /admin/me/permissions - Get current admin's resolved permissions
-admin.get('/me/permissions', async (c) => {
-  const requestId = crypto.randomUUID();
-  try {
-    const adminId = c.get('adminId' as never) as string;
-    const adminRole = c.get('adminRole' as never) as string;
-    const permissions = await resolvePermissions(c.env.DB, adminId, adminRole);
-    return c.json({ success: true, data: { permissions } satisfies AdminPermissionsData, requestId });
-  } catch (error) {
-    console.error('Get permissions error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// ============================================
-// ADMIN MANAGEMENT ENDPOINTS
-// ============================================
-
-// GET /admin/admins - List all admins
-admin.get('/admins', requirePermission('admins', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  try {
-    const admins = await c.env.DB
-      .prepare('SELECT id, email, name, role, active, last_login_at, created_at FROM admins ORDER BY created_at DESC')
-      .all<any>();
-
-    return c.json({
-      success: true,
-      data: {
-        items: (admins.results || []).map((a: any) => ({
-          id: a.id,
-          email: a.email,
-          name: a.name,
-          role: a.role,
-          active: Boolean(a.active),
-          lastLoginAt: a.last_login_at,
-          createdAt: a.created_at,
-        })),
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('List admins error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// GET /admin/admins/:id - Get admin detail
-admin.get('/admins/:id', requirePermission('admins', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    const adminUser = await c.env.DB
-      .prepare('SELECT id, email, name, role, active, last_login_at, created_at FROM admins WHERE id = ?')
-      .bind(id)
-      .first<any>();
-
-    if (!adminUser) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin non trouvé' }, requestId }, 404);
-    }
-
-    // Get permission overrides
-    const overrides = await c.env.DB
-      .prepare('SELECT module, action, granted FROM admin_permissions WHERE admin_id = ?')
-      .bind(id)
-      .all<{ module: string; action: string; granted: number }>();
-
-    // Resolve effective permissions
-    const permissions = await resolvePermissions(c.env.DB, id, adminUser.role);
-
-    return c.json({
-      success: true,
-      data: {
-        id: adminUser.id,
-        email: adminUser.email,
-        name: adminUser.name,
-        role: adminUser.role,
-        active: Boolean(adminUser.active),
-        lastLoginAt: adminUser.last_login_at,
-        createdAt: adminUser.created_at,
-        permissions,
-        overrides: (overrides.results || []).map((o) => ({
-          module: o.module,
-          action: o.action,
-          granted: Boolean(o.granted),
-        })),
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Admin detail error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// POST /admin/admins - Create a new admin
-admin.post('/admins', requirePermission('admins', 'create'), async (c) => {
-  const requestId = crypto.randomUUID();
-
-  try {
-    const body = await c.req.json();
-    const { email, name, password, role } = body;
-
-    if (!email || !password || !role) {
-      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Email, mot de passe et rôle requis' }, requestId }, 400);
-    }
-
-    if (!ASSIGNABLE_ADMIN_ROLES.includes(role)) {
-      return c.json({ success: false, error: { code: 'INVALID_ROLE', message: `Rôle invalide. Valeurs: ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` }, requestId }, 400);
-    }
-
-    // Check duplicate
-    const existing = await c.env.DB.prepare('SELECT id FROM admins WHERE email = ?').bind(email).first();
-    if (existing) {
-      return c.json({ success: false, error: { code: 'DUPLICATE_EMAIL', message: 'Cet email est déjà utilisé' }, requestId }, 409);
-    }
-
-    const authService = new AuthService(c.env.JWT_SECRET);
-    const passwordHash = await authService.hashPassword(password);
-    const id = crypto.randomUUID();
-
-    await c.env.DB
-      .prepare('INSERT INTO admins (id, email, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, datetime(\'now\'))')
-      .bind(id, email, name || email.split('@')[0], passwordHash, role)
-      .run();
-
-    // Audit log
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, \'ADMIN_CREATE\', \'admin\', ?, ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify({ email, role }))
-      .run();
-
-    return c.json({
-      success: true,
-      data: { id, email, name: name || email.split('@')[0], role },
-      requestId,
-    }, 201);
-  } catch (error) {
-    console.error('Create admin error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// PATCH /admin/admins/:id - Update an admin (role, active, name)
-admin.patch('/admins/:id', requirePermission('admins', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    const body = await c.req.json();
-    const { role, active, name } = body;
-
-    const adminUser = await c.env.DB.prepare('SELECT id, email, name, role, password_hash, two_factor_enabled, two_factor_secret, active, last_login_at, created_at, updated_at FROM admins WHERE id = ?').bind(id).first<any>();
-    if (!adminUser) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin non trouvé' }, requestId }, 404);
-    }
-
-    const updates: string[] = [];
-    const params: any[] = [];
-
-    if (role !== undefined) {
-      if (!ASSIGNABLE_ADMIN_ROLES.includes(role)) {
-        return c.json({ success: false, error: { code: 'INVALID_ROLE', message: 'Rôle invalide' }, requestId }, 400);
-      }
-      updates.push('role = ?');
-      params.push(role);
-    }
-    if (active !== undefined) {
-      updates.push('active = ?');
-      params.push(active ? 1 : 0);
-    }
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-
-    if (updates.length === 0) {
-      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Aucune modification' }, requestId }, 400);
-    }
-
-    params.push(id);
-    await c.env.DB
-      .prepare(`UPDATE admins SET ${updates.join(', ')} WHERE id = ?`)
-      .bind(...params)
-      .run();
-
-    // Audit
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at) VALUES (?, ?, \'ADMIN_UPDATE\', \'admin\', ?, ?, ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify({ role: adminUser.role, active: adminUser.active, name: adminUser.name }), JSON.stringify(body))
-      .run();
-
-    return c.json({ success: true, data: { message: 'Admin mis à jour' }, requestId });
-  } catch (error) {
-    console.error('Update admin error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// DELETE /admin/admins/:id - Deactivate an admin
-admin.delete('/admins/:id', requirePermission('admins', 'delete'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    // Prevent self-deactivation
-    if (id === (c.get('adminId' as never) as string)) {
-      return c.json({ success: false, error: { code: 'SELF_DELETE', message: 'Impossible de se désactiver soi-même' }, requestId }, 400);
-    }
-
-    await c.env.DB.prepare('UPDATE admins SET active = 0 WHERE id = ?').bind(id).run();
-
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, created_at) VALUES (?, ?, \'ADMIN_DELETE\', \'admin\', ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId' as never), id)
-      .run();
-
-    return c.json({ success: true, data: { message: 'Admin désactivé' }, requestId });
-  } catch (error) {
-    console.error('Delete admin error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// GET /admin/admins/:id/permissions - Get admin permission overrides
-admin.get('/admins/:id/permissions', requirePermission('admins', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    const overrides = await c.env.DB
-      .prepare('SELECT module, action, granted FROM admin_permissions WHERE admin_id = ?')
-      .bind(id)
-      .all<{ module: string; action: string; granted: number }>();
-
-    return c.json({
-      success: true,
-      data: {
-        overrides: (overrides.results || []).map((o) => ({
-          module: o.module,
-          action: o.action,
-          granted: Boolean(o.granted),
-        })),
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Get permissions error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// PUT /admin/admins/:id/permissions - Replace all permission overrides for an admin
-admin.put('/admins/:id/permissions', requirePermission('admins', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { id } = c.req.param();
-
-  try {
-    const body = await c.req.json();
-    const { overrides } = body; // Array of { module, action, granted }
-
-    if (!Array.isArray(overrides)) {
-      return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'overrides doit être un tableau' }, requestId }, 400);
-    }
-
-    // Delete existing overrides
-    await c.env.DB.prepare('DELETE FROM admin_permissions WHERE admin_id = ?').bind(id).run();
-
-    // Insert new overrides
-    for (const o of overrides) {
-      if (!o.module || !o.action || typeof o.granted !== 'boolean') continue;
-      await c.env.DB
-        .prepare('INSERT INTO admin_permissions (id, admin_id, module, action, granted, created_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))')
-        .bind(crypto.randomUUID(), id, o.module, o.action, o.granted ? 1 : 0)
-        .run();
-    }
-
-    // Audit
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, \'PERMISSION_UPDATE\', \'admin\', ?, ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId' as never), id, JSON.stringify(overrides))
-      .run();
-
-    return c.json({ success: true, data: { message: 'Permissions mises à jour' }, requestId });
-  } catch (error) {
-    console.error('Update permissions error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// ============================================
-// INTEGRATIONS ENDPOINTS
-// ============================================
-
-// GET /admin/integrations - List all integrations
-admin.get('/integrations', requirePermission('integrations', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  try {
-    const integrations = await c.env.DB
-      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations ORDER BY category, display_name')
-      .all<any>();
-
-    const items = (integrations.results || []).map((i: any) => ({
-      id: i.id,
-      provider: i.provider,
-      displayName: i.display_name,
-      category: i.category,
-      enabled: Boolean(i.enabled),
-      config: JSON.parse(i.config || '{}'),
-      lastTestedAt: i.last_tested_at,
-      lastTestResult: i.last_test_result,
-      updatedAt: i.updated_at,
-    }));
-
-    return c.json({ success: true, data: { items }, requestId });
-  } catch (error) {
-    console.error('List integrations error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// GET /admin/integrations/:provider - Get integration detail
-admin.get('/integrations/:provider', requirePermission('integrations', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { provider } = c.req.param();
-
-  try {
-    const integration = await c.env.DB
-      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
-      .bind(provider)
-      .first<any>();
-
-    if (!integration) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
-    }
-
-    // Map provider to env var names (for display — do NOT expose values)
-    const secretEnvVars: Record<string, string[]> = {
-      orange_money: ['ORANGE_MONEY_API_KEY', 'ORANGE_MONEY_MERCHANT_ID'],
-      moov_money: ['MOOV_MONEY_API_KEY', 'MOOV_MERCHANT_ID'],
-      cinetpay: ['CINETPAY_API_KEY', 'CINETPAY_SITE_ID'],
-      stripe: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
-      twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'],
-      resend: ['RESEND_API_KEY'],
-      sendgrid: ['SENDGRID_API_KEY'],
-      fcm: ['FCM_SERVICE_ACCOUNT'],
-      smile_identity: ['SMILE_IDENTITY_API_KEY', 'SMILE_IDENTITY_PARTNER_ID'],
-      gold_api: ['GOLD_API_KEY'],
-    };
-
-    // Check which secrets are configured (non-empty in env)
-    const envVars = secretEnvVars[provider] || [];
-    const secretsStatus: Record<string, boolean> = {};
-    for (const key of envVars) {
-      secretsStatus[key] = Boolean((c.env as any)[key]);
-    }
-
-    return c.json({
-      success: true,
-      data: {
-        id: integration.id,
-        provider: integration.provider,
-        displayName: integration.display_name,
-        category: integration.category,
-        enabled: Boolean(integration.enabled),
-        config: JSON.parse(integration.config || '{}'),
-        lastTestedAt: integration.last_tested_at,
-        lastTestResult: integration.last_test_result,
-        updatedAt: integration.updated_at,
-        secretsStatus,
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Integration detail error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// PATCH /admin/integrations/:provider - Update integration config + enabled
-admin.patch('/integrations/:provider', requirePermission('integrations', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { provider } = c.req.param();
-
-  try {
-    const body = await c.req.json();
-    const { enabled, config } = body;
-
-    const integration = await c.env.DB
-      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
-      .bind(provider)
-      .first<any>();
-
-    if (!integration) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
-    }
-
-    const updates: string[] = [];
-    const params: any[] = [];
-
-    if (enabled !== undefined) {
-      updates.push('enabled = ?');
-      params.push(enabled ? 1 : 0);
-    }
-    if (config !== undefined) {
-      updates.push('config = ?');
-      params.push(JSON.stringify(config));
-    }
-
-    updates.push('updated_at = datetime(\'now\')');
-    updates.push('updated_by = ?');
-    params.push(c.get('adminId' as never));
-    params.push(provider);
-
-    await c.env.DB
-      .prepare(`UPDATE integrations SET ${updates.join(', ')} WHERE provider = ?`)
-      .bind(...params)
-      .run();
-
-    // Audit
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at) VALUES (?, ?, \'INTEGRATION_UPDATE\', \'integration\', ?, ?, ?, datetime(\'now\'))')
-      .bind(
-        crypto.randomUUID(),
-        c.get('adminId' as never),
-        provider,
-        JSON.stringify({ enabled: Boolean(integration.enabled), config: JSON.parse(integration.config || '{}') }),
-        JSON.stringify(body)
-      )
-      .run();
-
-    return c.json({ success: true, data: { message: 'Intégration mise à jour' }, requestId });
-  } catch (error) {
-    console.error('Update integration error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// POST /admin/integrations/:provider/test - Test integration connection
-admin.post('/integrations/:provider/test', requirePermission('integrations', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  const { provider } = c.req.param();
-
-  try {
-    const integration = await c.env.DB
-      .prepare('SELECT id, provider, display_name, category, enabled, config, last_tested_at, last_test_result, updated_at, updated_by FROM integrations WHERE provider = ?')
-      .bind(provider)
-      .first<any>();
-
-    if (!integration) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Intégration non trouvée' }, requestId }, 404);
-    }
-
-    let testResult: { success: boolean; message: string } = { success: false, message: 'Test non implémenté pour ce provider' };
-
-    // Provider-specific connection tests
-    switch (provider) {
-      case 'stripe': {
-        const key = c.env.STRIPE_SECRET_KEY;
-        if (!key) { testResult = { success: false, message: 'STRIPE_SECRET_KEY non configurée' }; break; }
-        try {
-          const res = await fetch('https://api.stripe.com/v1/balance', {
-            headers: { Authorization: `Bearer ${key}` },
-          });
-          testResult = res.ok
-            ? { success: true, message: 'Connexion Stripe OK' }
-            : { success: false, message: `Stripe erreur: ${res.status}` };
-        } catch (e: any) {
-          testResult = { success: false, message: `Stripe: ${e.message}` };
-        }
-        break;
-      }
-      case 'gold_api': {
-        const key = c.env.GOLD_API_KEY;
-        if (!key) { testResult = { success: false, message: 'GOLD_API_KEY non configurée' }; break; }
-        try {
-          const res = await fetch('https://www.goldapi.io/api/XAU/USD', {
-            headers: { 'x-access-token': key },
-          });
-          testResult = res.ok
-            ? { success: true, message: 'Connexion GoldAPI OK' }
-            : { success: false, message: `GoldAPI erreur: ${res.status}` };
-        } catch (e: any) {
-          testResult = { success: false, message: `GoldAPI: ${e.message}` };
-        }
-        break;
-      }
-      case 'resend': {
-        const key = c.env.RESEND_API_KEY;
-        if (!key) { testResult = { success: false, message: 'RESEND_API_KEY non configurée' }; break; }
-        try {
-          const res = await fetch('https://api.resend.com/api-keys', {
-            headers: { Authorization: `Bearer ${key}` },
-          });
-          testResult = res.ok
-            ? { success: true, message: 'Connexion Resend OK' }
-            : { success: false, message: `Resend erreur: ${res.status}` };
-        } catch (e: any) {
-          testResult = { success: false, message: `Resend: ${e.message}` };
-        }
-        break;
-      }
-      case 'twilio': {
-        const sid = c.env.TWILIO_ACCOUNT_SID;
-        const token = c.env.TWILIO_AUTH_TOKEN;
-        if (!sid || !token) { testResult = { success: false, message: 'TWILIO credentials non configurées' }; break; }
-        try {
-          const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}.json`, {
-            headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}` },
-          });
-          testResult = res.ok
-            ? { success: true, message: 'Connexion Twilio OK' }
-            : { success: false, message: `Twilio erreur: ${res.status}` };
-        } catch (e: any) {
-          testResult = { success: false, message: `Twilio: ${e.message}` };
-        }
-        break;
-      }
-      case 'sendgrid': {
-        const key = c.env.SENDGRID_API_KEY;
-        if (!key) { testResult = { success: false, message: 'SENDGRID_API_KEY non configurée' }; break; }
-        try {
-          const res = await fetch('https://api.sendgrid.com/v3/scopes', {
-            headers: { Authorization: `Bearer ${key}` },
-          });
-          testResult = res.ok
-            ? { success: true, message: 'Connexion SendGrid OK' }
-            : { success: false, message: `SendGrid erreur: ${res.status}` };
-        } catch (e: any) {
-          testResult = { success: false, message: `SendGrid: ${e.message}` };
-        }
-        break;
-      }
-      default: {
-        // For providers without a test endpoint, check if required config fields are non-empty
-        const config = JSON.parse(integration.config || '{}');
-        const hasConfig = Object.values(config).some((v: any) => v && String(v).length > 0);
-        testResult = hasConfig
-          ? { success: true, message: 'Configuration présente (test de connexion non disponible)' }
-          : { success: false, message: 'Configuration vide' };
-      }
-    }
-
-    // Update test result in DB
-    await c.env.DB
-      .prepare('UPDATE integrations SET last_tested_at = datetime(\'now\'), last_test_result = ? WHERE provider = ?')
-      .bind(testResult.success ? 'success' : 'error', provider)
-      .run();
-
-    return c.json({
-      success: true,
-      data: {
-        provider,
-        testResult: testResult.success ? 'success' : 'error',
-        message: testResult.message,
-        testedAt: new Date().toISOString(),
-      },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Test integration error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// ============================================
-// CONFIG MANAGEMENT
-// ============================================
-
-// GET /admin/config - List all platform configuration
-admin.get('/config', requirePermission('integrations', 'view'), async (c) => {
-  const requestId = crypto.randomUUID();
-  try {
-    const configService = new ConfigService(c.env.DB, c.env.CACHE);
-    const items = await configService.getAll();
-
-    return c.json({
-      success: true,
-      data: { items },
-      requestId,
-    });
-  } catch (error) {
-    console.error('List config error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// PATCH /admin/config/:key - Update a config value
-admin.patch('/config/:key', requirePermission('integrations', 'update'), async (c) => {
-  const requestId = crypto.randomUUID();
-  try {
-    const key = c.req.param('key');
-    const body = await c.req.json<{ value: string }>();
-
-    if (!body.value && body.value !== '0' && body.value !== '') {
-      return c.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Le champ value est requis' }, requestId }, 400);
-    }
-
-    const configService = new ConfigService(c.env.DB, c.env.CACHE);
-
-    // Verify the key exists
-    const existing = await c.env.DB
-      .prepare('SELECT key FROM config WHERE key = ?')
-      .bind(key)
-      .first();
-
-    if (!existing) {
-      return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Clé de configuration non trouvée' }, requestId }, 404);
-    }
-
-    const adminId = c.get('adminId' as never) as string;
-    await configService.set(key, String(body.value), undefined, adminId);
-
-    // Audit log
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, ip_address, created_at)
-         VALUES (?, ?, 'CONFIG_UPDATE', 'config', ?, ?, ?, datetime('now'))`
-      ).bind(
-        crypto.randomUUID(),
-        adminId,
-        key,
-        JSON.stringify({ key, value: body.value }),
-        c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
-      ).run();
-    } catch { /* non-blocking */ }
-
-    return c.json({
-      success: true,
-      data: { key, value: body.value },
-      requestId,
-    });
-  } catch (error) {
-    console.error('Update config error:', error);
-    return c.json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Erreur' }, requestId }, 500);
-  }
-});
-
-// ============================================
-// ANALYTICS ROUTES
-// ============================================
-admin.route('/analytics', analyticsRoutes);
-
-// PATCH /admin/users/:id/role — designate a user as producer (or back to investor)
-admin.patch('/users/:id/role', requirePermission('users', 'update'), async (c) => {
-  const { id } = c.req.param();
-  const requestId = crypto.randomUUID();
-  const body = await c.req.json().catch(() => ({}));
-  const role = body?.role;
-  if (role !== 'producer' && role !== 'investor') {
-    return c.json({ success: false, error: { code: 'INVALID_ROLE', message: "Rôle invalide (producer|investor)" }, requestId }, 400);
-  }
-  const res = await c.env.DB
-    .prepare("UPDATE users SET role = ?, updated_at = datetime('now') WHERE id = ?")
-    .bind(role, id)
-    .run();
-  if (res.meta.changes === 0) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Utilisateur non trouvé' }, requestId }, 404);
-  }
-  await c.env.DB
-    .prepare(`INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, 'USER_ROLE_UPDATED', 'user', ?, ?, datetime('now'))`)
-    .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ role }))
-    .run();
-  return c.json({ success: true, data: { id, role }, requestId });
 });
 
 // GET /admin/reports/por.pdf — the same Proof of Reserve, as a document
@@ -3129,8 +2173,9 @@ admin.get('/reports/por.pdf', requirePermission('stock', 'view'), async (c) => {
     }, 404);
   }
 
-  const onLoan = stock.gold_on_loan ?? 0;
-  const vaulted = stock.total_allocated - onLoan;
+  // Meme source que la route JSON et que le portail Etat (ADR 012) : le PDF
+  // recalculait sa propre version de « en coffre » et de l'invariant.
+  const reserve = chiffresReserve(stock);
   const g = (n: number) => `${n.toFixed(3)} g`;
 
   const loans = await c.env.DB
@@ -3154,19 +2199,19 @@ admin.get('/reports/por.pdf', requirePermission('stock', 'view'), async (c) => {
     {
       type: 'keyValue',
       rows: [
-        ['Or alloué', g(stock.total_allocated)],
-        ['Tokens en circulation', g(stock.tokens_issued)],
-        ['Dont or en coffre', g(vaulted)],
-        ['Dont or prêté', g(onLoan)],
-        ['Tokens émis <= or alloué', stock.tokens_issued <= stock.total_allocated ? 'Oui' : 'NON'],
-        ['Tokens émis <= or en coffre', stock.tokens_issued <= vaulted ? 'Oui' : 'Non'],
+        ['Or alloué', g(reserve.alloueG)],
+        ['Tokens en circulation', g(reserve.emisG)],
+        ['Dont or en coffre', g(reserve.enCoffreG)],
+        ['Dont or prêté', g(reserve.preteG)],
+        ['Tokens émis <= or alloué', reserve.invariantTenu ? 'Oui' : 'NON'],
+        ['Tokens émis <= or en coffre', reserve.entierementEnCoffre ? 'Oui' : 'Non'],
         ['Dernier audit physique', stock.last_audit_date || 'Non renseigné'],
       ],
     },
   ];
 
   // The distinction that a reader must not miss: lent gold is owed, not held.
-  if (onLoan > 0) {
+  if (reserve.preteG > 0) {
     blocks.push({
       type: 'note',
       text:

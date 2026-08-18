@@ -10,6 +10,7 @@ import type {
   AnalyticsHistoryData,
   AdminPermissionsData,
   AdminStockData,
+  AdminProofOfReserveData,
   BulkKycApproveData,
   BulkReconcileData,
   SuspendedUsersData,
@@ -902,54 +903,19 @@ class AdminApiClient {
     }>(`/api/v1/admin/analytics/users?period=${period}`, { token });
   }
 
-  // Proof of Reserve Report
+  /**
+   * Preuve de reserve.
+   *
+   * La forme etait declaree ICI, en type inline — `goldStock`, `tokenHolders`,
+   * `transactions`, `pricing`, `audit`, `verification` — et la route en emettait
+   * une autre, plate. Aucune de ces six cles n'existait dans la reponse :
+   * `report.goldStock.isCovered` levait une TypeError des que la requete
+   * aboutissait. Un type declare cote client ne verifie rien.
+   *
+   * Le contrat est desormais partage, et la route l'epingle par `satisfies`.
+   */
   async getProofOfReserve(token?: string) {
-    return this.request<{
-      reportDate: string;
-      reportType: string;
-      version: string;
-      goldStock: {
-        totalAllocated: number;
-        tokensIssued: number;
-        availableStock: number;
-        coverage: number;
-        coveragePercent: string;
-        isCovered: boolean;
-      };
-      tokenHolders: {
-        totalHolders: number;
-        totalTokensHeld: number;
-        averageHolding: number;
-        distribution: Array<{
-          range: string;
-          count: number;
-          totalTokens: number;
-        }>;
-      };
-      transactions: {
-        last24h: { buys: number; sells: number; volume: number };
-        last7d: { buys: number; sells: number; volume: number };
-        last30d: { buys: number; sells: number; volume: number };
-      };
-      pricing: {
-        currentPrice: number;
-        priceSource: string;
-        lastUpdate: string;
-        buyPrice: number;
-        sellPrice: number;
-        spread: number;
-      };
-      audit: {
-        lastAuditDate: string | null;
-        lastAuditResult: string | null;
-        nextScheduledAudit: string | null;
-      };
-      verification: {
-        generatedBy: string;
-        generatedAt: string;
-        checksum: string;
-      };
-    }>('/api/v1/admin/reports/por', { token });
+    return this.request<AdminProofOfReserveData>('/api/v1/admin/reports/por', { token });
   }
 
   async setUserRole(userId: string, role: 'producer' | 'investor') {
