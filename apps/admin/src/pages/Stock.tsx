@@ -34,8 +34,15 @@ export default function Stock() {
   const stock = data?.data;
   const price = priceData?.data;
   const stockValue = (stock?.totalAllocated || 0) * (price?.priceXof || 0);
-  const coveragePercent = ((stock?.coverage || 0) * 100).toFixed(1);
-  const isCovered = (stock?.coverage || 0) >= 1;
+  // Taux d'UTILISATION (emis / alloue), pas un ratio de couverture. L'ecran
+  // testait `coverage >= 1` sur ce nombre : l'invariant le maintenant sous 1,
+  // il affichait « couverture insuffisante » en permanence, et ne serait passe
+  // au vert qu'a 100 % — c'est-a-dire quand il ne reste plus un gramme
+  // disponible, soit le moment le plus tendu (ADR 012 § 3).
+  const utilisationPercent = stock?.utilisationRate != null
+    ? (stock.utilisationRate * 100).toFixed(1)
+    : null;
+  const stockEpuise = (stock?.availableStock ?? 0) <= 0;
 
   return (
     <div className="space-y-6">
@@ -118,24 +125,28 @@ export default function Stock() {
 
             <div className="card">
               <div className="flex items-center gap-3 mb-3">
-                <div className={`stat-icon ${isCovered ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
-                  <svg className={`w-5 h-5 ${isCovered ? 'text-emerald-400' : 'text-red-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className={`stat-icon ${stockEpuise ? 'bg-red-500/15' : 'bg-emerald-500/15'}`}>
+                  <svg className={`w-5 h-5 ${stockEpuise ? 'text-red-400' : 'text-emerald-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
                 </div>
-                <p className="stat-label">Couverture</p>
+                <p className="stat-label">Allocation engagée</p>
               </div>
-              <p className={`text-3xl font-bold tracking-tight ${isCovered ? 'text-emerald-400' : 'text-red-400'}`}>
-                {coveragePercent}%
+              <p className={`text-3xl font-bold tracking-tight ${stockEpuise ? 'text-red-400' : 'text-emerald-400'}`}>
+                {utilisationPercent != null ? `${utilisationPercent}%` : '—'}
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                {isCovered ? 'Couverture complète' : 'Couverture insuffisante'}
+                {utilisationPercent == null
+                  ? 'Aucune allocation'
+                  : stockEpuise
+                    ? 'Allocation entièrement engagée'
+                    : `${(stock?.availableStock || 0).toFixed(3)} g encore émettables`}
               </p>
             </div>
           </div>
 
-          {/* Coverage Warning */}
-          {!isCovered && (
+          {/* Plus rien a emettre */}
+          {stockEpuise && (
             <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center flex-shrink-0">
@@ -144,9 +155,9 @@ export default function Stock() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-semibold text-sm text-red-400">Alerte de couverture</p>
+                  <p className="font-semibold text-sm text-red-400">Stock épuisé</p>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Le stock d'or physique ne couvre pas 100% des tokens émis. Ajoutez du stock ou limitez les ventes.
+                    Toute l'allocation est engagée : plus aucun token ne peut être émis. Ajoutez du stock pour rouvrir les achats.
                   </p>
                 </div>
               </div>

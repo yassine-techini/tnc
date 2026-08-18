@@ -19,8 +19,8 @@ trompeur. Chaque entrée porte un statut :
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
 **Volumétrie** : 14 modules API, 30 services métier, **31 migrations**, 11 jobs planifiés,
-4 Durable Objects, 5 applications front, **1 293 tests automatisés** (762 API, 314 `shared`,
-63 back-office, 61 mobile, 60 web, 33 portail État).
+4 Durable Objects, 5 applications front, **1 320 tests automatisés** (788 API, 314 `shared`,
+63 back-office, 61 mobile, 60 web, 34 portail État).
 
 **Tous s'exécutent.** Les 26 tests d'`auth.service.test.ts` étaient jusqu'ici absents du
 décompte : `argon2-browser` faisait tomber le worker vitest sous Node ≥ 18, et un fichier
@@ -105,10 +105,10 @@ fournit désormais le wasm à la bibliothèque, et les tests s'exécutent contre
 
 | Fonctionnalité | Statut | Détail |
 |---|---|---|
-| Rapport Proof of Reserve | ✅ | Statut dérivé de la couverture réelle |
+| Rapport Proof of Reserve | ⚠️ | Chiffres corrigés : « jetons émis » vient de `tokens_issued`, plus de la somme des portefeuilles — qui en excluait l'or placé en location et surévaluait la couverture d'autant ([ADR 012](adr/012-un-seul-vocabulaire-pour-la-reserve.md)). **L'écran back-office reste inutilisable** : il lit une forme imbriquée que la route n'émet pas (constat X) |
 | Export du rapport | ✅ | JSON **et PDF** (`GET /admin/reports/por.pdf`), générateur sans dépendance. Le PDF porte la divulgation du prêt et renvoie à l'attestation vérifiable |
 | **Attestations signées et chaînées** | ⚙️ | Pipeline vérifié de bout en bout avec une vraie clé ES256. Inertes sans `ATTESTATION_SIGNING_JWK` et sans le cron `30 0 * * *` |
-| **Divulgation or en coffre / or prêté** | ✅ | La location étant financée par le prêt de l'or, l'attestation distingue `vaultedG` de `onLoanG`, expose `fullyVaulted` et **nomme les contreparties** |
+| **Divulgation or en coffre / or prêté** | ✅ | La location étant financée par le prêt de l'or, l'attestation distingue `vaultedG` de `onLoanG`, expose `fullyVaulted` et **nomme les contreparties**. Le tableau de bord État répondait à la même question par « aucun gramme n'est prêté » et contredisait l'attestation signée ; il suit désormais sa définition |
 | Vérification publique indépendante | ✅ | Page `/reserve` : SHA-256 et signature ECDSA recalculés **dans le navigateur** |
 | **Ancrage sur chaîne publique** | ⚙️ | Implémenté ([ADR 003](adr/003-ancrage-attestations.md)) : empreinte en calldata, sans smart contract. Testnet par défaut, mainnet sur opt-in explicite. Inerte sans `ANCHOR_RPC_URL` / `ANCHOR_PRIVATE_KEY` |
 

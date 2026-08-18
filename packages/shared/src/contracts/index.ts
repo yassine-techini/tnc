@@ -40,14 +40,19 @@
 /** `GET /api/v1/state/dashboard` */
 export interface StateDashboardData {
   totalUsers: number;
-  totalTokens: number;
+  /**
+   * `gold_stock.tokens_issued`. S'appelait `totalTokens` et portait la SOMME DES
+   * PORTEFEUILLES, que le portail etiquetait deja « Tokens Emis » — soit les
+   * jetons emis moins ceux places en location (ADR 012).
+   */
+  tokensIssued: number;
   totalVolume: number;
   goldAllocated: number;
   /** Or prêté, donc absent du coffre. Divulgué ici comme sur /reserve. */
   goldOnLoan: number;
   goldVaulted: number;
   fullyVaulted: boolean;
-  coverageRatio: number;
+  coverageRatio: number | null;
   monthlyVolume: number;
   lastUpdate: string;
 }
@@ -62,7 +67,7 @@ export interface StateStockData {
   fullyVaulted: boolean;
   /** Avertissement en clair sur le prêt — affiché tel quel, jamais reformulé. */
   lendingNotice: string;
-  coverageRatio: number;
+  coverageRatio: number | null;
   lastAuditDate: string | null;
   lastAuditResult: string | null;
 }
@@ -83,7 +88,7 @@ export interface StateProofOfReserveData {
   reportDate: string;
   goldAllocated: number;
   tokensInCirculation: number;
-  coverageRatio: number;
+  coverageRatio: number | null;
   lastAuditDate: string | null;
   lastAuditResult: string | null;
   /** CERTIFIED | PENDING_AUDIT | UNDER_COLLATERALIZED */
@@ -120,7 +125,7 @@ export interface StateMonthlyReportData {
   stockStatus: {
     goldAllocated: number;
     tokensInCirculation: number;
-    coverageRatio: number;
+    coverageRatio: number | null;
   };
 }
 
@@ -200,8 +205,17 @@ export interface MarketStockData {
   totalAllocated: number;
   tokensIssued: number;
   availableStock: number;
-  /** Ratio, pas un pourcentage. `coverageRatio` côté État — noms distincts. */
-  coverage: number;
+  /**
+   * `alloué / émis`, ratio et non pourcentage. >= 1 est sain.
+   *
+   * `null` quand rien n'est émis : le ratio est alors sans objet. La route
+   * renvoyait `Infinity`, que `JSON.stringify` transforme en `null` — le
+   * contrat annonçait `number` et livrait `null` (ADR 012 § 5).
+   *
+   * S'appelait `coverage`, le nom que `AdminStockData` employait pour la notion
+   * INVERSE. Un seul mot, une seule grandeur.
+   */
+  coverageRatio: number | null;
   lastAuditDate: string | null;
 }
 
@@ -691,20 +705,24 @@ export interface AdminDashboardData {
   currentPrice: unknown;
 }
 
-/**
- * `GET /api/v1/admin/stock`
- *
- * `coverage` est ici le taux d UTILISATION (emis / alloue), l inverse du
- * `coverageRatio` du portail Etat (alloue / emis). Deux notions, deux noms —
- * les confondre inverserait la lecture.
- */
+/** `GET /api/v1/admin/stock` */
 export interface AdminStockData {
   totalAllocated: number;
   tokensIssued: number;
   availableStock: number;
   lastAuditDate: string | null;
   lastAuditResult: string | null;
-  coverage: number;
+  /**
+   * Taux d'UTILISATION : `émis / alloué`, donc <= 1 par l'invariant.
+   *
+   * S'appelait `coverage` — et le back-office testait `coverage >= 1` pour
+   * afficher « couvert ». Sur un taux d'utilisation, cette lecture n'est vraie
+   * qu'a 100 %, c'est-a-dire quand il ne reste plus un gramme disponible : le
+   * voyant passait au vert au moment le plus tendu (ADR 012 § 3).
+   *
+   * Le ratio de couverture, lui, s'appelle `coverageRatio` partout.
+   */
+  utilisationRate: number | null;
 }
 
 /** `GET /api/v1/admin/me/permissions` */

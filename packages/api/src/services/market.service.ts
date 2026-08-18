@@ -41,6 +41,12 @@ export interface GoldStockRow {
   id: string;
   total_allocated: number;
   tokens_issued: number;
+  /**
+   * Or prete, donc absent du coffre. La requete est un `SELECT *` : la colonne
+   * arrivait deja, seul le type l'ignorait — et c'est ce genre d'omission qui a
+   * permis de confondre « emis » et « detenu en portefeuille » (ADR 012).
+   */
+  gold_on_loan: number;
   low_stock_threshold: number;
   last_audit_date: string | null;
   last_audit_result: string | null;

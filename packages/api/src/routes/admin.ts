@@ -24,6 +24,7 @@ import { ReconciliationService } from '../services/reconciliation.service';
 import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { verifierAjustementStock } from '../lib/stock-invariant';
+import { chiffresReserve } from '../lib/reserve';
 import { resolvePermissions, ROLE_DEFAULTS } from '../lib/rbac';
 import { isPortalToken, canAccessAdminPortal } from '../lib/portal';
 import { ConfigService } from '../services/config.service';
@@ -1612,20 +1613,20 @@ admin.get('/stock', requirePermission('stock', 'view'), async (c) => {
       .prepare('SELECT id, total_allocated, tokens_issued, available_stock, low_stock_threshold, last_audit_date, last_audit_result, audited_by, updated_at FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    // Get total tokens in circulation
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
+    // Une seule source pour tous les chiffres de reserve (ADR 012). La somme des
+    // portefeuilles excluait les grammes places en location, alors que le jeton
+    // correspondant est bel et bien emis.
+    const reserve = chiffresReserve(stock);
 
     return c.json({
       success: true,
       data: {
-        totalAllocated: stock?.total_allocated || 0,
-        tokensIssued: tokensResult?.total || 0,
-        availableStock: (stock?.total_allocated || 0) - (tokensResult?.total || 0),
+        totalAllocated: reserve.alloueG,
+        tokensIssued: reserve.emisG,
+        availableStock: reserve.disponibleG,
         lastAuditDate: stock?.last_audit_date,
         lastAuditResult: stock?.last_audit_result,
-        coverage: stock?.total_allocated ? (tokensResult?.total || 0) / stock.total_allocated : 0,
+        utilisationRate: reserve.utilisation,
       } satisfies AdminStockData,
       requestId: crypto.randomUUID(),
     });
@@ -2017,9 +2018,6 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
       .first<any>();
 
     // Get total tokens in circulation
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
 
     // Get wallet distribution by tier
     const walletDistribution = await c.env.DB
@@ -2075,8 +2073,9 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
       .prepare('SELECT AVG(token_balance) as avg FROM wallets WHERE token_balance > 0')
       .first<{ avg: number }>();
 
-    const goldAllocated = stock?.total_allocated || 0;
-    const tokensInCirculation = tokensResult?.total || 0;
+    const reserve = chiffresReserve(stock);
+    const goldAllocated = reserve.alloueG;
+    const tokensInCirculation = reserve.emisG;
 
     return c.json({
       success: true,
@@ -2087,9 +2086,12 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
         // Core PoR metrics
         goldAllocated,
         tokensInCirculation,
-        availableStock: goldAllocated - tokensInCirculation,
-        coverageRatio: tokensInCirculation > 0 ? goldAllocated / tokensInCirculation : 1,
-        isCovered: goldAllocated >= tokensInCirculation,
+        availableStock: reserve.disponibleG,
+        goldVaulted: reserve.enCoffreG,
+        goldOnLoan: reserve.preteG,
+        fullyVaulted: reserve.entierementEnCoffre,
+        coverageRatio: reserve.couverture,
+        isCovered: reserve.invariantTenu,
 
         // Audit information
         lastAuditDate: stock?.last_audit_date,
@@ -2108,10 +2110,11 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
 
         // Certification status
         certificationStatus: {
-          isFullyBacked: goldAllocated >= tokensInCirculation,
-          coveragePercentage: tokensInCirculation > 0
-            ? Math.round((goldAllocated / tokensInCirculation) * 10000) / 100
-            : 100,
+          isFullyBacked: reserve.invariantTenu,
+          // `null` quand rien n'est emis : le taux est sans objet, et non 100 %.
+          coveragePercentage: reserve.couverture === null
+            ? null
+            : Math.round(reserve.couverture * 10000) / 100,
           lastVerified: stock?.last_audit_date || null,
           nextAuditDue: stock?.last_audit_date
             ? new Date(new Date(stock.last_audit_date).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()

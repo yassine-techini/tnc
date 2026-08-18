@@ -20,7 +20,7 @@ const { stateApi } = await import('../../src/lib/api');
 
 const STATS: StateDashboardData = {
   totalUsers: 8421,
-  totalTokens: 9800,
+  tokensIssued: 9800,
   totalVolume: 512_000_000,
   goldAllocated: 12500,
   goldOnLoan: 1500,
@@ -56,6 +56,10 @@ describe('Tableau de bord Etat — la reserve', () => {
 
     // Le client declarait totalAllocated / tokensIssued / coverage : trois noms
     // qu'aucune reponse n'a jamais contenus. Ce tableau affichait donc 0 g.
+    //
+    // Le champ s'appelle desormais `tokensIssued` et porte `tokens_issued` :
+    // il s'appelait `totalTokens` et portait la somme des portefeuilles, donc
+    // les jetons emis MOINS ceux places en location (ADR 012).
     expect(await screen.findAllByText(/12500/)).not.toHaveLength(0);
     expect(await screen.findAllByText(/9800/)).not.toHaveLength(0);
   });
@@ -66,6 +70,20 @@ describe('Tableau de bord Etat — la reserve', () => {
     renderScreen();
 
     expect(await screen.findByText('102.0%')).toBeInTheDocument();
+  });
+
+  it("n'alerte pas quand aucun jeton n'est emis", async () => {
+    // `coverageRatio` vaut `null` quand rien n'est emis : le ratio est sans
+    // objet. L'ecran ecrivait `(ratio || 0) >= 1`, ce qui affichait l'alerte
+    // rouge sur une reserve sans le moindre engagement (ADR 012 § 5).
+    vi.mocked(stateApi.getDashboard).mockResolvedValue(
+      envelope({ ...STATS, tokensIssued: 0, coverageRatio: null }) as never
+    );
+
+    renderScreen();
+
+    expect(await screen.findByText('Aucun jeton émis')).toBeInTheDocument();
+    expect(screen.queryByText(/⚠️/)).not.toBeInTheDocument();
   });
 
   it('signale une couverture insuffisante', async () => {

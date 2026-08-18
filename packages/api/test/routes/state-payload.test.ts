@@ -40,9 +40,17 @@ describe('charge utile du portail État', () => {
     const payload = () => payloadOf("state.get('/dashboard'");
 
     it('émet les champs que le portail lit', () => {
-      for (const field of ['goldAllocated', 'totalTokens', 'coverageRatio']) {
+      for (const field of ['goldAllocated', 'tokensIssued', 'coverageRatio']) {
         expect(emits(payload(), field), field).toBe(true);
       }
+    });
+
+    it("n'émet plus `totalTokens`", () => {
+      // Le champ s'appelait ainsi et portait la SOMME DES PORTEFEUILLES, que le
+      // portail étiquetait pourtant « Tokens Émis » — soit les jetons émis
+      // moins ceux placés en location. Le nom vague rendait la substitution
+      // invisible ; `tokensIssued` ne laisse plus de place au doute (ADR 012).
+      expect(emits(payload(), 'totalTokens')).toBe(false);
     });
 
     it("divulgue l'or prêté", () => {

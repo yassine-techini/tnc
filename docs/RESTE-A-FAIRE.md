@@ -734,7 +734,7 @@ au passage : `xof = (n) => Math.round(n)` est recopié **à l'identique dans qua
 Quatre copies de la règle d'arrondi de la monnaie, c'est quatre endroits où elle peut
 diverger.
 
-### U. « Tokens Émis » exclut l'or en location — au portail de l'État 🔴
+### U. « Tokens Émis » exclut l'or en location — au portail de l'État ✅
 
 La location **sort les grammes du portefeuille** et alimente `gold_on_loan`, sans toucher à
 `tokens_issued` : le jeton existe toujours, il est seulement prêté. C'est correct.
@@ -769,7 +769,7 @@ confusion `coverage` / `coverageRatio` qui affichait 0 %. Il ne dit rien de ce q
 chiffre contient. La confusion de nommage a été corrigée ; la confusion de sens ne l'a pas
 été.
 
-### V. « Couverture » désigne trois grandeurs, « entièrement en coffre » deux 🟠
+### V. « Couverture » désigne trois grandeurs, « entièrement en coffre » deux ✅
 
 Quatre définitions coexistent pour le même mot :
 
@@ -801,6 +801,48 @@ Ici le tableau de bord est le plus sévère — c'est le bon sens pour une alert
 directions opposées sont plus difficiles à démêler qu'une erreur franche : elles se
 compensent visuellement sans jamais se corriger.
 
+**Corrigé (U et V)** — [ADR 012](adr/012-un-seul-vocabulaire-pour-la-reserve.md).
+
+`src/lib/reserve.ts` calcule une fois pour toutes émis, en coffre, disponible, couverture,
+utilisation et les deux verdicts. Les sept routes ne recalculent plus, elles lisent. La
+somme des portefeuilles ne subsiste que là où la question porte réellement sur les
+portefeuilles — la répartition par tranche.
+
+Trois champs renommés, uniquement là où **le nom lui-même a produit le défaut** :
+
+| Avant | Après | Pourquoi |
+|---|---|---|
+| `StateDashboardData.totalTokens` | `tokensIssued` | étiqueté « Tokens Émis », portait la somme des portefeuilles |
+| `MarketStockData.coverage` | `coverageRatio` | un ratio portant le nom que l'admin donnait à l'inverse |
+| `AdminStockData.coverage` | `utilisationRate` | sous ce nom, `>= 1` ne s'écrit plus par distraction |
+
+`tokensInCirculation` n'est pas touché : le nom est exact, seule sa source l'était pas.
+Du remaniement sur du code juste achète du risque, pas de la sûreté.
+
+**Le voyant inversé du back-office est corrigé.** `Stock.tsx` testait `coverage >= 1` sur un
+taux d'utilisation que l'invariant maintient sous 1 : il affichait « couverture
+insuffisante » en permanence et ne serait passé au vert qu'à 100 % — quand il ne reste plus
+un gramme. La carte mesure désormais l'allocation engagée, et l'alerte se déclenche sur la
+condition réelle : plus rien à émettre.
+
+`fullyVaulted` prend la définition de l'attestation **signée** (`émis ≤ alloué − prêté`)
+plutôt que « aucun gramme n'est prêté ». Avec 50 g en location sur 900 émis et 1 000
+alloués, les deux se contredisaient le même jour.
+
+`Infinity` disparaît : `JSON.stringify` le transformait en `null`, si bien que le contrat
+annonçait `number` et la route livrait `null`. La couverture est explicitement
+`number | null`, et les trois écrans affichent « — » sans déclencher d'alerte — une réserve
+sans engagement n'est pas une réserve sous-couverte.
+
+11 tests de source (aucune route ne dérive « émis » d'une somme de portefeuilles, aucune ne
+recalcule le ratio à la main), 14 tests d'arithmétique, 1 test d'écran. Vérifié par
+mutation : réintroduire une somme de portefeuilles dans `state.ts` fait échouer le garde.
+
+**Aucune reprise de l'historique** : les rapports déjà exportés portent les anciens
+chiffres. Les recalculer demanderait un `gold_on_loan` jour par jour qu'aucune table ne
+conserve — la même limite qu'en ADR 011 § 5. Un rapport transmis se corrige par un
+rectificatif, pas par une réécriture silencieuse.
+
 ### W. `MIN_XOF = 100` suppose un prix de l'or, sans le dire 🔵
 
 Un achat exprimé en XOF est converti puis **tronqué** au milligramme :
@@ -817,6 +859,46 @@ de 100 000 XOF. Au cours actuel (~53 000 XOF/g) la marge est d'un facteur deux. 
 Latent, pas actif. Mais la constante encode une hypothèse sur le prix de l'or sans la
 nommer, et l'échéance est un doublement du cours — pas une impossibilité sur la durée de
 vie d'une plateforme souveraine.
+
+### X. L'écran Preuve de Réserve du back-office plante au chargement 🔴
+
+Trouvé en corrigeant U, pas en le cherchant, et **antérieur à ce correctif**.
+
+`apps/admin/src/lib/api.ts` déclare pour `GET /admin/reports/por` une forme imbriquée —
+`goldStock`, `tokenHolders`, `transactions`, `pricing`, `audit`, `verification`. La route
+émet une charge **plate** : `goldAllocated`, `tokensInCirculation`, `availableStock`,
+`coverageRatio`, `walletDistribution`, `certificationStatus`…
+
+Aucune de ces six clés n'existe dans la réponse. La page les lit sans garde :
+
+```tsx
+) : report && (
+  … report.goldStock.isCovered …     // report.goldStock vaut undefined
+```
+
+Ce n'est donc pas un écran qui affiche des zéros : c'est une `TypeError` dès que la requête
+aboutit. Vingt et un accès distincts sont concernés, dont `pricing.spread`,
+`transactions.last24h` et `verification.checksum` — des données que la route ne produit
+**pas du tout**.
+
+C'est la forme exacte du défaut du quatrième audit : un type déclaré localement côté client
+plutôt qu'un contrat partagé, donc invisible à TypeScript. Corriger demande de trancher
+entre enrichir la route ou réduire la page, et de mettre le résultat sous contrat partagé —
+c'est un chantier à part, pas un effet de bord de U.
+
+### Y. Les fixtures de test étaient hors du typecheck ✅
+
+`apps/web`, `apps/admin` et `apps/state-portal` déclaraient `"include": ["src"]`. Un objet
+de test typé `StateDashboardData` avec un champ qui n'existe plus **compilait sans
+erreur** — c'est ainsi que le renommage de U n'a été signalé que par l'exécution des tests.
+
+Toute la sûreté du dépôt repose sur `satisfies` et les contrats partagés, et les fixtures —
+précisément là où les formes périmées se cachent — en étaient exemptées. Le même mécanisme
+avait laissé `auth.service.test.ts` périmer.
+
+`"include": ["src", "test"]` sur les trois applications, **à coût nul** : zéro erreur
+introduite. Vérifié par mutation — remettre l'ancien nom de champ dans une fixture fait
+désormais échouer `tsc`.
 
 ---
 

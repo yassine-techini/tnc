@@ -63,10 +63,16 @@ export default function Dashboard() {
 
   const stockValue = (stats?.goldAllocated || 0) * (price?.priceXof || 0);
 
+  // `null` signifie « aucun jeton emis », pas « couverture nulle ». Ecrire
+  // `(ratio || 0) >= 1` afficherait l'alerte rouge sur une reserve sans le
+  // moindre engagement (ADR 012 § 5).
+  const couvertureTeinte =
+    stats?.coverageRatio == null ? 'sansObjet' : stats.coverageRatio >= 1 ? 'couvert' : 'sousCouvert';
+
   // Data for coverage pie chart
   const coverageData = [
-    { name: 'Tokens Émis', value: stats?.totalTokens || 0, color: '#3B82F6' },
-    { name: 'Disponible', value: (stats?.goldAllocated || 0) - (stats?.totalTokens || 0), color: '#D4AF37' },
+    { name: 'Tokens Émis', value: stats?.tokensIssued || 0, color: '#3B82F6' },
+    { name: 'Disponible', value: (stats?.goldAllocated || 0) - (stats?.tokensIssued || 0), color: '#D4AF37' },
   ];
 
   // Calculate price stats
@@ -154,7 +160,7 @@ export default function Dashboard() {
                 <div className="h-8 w-32 bg-slate-700 rounded animate-pulse mt-1"></div>
               ) : (
                 <p className="text-3xl font-bold">
-                  {num(stats?.totalTokens)} g
+                  {num(stats?.tokensIssued)} g
                 </p>
               )}
             </div>
@@ -165,9 +171,12 @@ export default function Dashboard() {
         <div className="card">
           <div className="flex items-center gap-4">
             <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-              (stats?.coverageRatio || 0) >= 1 ? 'bg-green-500/20' : 'bg-red-500/20'
+              couvertureTeinte === 'sousCouvert' ? 'bg-red-500/20'
+                : couvertureTeinte === 'couvert' ? 'bg-green-500/20' : 'bg-slate-500/20'
             }`}>
-              <span className="text-3xl">{(stats?.coverageRatio || 0) >= 1 ? '✓' : '⚠️'}</span>
+              <span className="text-3xl">
+                {couvertureTeinte === 'sousCouvert' ? '⚠️' : couvertureTeinte === 'couvert' ? '✓' : '—'}
+              </span>
             </div>
             <div>
               <p className="text-sm text-slate-400">Couverture</p>
@@ -175,10 +184,14 @@ export default function Dashboard() {
                 <div className="h-8 w-32 bg-slate-700 rounded animate-pulse mt-1"></div>
               ) : (
                 <p className={`text-3xl font-bold ${
-                  (stats?.coverageRatio || 0) >= 1 ? 'text-green-400' : 'text-red-400'
+                  couvertureTeinte === 'sousCouvert' ? 'text-red-400'
+                    : couvertureTeinte === 'couvert' ? 'text-green-400' : 'text-slate-400'
                 }`}>
-                  {stats ? `${(stats.coverageRatio * 100).toFixed(1)}%` : '—'}
+                  {stats?.coverageRatio != null ? `${(stats.coverageRatio * 100).toFixed(1)}%` : '—'}
                 </p>
+              )}
+              {couvertureTeinte === 'sansObjet' && !isLoading && (
+                <p className="text-xs text-slate-500 mt-1">Aucun jeton émis</p>
               )}
             </div>
           </div>
@@ -340,11 +353,11 @@ export default function Dashboard() {
           <div className="flex justify-center gap-6 mt-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-blue-500"></div>
-              <span className="text-sm text-slate-400">Tokens Émis ({num(stats?.totalTokens)} g)</span>
+              <span className="text-sm text-slate-400">Tokens Émis ({num(stats?.tokensIssued)} g)</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-gold-500"></div>
-              <span className="text-sm text-slate-400">Disponible ({num((stats?.goldAllocated ?? 0) - (stats?.totalTokens ?? 0))} g)</span>
+              <span className="text-sm text-slate-400">Disponible ({num((stats?.goldAllocated ?? 0) - (stats?.tokensIssued ?? 0))} g)</span>
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ import { GoldAPIService } from '../services/goldapi.service';
 import { PriceAlertService } from '../services/price-alert.service';
 import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
+import { chiffresReserve } from '../lib/reserve';
 import { requireTwoFactorIfHighValue } from '../lib/high-value-2fa';
 import { KycService } from '../services/kyc.service';
 
@@ -87,25 +88,27 @@ market.get('/stock', async (c) => {
         totalAllocated: 0,
         tokensIssued: 0,
         availableStock: 0,
-        coverage: 0,
+        // Aucun stock, donc aucun jeton emis : le ratio est sans objet.
+        coverageRatio: null,
         lastAuditDate: null,
       } satisfies MarketStockData,
       requestId,
     });
   }
 
-  const availableStock = stock.total_allocated - stock.tokens_issued;
-  const coverage = stock.tokens_issued > 0
-    ? stock.total_allocated / stock.tokens_issued
-    : stock.total_allocated > 0 ? Infinity : 0;
+  // Meme source que le portail Etat et le back-office (ADR 012). Cette route
+  // lisait deja `tokens_issued`, la bonne colonne ; ce qui changeait etait le
+  // NOM du champ — `coverage` designait ici un ratio, et le meme mot designait
+  // le taux d'utilisation cote administration.
+  const reserve = chiffresReserve(stock);
 
   return c.json({
     success: true,
     data: {
-      totalAllocated: stock.total_allocated,
-      tokensIssued: stock.tokens_issued,
-      availableStock: availableStock,
-      coverage: Math.round(coverage * 100) / 100,
+      totalAllocated: reserve.alloueG,
+      tokensIssued: reserve.emisG,
+      availableStock: reserve.disponibleG,
+      coverageRatio: reserve.couverture,
       lastAuditDate: stock.last_audit_date ?? null,
     } satisfies MarketStockData,
     requestId,

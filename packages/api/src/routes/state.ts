@@ -6,6 +6,7 @@ import { SecurityService } from '../services/security.service';
 import { ConfigService } from '../services/config.service';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { isPortalToken } from '../lib/portal';
+import { chiffresReserve } from '../lib/reserve';
 // Contrats partagés : les mêmes types que ceux importés par le portail.
 // `satisfies` fait échouer la compilation si un champ manque ou change de
 // nom ici — c'est ce qui empêche la route et son client de diverger.
@@ -464,11 +465,6 @@ state.get('/dashboard', async (c) => {
       .prepare('SELECT COUNT(*) as count FROM users')
       .first<{ count: number }>();
 
-    // Total tokens in circulation
-    const totalTokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
-
     // Total volume (all time)
     const totalVolumeResult = await c.env.DB
       .prepare(`SELECT COALESCE(SUM(cash_amount), 0) as total FROM transactions WHERE status = 'COMPLETED'`)
@@ -479,10 +475,8 @@ state.get('/dashboard', async (c) => {
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    // Coverage ratio
-    const coverageRatio = stock?.total_allocated
-      ? (stock.total_allocated / (totalTokensResult?.total || 1))
-      : 1;
+    // Une seule source pour tous les chiffres de reserve (ADR 012).
+    const reserve = chiffresReserve(stock);
 
     // Monthly transaction volume (current month)
     const monthlyVolumeResult = await c.env.DB
@@ -493,17 +487,19 @@ state.get('/dashboard', async (c) => {
       success: true,
       data: {
         totalUsers: totalUsersResult?.count || 0,
-        totalTokens: totalTokensResult?.total || 0,
+        // `tokens_issued`, et non la somme des portefeuilles : la location sort
+        // les grammes du portefeuille sans supprimer le jeton (ADR 012).
+        tokensIssued: reserve.emisG,
         totalVolume: totalVolumeResult?.total || 0,
-        goldAllocated: stock?.total_allocated || 0,
+        goldAllocated: reserve.alloueG,
         // L'or PRÊTÉ, et donc absent du coffre. La page publique /reserve le
         // divulgue, l'attestation signée le divulgue, le certificat et le relevé
         // de règlement aussi — le portail de l'État était le seul à l'ignorer,
         // alors que c'est l'audience qui a alloué cet or.
-        goldOnLoan: stock?.gold_on_loan || 0,
-        goldVaulted: Math.max(0, (stock?.total_allocated || 0) - (stock?.gold_on_loan || 0)),
-        fullyVaulted: (stock?.gold_on_loan || 0) === 0,
-        coverageRatio,
+        goldOnLoan: reserve.preteG,
+        goldVaulted: reserve.enCoffreG,
+        fullyVaulted: reserve.entierementEnCoffre,
+        coverageRatio: reserve.couverture,
         monthlyVolume: monthlyVolumeResult?.total || 0,
         lastUpdate: new Date().toISOString(),
       } satisfies StateDashboardData,
@@ -529,28 +525,22 @@ state.get('/stock', async (c) => {
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
-
-    const coverageRatio = stock?.total_allocated
-      ? (stock.total_allocated / (tokensResult?.total || 1))
-      : 1;
+    const reserve = chiffresReserve(stock);
 
     return c.json({
       success: true,
       data: {
-        totalAllocated: stock?.total_allocated || 0,
-        tokensIssued: tokensResult?.total || 0,
-        availableStock: (stock?.total_allocated || 0) - (tokensResult?.total || 0),
+        totalAllocated: reserve.alloueG,
+        tokensIssued: reserve.emisG,
+        availableStock: reserve.disponibleG,
         // Alloué n'est pas détenu : la part prêtée est due par une contrepartie
         // et n'est pas physiquement en coffre.
-        goldOnLoan: stock?.gold_on_loan || 0,
-        goldVaulted: Math.max(0, (stock?.total_allocated || 0) - (stock?.gold_on_loan || 0)),
-        fullyVaulted: (stock?.gold_on_loan || 0) === 0,
+        goldOnLoan: reserve.preteG,
+        goldVaulted: reserve.enCoffreG,
+        fullyVaulted: reserve.entierementEnCoffre,
         lendingNotice:
           "Une partie de la réserve peut être prêtée pour financer le rendement de la location. L'or prêté reste dû à la plateforme mais n'est pas physiquement en coffre : la couverture correspondante dépend du remboursement de la contrepartie.",
-        coverageRatio,
+        coverageRatio: reserve.couverture,
         lastAuditDate: stock?.last_audit_date ?? null,
         lastAuditResult: stock?.last_audit_result ?? null,
       } satisfies StateStockData,
@@ -667,9 +657,7 @@ state.get('/reports/por', async (c) => {
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
+    const reserve = chiffresReserve(stock);
 
     // Get wallet distribution
     const walletDistribution = await c.env.DB
@@ -708,15 +696,17 @@ state.get('/reports/por', async (c) => {
       success: true,
       data: {
         reportDate: new Date().toISOString(),
-        goldAllocated: stock?.total_allocated || 0,
-        tokensInCirculation: tokensResult?.total || 0,
-        coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
+        goldAllocated: reserve.alloueG,
+        // Les jetons EMIS. La somme des portefeuilles en excluait ceux places
+        // en location, et surevaluait donc la couverture d'autant (ADR 012).
+        tokensInCirculation: reserve.emisG,
+        coverageRatio: reserve.couverture,
         lastAuditDate: stock?.last_audit_date ?? null,
         lastAuditResult: stock?.last_audit_result ?? null,
         walletDistribution: walletDistribution.results || [],
         transactionSummary: transactionSummary.results || [],
         // Derived from real coverage + audit state, not hardcoded.
-        certificationStatus: (stock?.total_allocated || 0) >= (tokensResult?.total || 0)
+        certificationStatus: reserve.invariantTenu
           ? (stock?.last_audit_date ? 'CERTIFIED' : 'PENDING_AUDIT')
           : 'UNDER_COLLATERALIZED',
       } satisfies StateProofOfReserveData,
@@ -799,9 +789,7 @@ state.get('/reports/monthly', async (c) => {
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
+    const reserve = chiffresReserve(stock);
 
     return c.json({
       success: true,
@@ -816,9 +804,9 @@ state.get('/reports/monthly', async (c) => {
         averagePrice: averagePriceResult?.avg ?? null,
         kycStats: kycStats.results || [],
         stockStatus: {
-          goldAllocated: stock?.total_allocated || 0,
-          tokensInCirculation: tokensResult?.total || 0,
-          coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
+          goldAllocated: reserve.alloueG,
+          tokensInCirculation: reserve.emisG,
+          coverageRatio: reserve.couverture,
         },
       } satisfies StateMonthlyReportData,
       requestId: crypto.randomUUID(),
@@ -976,9 +964,7 @@ state.get('/reports/por/export', async (c) => {
       .prepare('SELECT * FROM gold_stock ORDER BY updated_at DESC LIMIT 1')
       .first<any>();
 
-    const tokensResult = await c.env.DB
-      .prepare('SELECT COALESCE(SUM(token_balance), 0) as total FROM wallets')
-      .first<{ total: number }>();
+    const reserve = chiffresReserve(stock);
 
     const walletDistribution = await c.env.DB
       .prepare(`
@@ -1000,11 +986,15 @@ state.get('/reports/por/export', async (c) => {
     const report = {
       title: 'PROOF OF RESERVE - TNC TRADING',
       generatedAt: new Date().toISOString(),
-      goldPhysical: stock?.total_allocated || 0,
-      tokensIssued: tokensResult?.total || 0,
-      coverageRatio: stock?.total_allocated ? (stock.total_allocated / (tokensResult?.total || 1)) : 1,
+      // `goldPhysical` designe l'or ALLOUE. La part pretee n'est pas en coffre :
+      // `goldVaulted` la distingue, comme le fait l'attestation signee.
+      goldPhysical: reserve.alloueG,
+      goldVaulted: reserve.enCoffreG,
+      goldOnLoan: reserve.preteG,
+      tokensIssued: reserve.emisG,
+      coverageRatio: reserve.couverture,
       // Derived from real coverage + audit state, not hardcoded.
-      status: (stock?.total_allocated || 0) >= (tokensResult?.total || 0)
+      status: reserve.invariantTenu
         ? (stock?.last_audit_date ? 'CERTIFIED' : 'PENDING_AUDIT')
         : 'UNDER_COLLATERALIZED',
       lastAudit: stock?.last_audit_date,

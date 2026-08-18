@@ -140,8 +140,10 @@ export default function Dashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Stock d'Or</h2>
-            <span className={`badge ${(stock?.coverage || 0) >= 1 ? 'badge-success' : 'badge-error'}`}>
-              Couverture: {((stock?.coverage || 0) * 100).toFixed(1)}%
+            {/* Taux d'UTILISATION, pas de couverture : `>= 1` sur ce nombre ne
+                serait vrai qu'a allocation entierement engagee (ADR 012 § 3). */}
+            <span className={`badge ${(stock?.availableStock ?? 0) > 0 ? 'badge-success' : 'badge-error'}`}>
+              Engagé: {stock?.utilisationRate != null ? `${(stock.utilisationRate * 100).toFixed(1)}%` : '—'}
             </span>
           </div>
           <div className="grid grid-cols-3 gap-4">

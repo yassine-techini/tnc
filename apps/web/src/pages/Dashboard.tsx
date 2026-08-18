@@ -221,10 +221,14 @@ export default function Dashboard() {
             </div>
             <div className="p-3 rounded-xl bg-slate-800/40">
               <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Couverture</p>
+              {/* `null` = aucun jeton emis, donc ratio sans objet. `(x || 0) >= 1`
+                  aurait affiche du rouge sur une reserve sans engagement, et
+                  `(x || 1)` aurait affiche un 100 % invente (ADR 012 § 5). */}
               <p className={`text-lg font-bold mt-1 ${
-                (stock?.coverage || 0) >= 1 ? 'text-emerald-400' : 'text-red-400'
+                stock?.coverageRatio == null ? 'text-slate-400'
+                  : stock.coverageRatio >= 1 ? 'text-emerald-400' : 'text-red-400'
               }`}>
-                {((stock?.coverage || 1) * 100).toFixed(0)}%
+                {stock?.coverageRatio != null ? `${(stock.coverageRatio * 100).toFixed(0)}%` : '—'}
               </p>
             </div>
             <div className="pt-3 border-t border-slate-800/60">
