@@ -19,6 +19,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { LeaseService } from '../services/lease.service';
+import { CountryConfigService } from '../services/country-config.service';
 import { MarketService } from '../services/market.service';
 import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
@@ -215,8 +216,23 @@ lease.post('/positions/:id/exit', async (c) => {
   const config = new ConfigService(c.env.DB, c.env.CACHE);
   const settlementDays = await config.getNumber('lease_exit_settlement_days', 3);
 
+  // Le calendrier ouvré appartient au PAYS du titulaire, pas à la plateforme
+  // (ADR 017). La liste est vide tant que l'exploitant ne l'a pas renseignée —
+  // une liste fausse produirait silencieusement de mauvaises dates de règlement.
+  const titulaire = await c.env.DB
+    .prepare('SELECT country FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ country: string | null }>();
+  const pays = await new CountryConfigService(c.env.DB).forUser(titulaire?.country);
+
   const service = new LeaseService(c.env.DB);
-  const result = await service.requestExit(positionId, userId, settlementDays);
+  const result = await service.requestExit(
+    positionId,
+    userId,
+    settlementDays,
+    new Date(),
+    pays.businessHolidays
+  );
 
   if (!result.ok) {
     const status = result.error === 'NOT_FOUND' ? 404 : result.error === 'CONFLICT' ? 409 : 400;

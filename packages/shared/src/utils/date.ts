@@ -1,12 +1,19 @@
 /**
- * Date Formatting Utilities
- * Formatage des dates avec timezone Burkina Faso
+ * Formatage des dates.
+ *
+ * L'affichage est LOCAL AU LECTEUR (ADR 017). La plateforme n'est pas dediee a un
+ * pays : elle sera exploitee dans plusieurs pays d'Afrique, du Cap-Vert (UTC-1) a
+ * Maurice (UTC+4), et l'or est garde a Dubai (UTC+4). Un fuseau fige dans le code
+ * afficherait l'heure juste a un seul endroit.
+ *
+ * Les fonctions ci-dessous analysent en UTC puis rendent dans le fuseau de
+ * l'appareil, que le navigateur connait deja.
  */
 
-import { TIMEZONE } from '../constants/index.js';
-
 /**
- * Analyse une date venant de l'API.
+ * Analyse une date venant de l'API. EXPORTEE : le web en avait recopie une
+ * version fautive, qui lisait les horodatages sans fuseau comme des heures
+ * locales (constat AF).
  *
  * SQLite ecrit `datetime('now')` sous la forme « 2026-08-17 09:00:00 » — en UTC,
  * mais SANS marqueur de fuseau. `new Date()` interprete alors la chaine comme
@@ -16,7 +23,7 @@ import { TIMEZONE } from '../constants/index.js';
  * Le meme piege avait deja fausse l'age du prix de l'or. Il se corrige ici, une
  * fois, pour toutes les fonctions de ce module.
  */
-function parseApiDate(date: Date | string): Date {
+export function parseApiDate(date: Date | string): Date {
   if (typeof date !== 'string') return date;
   // Deja horodatee (Z ou +01:00) : on ne touche a rien.
   if (/[Zz]$|[+-]\d{2}:?\d{2}$/.test(date.trim())) return new Date(date);
@@ -27,13 +34,6 @@ function parseApiDate(date: Date | string): Date {
   const sansFuseau = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(:\d{2})?)/.exec(date.trim());
   if (sansFuseau) return new Date(`${sansFuseau[1]}T${sansFuseau[2]}Z`);
   return new Date(date);
-}
-
-/**
- * Get current date/time in Burkina Faso timezone
- */
-export function nowInBurkinaFaso(): Date {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
 }
 
 /**

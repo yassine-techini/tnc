@@ -367,8 +367,16 @@ export const DATE_FORMAT = 'DD/MM/YYYY';
 export const DATETIME_FORMAT = 'DD/MM/YYYY HH:mm';
 export const TIME_FORMAT = 'HH:mm';
 
-// Timezone Burkina Faso (GMT)
-export const TIMEZONE = 'Africa/Ouagadougou';
+/**
+ * Le fuseau n'est PAS une constante de la plateforme (ADR 017).
+ *
+ * `TIMEZONE = 'Africa/Ouagadougou'` supposait un pays unique. La plateforme sera
+ * exploitee dans plusieurs pays d'Afrique : le fuseau operationnel d'un pays vit
+ * dans `country_config.timezone`, et l'affichage suit l'appareil du lecteur.
+ *
+ * La constante n'etait appelee nulle part — elle n'a laisse aucun defaut derriere
+ * elle, seulement une hypothese.
+ */
 
 // ============================================
 // SUPPORT

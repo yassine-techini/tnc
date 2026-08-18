@@ -290,15 +290,34 @@ export class MarketService {
     tokenAmount = quantizedTokens;
 
     const id = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + quoteExpiryMinutes * 60 * 1000).toISOString();
 
-    await this.db
+    /**
+     * L'echeance est ecrite PAR LA BASE, pas par JavaScript (ADR 017).
+     *
+     * `new Date(...).toISOString()` produisait « 2026-08-18T10:08:06.589Z », que
+     * la consommation comparait a `datetime('now')` — « 2026-08-18 10:08:06 ».
+     * SQLite compare deux TEXT caractere par caractere : au rang 11, `T` (0x54)
+     * l'emporte sur l'espace (0x20), donc la comparaison etait TOUJOURS vraie a
+     * date egale. Un devis n'expirait pas au bout de cinq minutes : il expirait
+     * au passage de minuit UTC.
+     *
+     * C'est le chemin de l'argent — le devis fige un cours, et l'expiration est
+     * ce qui borne ce gel.
+     *
+     * `RETURNING` rend la valeur telle que la base l'a ecrite, plutot que de la
+     * recalculer : le worker et la base n'ont pas la meme horloge, et une
+     * echeance de cinq minutes porterait leur ecart.
+     */
+    const ligne = await this.db
       .prepare(
         `INSERT INTO quotes (id, user_id, type, token_amount, cash_amount, price_per_gram, fees, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '+' || ? || ' minutes'))
+         RETURNING expires_at, created_at`
       )
-      .bind(id, userId, type, tokenAmount, cashAmount, pricePerGram, fees, expiresAt)
-      .run();
+      .bind(id, userId, type, tokenAmount, cashAmount, pricePerGram, fees, quoteExpiryMinutes)
+      .first<{ expires_at: string; created_at: string }>();
+
+    const expiresAt = ligne.expires_at;
 
     return {
       id,
@@ -311,7 +330,7 @@ export class MarketService {
       total,
       expires_at: expiresAt,
       status: 'PENDING',
-      created_at: new Date().toISOString(),
+      created_at: ligne.created_at,
     };
   }
 

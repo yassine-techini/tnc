@@ -29,6 +29,7 @@ export interface CountryConfigRow {
   payment_methods: string;
   locale: string;
   timezone: string;
+  business_holidays: string;
   enabled: number;
 }
 
@@ -43,7 +44,14 @@ export interface CountryConfig {
   idDocumentTypes: string[];
   paymentMethods: PaymentMethodConfig[];
   locale: string;
+  /** Fuseau OPERATIONNEL du pays. L'affichage, lui, suit l'appareil du lecteur (ADR 017). */
   timezone: string;
+  /**
+   * Jours feries, en dates ISO. Vide par defaut, et c'est delibere : une liste
+   * fausse produirait silencieusement de mauvaises dates de reglement. La
+   * remplir est un acte d'exploitation (ADR 017 SS 4).
+   */
+  businessHolidays: string[];
   enabled: boolean;
 }
 
@@ -67,6 +75,7 @@ export const FALLBACK_COUNTRY: CountryConfig = {
   ],
   locale: 'fr-FR',
   timezone: 'Africa/Ouagadougou',
+  businessHolidays: [],
   enabled: true,
 };
 
@@ -98,6 +107,7 @@ export function toCountryConfig(row: CountryConfigRow): CountryConfig {
     ),
     locale: row.locale,
     timezone: row.timezone,
+    businessHolidays: parseJson<string[]>(row.business_holidays, [], 'business_holidays'),
     enabled: row.enabled === 1,
   };
 }

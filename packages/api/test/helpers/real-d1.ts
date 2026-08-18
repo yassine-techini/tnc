@@ -318,6 +318,11 @@ CREATE TABLE users (
   two_factor_enabled INTEGER DEFAULT 0,
   two_factor_secret TEXT,
   tokens_invalid_before TEXT,
+  suspended INTEGER DEFAULT 0,
+  suspended_at TEXT,
+  suspended_until TEXT,
+  suspension_reason TEXT,
+  locked_until TEXT,
   -- ADR 015 : fermer un compte, c est anonymiser la ligne, pas la supprimer.
   closed_at TEXT,
   kyc_level TEXT DEFAULT 'BASIC' CHECK (kyc_level IN ('BASIC','STANDARD','VERIFIED')),
@@ -347,7 +352,10 @@ CREATE TABLE security_events (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users
 CREATE TABLE quotes (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
-  token_amount REAL NOT NULL DEFAULT 0
+  token_amount REAL NOT NULL DEFAULT 0,
+  -- ADR 017 : ecrite par datetime('now', …), donc comparable a datetime('now').
+  expires_at TEXT,
+  status TEXT NOT NULL DEFAULT 'PENDING'
 );
 CREATE TABLE lot_dispositions (
   id TEXT PRIMARY KEY,

@@ -188,6 +188,13 @@ describe('MarketService', () => {
       mockKv = createMockKVNamespace({
         'development:gold_price:current': price,
       });
+      // L'echeance est desormais ecrite PAR LA BASE et relue par `RETURNING`
+      // (ADR 017) : ecrite en ISO depuis JavaScript, elle etait comparee a
+      // `datetime('now')` comme une chaine, et un devis expire restait
+      // consommable jusqu'a minuit UTC.
+      mockDb = createMockD1Database({
+        first: { expires_at: '2026-08-18 10:05:00', created_at: '2026-08-18 10:00:00' },
+      });
       marketService = new MarketService(mockDb, mockKv, 'development');
     });
 
@@ -208,15 +215,27 @@ describe('MarketService', () => {
       expect(result.total).toBe(result.cash_amount - result.fees);
     });
 
-    it('sets expiration time', async () => {
-      const before = Date.now();
-      const result = await marketService.generateQuote('user-123', 'BUY', 1);
-      const after = Date.now();
+    it("demande l'echeance a la BASE, pas a l'horloge du worker", async () => {
+      // Le test comparait l'echeance rendue a `Date.now()`. Ce n'est plus la
+      // bonne question : l'echeance vient de la base (ADR 017), parce que la
+      // comparaison qui la juge y a lieu aussi — et parce que le worker et la
+      // base n'ont pas la meme horloge.
+      await marketService.generateQuote('user-123', 'BUY', 1);
 
-      const expiresAt = new Date(result.expires_at).getTime();
-      // Should expire in ~5 minutes
-      expect(expiresAt).toBeGreaterThan(before + 4 * 60 * 1000);
-      expect(expiresAt).toBeLessThan(after + 6 * 60 * 1000);
+      const sql = (mockDb.prepare as ReturnType<typeof vi.fn>).mock.calls
+        .map((c: unknown[]) => String(c[0]))
+        .find((q: string) => q.includes('INSERT INTO quotes'));
+
+      expect(sql).toContain("datetime('now', '+' || ? || ' minutes')");
+      expect(sql).toContain('RETURNING');
+    });
+
+    it("rend l'echeance telle que la base l'a ecrite", async () => {
+      const result = await marketService.generateQuote('user-123', 'BUY', 1);
+
+      // La valeur relue, au format de SQLite — donc comparable a
+      // `datetime('now')` lors de la consommation.
+      expect(result.expires_at).toBe('2026-08-18 10:05:00');
     });
 
     it('throws error when price not available', async () => {

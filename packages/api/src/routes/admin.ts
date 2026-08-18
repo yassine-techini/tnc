@@ -1158,10 +1158,16 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
       }, 400);
     }
 
-    // Calculate suspension end time
-    const suspendedUntil = duration
-      ? new Date(Date.now() + duration * 60 * 60 * 1000).toISOString()
-      : null;
+    // L'échéance est écrite PAR LA BASE (ADR 017). En ISO, elle était comparée à
+    // `datetime('now')` par le travail de nuit — comparaison de chaînes qui reste
+    // FAUSSE tant que la date n'a pas changé : une suspension de 24 h prononcée à
+    // 14 h ne se levait qu'à minuit UTC le surlendemain. L'erreur va dans le sens
+    // fermé, mais elle prolonge quand même une sanction sans décision.
+    // Une duree invalide produirait `datetime('now', '+-1 hours')`, modificateur
+    // que SQLite rend NULL — c'est-a-dire une suspension INDEFINIE. Un nombre
+    // fini et strictement positif, ou rien.
+    const dureeBrute = Number(duration);
+    const dureeHeures = Number.isFinite(dureeBrute) && dureeBrute > 0 ? Math.floor(dureeBrute) : null;
 
     // Suspension, révocation des sessions et trace dans le MÊME lot (ADR 016).
     // Écrites séparément, une panne entre les deux privait un titulaire de
@@ -1177,7 +1183,9 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
         .bind(
           crypto.randomUUID(),
           c.get('adminId'),
-          JSON.stringify({ reason, duration, suspendedUntil }),
+          // L echeance n est pas connue ici : la base l ecrit dans ce meme lot.
+          // La duree demandee dit ce qu il faut savoir, et sans horloge concurrente.
+          JSON.stringify({ reason, dureeHeures }),
           id
         ),
       c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
@@ -1187,12 +1195,14 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
           UPDATE users
           SET suspended = 1,
               suspended_at = datetime('now'),
-              suspended_until = ?,
-              suspension_reason = ?,
+              -- NULL pour une suspension sans terme ; sinon l horloge de la base.
+              suspended_until = CASE WHEN ?1 IS NULL THEN NULL
+                                     ELSE datetime('now', '+' || ?1 || ' hours') END,
+              suspension_reason = ?2,
               updated_at = datetime('now')
-          WHERE id = ?
+          WHERE id = ?3
         `)
-        .bind(suspendedUntil, reason || 'Non spécifiée', id),
+        .bind(dureeHeures, reason || 'Non spécifiée', id),
     ]);
 
     const suspension = resultats[resultats.length - 1] as { meta: { changes: number } };
@@ -1205,6 +1215,14 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
     }
 
     // Send notification to user
+    // L'échéance telle que la BASE l'a écrite : la recalculer ici afficherait
+    // l'heure du worker, qui n'est pas celle qui fera foi à la levée.
+    const echeance = await c.env.DB
+      .prepare('SELECT suspended_until FROM users WHERE id = ?')
+      .bind(id)
+      .first<{ suspended_until: string | null }>();
+    const suspendedUntil = echeance?.suspended_until ?? null;
+
     const notificationService = new NotificationService(c.env.DB, {
       resendApiKey: c.env.RESEND_API_KEY,
       twilioAccountSid: c.env.TWILIO_ACCOUNT_SID,

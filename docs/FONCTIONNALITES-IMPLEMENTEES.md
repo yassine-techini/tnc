@@ -19,8 +19,8 @@ trompeur. Chaque entrée porte un statut :
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
 **Volumétrie** : 14 modules API, 30 services métier, **31 migrations**, 11 jobs planifiés,
-4 Durable Objects, 5 applications front, **1 389 tests automatisés** (852 API, 314 `shared`,
-68 back-office, 61 mobile, 60 web, 34 portail État).
+4 Durable Objects, 5 applications front, **1 408 tests automatisés** (866 API, 314 `shared`,
+68 back-office, 65 web, 61 mobile, 34 portail État).
 
 **Tous s'exécutent.** Les 26 tests d'`auth.service.test.ts` étaient jusqu'ici absents du
 décompte : `argon2-browser` faisait tomber le worker vitest sous Node ≥ 18, et un fichier
@@ -63,7 +63,7 @@ fournit désormais le wasm à la bibliothèque, et les tests s'exécutent contre
 |---|---|---|
 | Prix de l'or temps réel + taux de change | ⚙️ | GoldAPI avec repli ; inactif sans clé |
 | Historique des prix | ✅ | 24 h / 7 j / 30 j / 1 an |
-| Devis avec expiration | ✅ | Restauration du devis si la transaction échoue. Le montant minimal d'un ordre en XOF se **déduit du cours** (`planchierXof`) : `MIN_XOF = 100` ne garantissait un milligramme que tant que le gramme valait moins de 100 000 XOF, et au-delà le devis valait 0 g pour 0 XOF sans que rien ne le refuse |
+| Devis avec expiration | ✅ | L'expiration est écrite ET jugée par l'horloge de la base ([ADR 017](adr/017-le-temps-sur-une-plateforme-multi-pays.md)) : écrite en ISO depuis JavaScript, elle était comparée comme une **chaîne** à `datetime('now')`, et un devis expiré restait consommable jusqu'à minuit UTC. Restauration du devis si la transaction échoue. Le montant minimal d'un ordre en XOF se **déduit du cours** (`planchierXof`) : `MIN_XOF = 100` ne garantissait un milligramme que tant que le gramme valait moins de 100 000 XOF, et au-delà le devis valait 0 g pour 0 XOF sans que rien ne le refuse |
 | Achat / vente de tokens | ✅ | Atomique (`db.batch` + contraintes CHECK) |
 | Spreads configurables | ✅ | |
 | Alertes de prix | ✅ | Livraison par email/SMS |

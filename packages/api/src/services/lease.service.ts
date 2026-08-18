@@ -219,14 +219,21 @@ export class LeaseService {
     positionId: string,
     userId: string,
     businessDays: number,
-    now: Date = new Date()
+    now: Date = new Date(),
+    /**
+     * Jours feries du pays concerne (ADR 017). Le parametre existait depuis
+     * l'origine dans `settlementDate` sans qu'aucun appelant ne le remplisse :
+     * un T+3 pouvait echoir un jour ou la contrepartie qui doit rendre l'or est
+     * fermee. Vide par defaut — une liste fausse serait pire qu'aucune.
+     */
+    holidays: string[] = []
   ): Promise<{ ok: boolean; settlesOn: string | null; error: LeaseError | null }> {
     const position = await this.getById(positionId);
     if (!position || position.user_id !== userId) return { ok: false, settlesOn: null, error: 'NOT_FOUND' };
     if (position.status === 'EXITING') return { ok: false, settlesOn: null, error: 'ALREADY_EXITING' };
     if (position.status !== 'ACTIVE') return { ok: false, settlesOn: null, error: 'NOT_ACTIVE' };
 
-    const settlesOn = settlementDate(now, businessDays);
+    const settlesOn = settlementDate(now, businessDays, holidays);
 
     try {
       const results = await this.db.batch([

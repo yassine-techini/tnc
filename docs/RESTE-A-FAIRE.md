@@ -1264,12 +1264,24 @@ UTC, et chaque rendement, frais, rapport et expiration repose sur une frontière
 Les neuf audits précédents ont regardé les valeurs, les droits et les traces ; celui-ci
 regarde **les dates**.
 
+> **Périmètre corrigé après cet audit.** La plateforme n'est pas dédiée au Burkina Faso : elle
+> sera exploitée dans plusieurs pays d'Afrique, d'abord par des raffineurs et des coopératives,
+> puis par de petits producteurs. La version destinée à l'État fait l'objet d'un traitement à
+> part et **n'entre pas dans ce périmètre**.
+>
+> Cela invalide l'argument « UTC convient puisque c'est le fuseau du Burkina », qui servait de
+> justification ci-dessous. Le choix reste le bon — mais par décision, non par coïncidence
+> ([ADR 017](adr/017-le-temps-sur-une-plateforme-multi-pays.md)).
+
 ### Ce que cet audit a confirmé de sain
 
 **Les onze crons sont ordonnés et le disent** — réconciliation à minuit, attestation à 00 h 30
 « après la réconciliation », rendement à 4 h « pour le jour écoulé », règlement à 5 h « après
-le rendement », frais de garde à 6 h « après le règlement ». Et UTC **est** le fuseau du
-Burkina Faso : minuit UTC est bien minuit à Ouagadougou.
+le rendement », frais de garde à 6 h « après le règlement ».
+
+~~Et UTC **est** le fuseau du Burkina Faso~~ — argument retiré : le continent s'étend de UTC−1
+à UTC+4. Le livre tient bien un seul calendrier, et c'est UTC, mais parce que la réserve est
+commune et non parce qu'un pays s'y trouve (ADR 017 § 2).
 
 `business-days.ts` refuse de coder les jours fériés en dur, avec sa raison écrite : ils
 diffèrent selon la juridiction et changent chaque année, donc « une liste fausse produirait
@@ -1282,7 +1294,7 @@ Vérifié plutôt que supposé : `gold_prices.timestamp` prend le défaut `datet
 format à espace, ce qui **correspond** aux bornes que `prixDuJour` interroge (ADR 011). Mon
 propre code de rattrapage ne souffre pas du défaut ci-dessous.
 
-### AD. Le verrou de prix de cinq minutes ne verrouille rien 🔴
+### AD. Le verrou de prix de cinq minutes ne verrouille rien ✅
 
 `quotes.expires_at` est écrit en **ISO 8601** :
 
@@ -1318,7 +1330,25 @@ déclenche jamais dans la journée.
 Le nettoyage nocturne (`expires_at < datetime('now')`) est faux du même coup, dans l'autre
 sens : il ne ramasse rien le jour même.
 
-### AE. Une suspension survit à son terme jusqu'à minuit 🟠
+**Corrigé (AD et AE)** — [ADR 017](adr/017-le-temps-sur-une-plateforme-multi-pays.md).
+
+**Une seule horloge écrit les dates : celle de la base.** `datetime('now', '+' || ? || ' minutes')`
+au lieu de `new Date(...).toISOString()`. Deux raisons, dans cet ordre : la comparaison a lieu
+en SQL, donc le format doit être celui de SQL ; et une échéance de cinq minutes calculée par le
+worker mais jugée par la base porterait l'écart entre leurs horloges.
+
+`RETURNING` rend la valeur telle que la base l'a écrite, plutôt que de la recalculer.
+
+Trouvé en corrigeant AE : une durée négative produisait `datetime('now', '+-1 hours')`,
+modificateur que SQLite rend `NULL` — soit une suspension **indéfinie**. La route n'accepte
+plus qu'un nombre fini et strictement positif.
+
+`pnpm check:dates` refuse toute écriture d'une colonne d'échéance depuis JavaScript. 13 tests
+sur une vraie base, dont deux qui **montrent le défaut** avant de le corriger : l'ISO passe
+pour postérieur à l'heure courante, et l'écart disparaît quand les deux côtés viennent de la
+base.
+
+### AE. Une suspension survit à son terme jusqu'à minuit ✅
 
 Même dépareillement, direction inverse. `suspended_until` est écrit en ISO
 (`new Date(...).toISOString()`) et le travail de nuit lève les suspensions par
@@ -1340,7 +1370,15 @@ JavaScript (`toISOString`) et celui de SQLite (`datetime()`), et les colonnes so
 comme des chaînes. Trois colonnes s'en tirent parce qu'elles sont écrites par SQLite des deux
 côtés ; deux ne s'en tirent pas.
 
-### AF. L'écran de sécurité affiche des heures fausses hors du Burkina 🟠
+**Corrigé.** `apps/web` utilise `parseApiDate` — la fonction **partagée**, corrigée une fois —
+au lieu de sa copie. L'affichage suit le fuseau de l'appareil, que le navigateur connaît déjà.
+
+`TIMEZONE = 'Africa/Ouagadougou'` et `nowInBurkinaFaso()` disparaissent. Ils n'étaient appelés
+nulle part : ils n'ont laissé aucun défaut derrière eux, seulement une hypothèse.
+
+5 tests, vérifiés par mutation : remettre `new Date(date)` fait échouer deux d'entre eux.
+
+### AF. L'écran de sécurité affiche des heures fausses hors du Burkina ✅
 
 Un correctif de la troisième campagne avait porté ce défaut à la racine : `parseApiDate`, dans
 `packages/shared`, lit les horodatages sans fuseau de SQLite comme de l'UTC — « on le dit
@@ -1368,7 +1406,11 @@ défaut a survécu. La diaspora et l'exploitant, non.
 Le constat précédent notait cette copie comme « un nettoyage à part ». Elle n'est pas un
 nettoyage : elle est le défaut d'origine, resté en place.
 
-### AG. Les bornes du rapport mensuel se construisent en heure locale 🔵
+**Hors périmètre.** Ce constat porte sur le rapport mensuel transmis à l'État, et la version
+destinée à l'État fait l'objet d'un traitement à part. Le défaut reste décrit ci-dessus pour
+qui reprendra ce chantier ; il est latent en production, les Workers tournant en UTC.
+
+### AG. Les bornes du rapport mensuel se construisent en heure locale ⏸️
 
 ```ts
 const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -1390,7 +1432,16 @@ forme que le constat W — une hypothèse tacite qui tient tant qu'on ne la cont
 dépôt possède pourtant l'idiome correct (`toIsoDate`, `jourIso`, arithmétique en UTC) et
 l'emploie dans le code récent.
 
-### AH. La liste de jours fériés que personne ne remplit 🔵
+**Corrigé.** `country_config.business_holidays` (migration 0037), et la sortie de location
+passe la liste du **pays du titulaire** à `settlementDate` — dont le paramètre existait depuis
+l'origine sans qu'aucun appelant ne le remplisse.
+
+La liste reste **vide par défaut**, et c'est délibéré : `business-days.ts` explique depuis le
+début qu'« une liste fausse produirait silencieusement de mauvaises dates de règlement ».
+Fournir les jours fériés d'une juridiction est un acte d'exploitation, pas une constante de
+code. Ce qui change, c'est qu'il existe enfin un endroit où les mettre.
+
+### AH. La liste de jours fériés que personne ne remplit ✅
 
 `settlementDate(requestedAt, businessDays, holidays = [])` accepte une liste de jours fériés,
 et `business-days.ts` explique pourquoi elle n'est pas codée en dur : « quand les jours fériés

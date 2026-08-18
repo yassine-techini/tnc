@@ -11,7 +11,7 @@
     "deploy:production": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "check:sql": "node scripts/check-sql-schema.mjs",
-    "pretest": "pnpm check:sql && pnpm check:ownership && pnpm check:grams && pnpm check:audit",
+    "pretest": "pnpm check:sql && pnpm check:ownership && pnpm check:grams && pnpm check:audit && pnpm check:dates",
     "test": "vitest",
     "test:watch": "vitest watch",
     "db:migrate": "wrangler d1 execute tnc-trading-db --local --file=../../specs/db/schema.sql",
@@ -19,7 +19,8 @@
     "db:studio": "wrangler d1 studio tnc-trading-db --local",
     "check:ownership": "node scripts/check-route-ownership.mjs",
     "check:grams": "node scripts/check-gram-rounding.mjs",
-    "check:audit": "node scripts/check-audit-actions.mjs"
+    "check:audit": "node scripts/check-audit-actions.mjs",
+    "check:dates": "node scripts/check-date-columns.mjs"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.4.3",

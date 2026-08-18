@@ -1,3 +1,5 @@
+import { parseApiDate } from '@tnc-trading/shared';
+
 /**
  * Formatting utilities for TNC Trading Web App
  */
@@ -43,7 +45,19 @@ export function formatDate(
   date: string | Date,
   format: 'short' | 'long' | 'relative' | 'datetime' = 'short'
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  /**
+   * `new Date(date)` lisait les horodatages sans fuseau de SQLite comme des
+   * heures LOCALES : sur un navigateur a UTC+2, un evenement vieux de 30 minutes
+   * s'affichait « il y a 2 h 30 » — y compris sur l'ecran des sessions actives,
+   * la ou un titulaire repere une intrusion (constat AF).
+   *
+   * Un utilisateur a Ouagadougou voyait l'heure juste, ce qui explique la
+   * survie du defaut. La plateforme n'est pas dediee a un pays (ADR 017).
+   *
+   * `parseApiDate` est la fonction PARTAGEE, corrigee une fois pour toutes ;
+   * ce fichier en portait une copie fautive.
+   */
+  const d = parseApiDate(date);
 
   switch (format) {
     case 'short':
@@ -109,7 +123,7 @@ function formatRelativeTime(date: Date): string {
  * Format time only
  */
 export function formatTime(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = parseApiDate(date);
   return d.toLocaleTimeString('fr-FR', {
     hour: '2-digit',
     minute: '2-digit',
