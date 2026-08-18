@@ -30,6 +30,9 @@ export interface CountryConfigRow {
   locale: string;
   timezone: string;
   business_holidays: string;
+  high_value_threshold: number | null;
+  withdraw_daily_standard: number | null;
+  withdraw_daily_verified: number | null;
   enabled: number;
 }
 
@@ -52,6 +55,17 @@ export interface CountryConfig {
    * remplir est un acte d'exploitation (ADR 017 SS 4).
    */
   businessHolidays: string[];
+  /**
+   * Seuils MONETAIRES, dans la devise du pays (ADR 018). `null` = non fixe : on
+   * retombe sur la cle globale, qui garde son role de valeur par defaut au lieu
+   * de valeur universelle.
+   *
+   * Les plafonds d'ACHAT ne figurent pas ici : ils sont en grammes, et un gramme
+   * est un gramme partout.
+   */
+  highValueThreshold: number | null;
+  withdrawDailyStandard: number | null;
+  withdrawDailyVerified: number | null;
   enabled: boolean;
 }
 
@@ -76,6 +90,9 @@ export const FALLBACK_COUNTRY: CountryConfig = {
   locale: 'fr-FR',
   timezone: 'Africa/Ouagadougou',
   businessHolidays: [],
+  highValueThreshold: 1_000_000,
+  withdrawDailyStandard: 500_000,
+  withdrawDailyVerified: 5_000_000,
   enabled: true,
 };
 
@@ -108,6 +125,9 @@ export function toCountryConfig(row: CountryConfigRow): CountryConfig {
     locale: row.locale,
     timezone: row.timezone,
     businessHolidays: parseJson<string[]>(row.business_holidays, [], 'business_holidays'),
+    highValueThreshold: row.high_value_threshold ?? null,
+    withdrawDailyStandard: row.withdraw_daily_standard ?? null,
+    withdrawDailyVerified: row.withdraw_daily_verified ?? null,
     enabled: row.enabled === 1,
   };
 }

@@ -23,6 +23,7 @@ import { CertificateService } from '../services/certificate.service';
 import { PaymentService } from '../services/payment.service';
 import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
+import { CountryConfigService } from '../services/country-config.service';
 
 const wallet = new Hono<AppEnv>();
 
@@ -398,7 +399,28 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   // Check KYC withdrawal limit — single source of truth (KycService) so the
   // enforced limit always matches what is reported to the user elsewhere.
   const kycLimits = await KycService.getKycLimits(configService);
-  const dailyLimit = kycLimits[kycLevel].dailyWithdraw;
+
+  /**
+   * Le plafond de retrait appartient au PAYS (ADR 018) : c'est une contrainte
+   * reglementaire, exprimee dans sa devise. Applique tel quel partout, « 500 000 »
+   * valait 813 USD par jour en XOF et 41 667 USD en GHS.
+   *
+   * Les plafonds d'ACHAT restent globaux : ils sont en grammes, et un gramme est
+   * un gramme partout.
+   */
+  const titulaire = await c.env.DB
+    .prepare('SELECT country FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ country: string | null }>();
+  const pays = await new CountryConfigService(c.env.DB).forUser(titulaire?.country);
+
+  const plafondDuPays =
+    kycLevel === 'VERIFIED' ? pays.withdrawDailyVerified
+    : kycLevel === 'STANDARD' ? pays.withdrawDailyStandard
+    : null;
+
+  // `null` = le pays n'a pas fixe le sien : la cle globale sert de defaut.
+  const dailyLimit = plafondDuPays ?? kycLimits[kycLevel].dailyWithdraw;
   if (dailyLimit === 0) {
     return c.json({
       success: false,

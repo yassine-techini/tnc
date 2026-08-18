@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { KycService } from '../services/kyc.service';
+import { CountryConfigService } from '../services/country-config.service';
 import { AccountClosureService } from '../services/account-closure.service';
 import { AuthService } from '../services/auth.service';
 import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
@@ -149,9 +150,20 @@ users.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
 
 // SECURITY: Comprehensive validation schema for KYC submission
 const kycSubmitSchema = z.object({
-  documentType: z.enum(['CNIB', 'PASSPORT', 'PERMIT', 'CEDEAO'], {
-    errorMap: () => ({ message: 'Type de document invalide' }),
-  }),
+  /**
+   * La FORME seulement. La liste des pieces acceptees appartient au pays
+   * (`country_config.id_document_types`) et est verifiee dans le gestionnaire,
+   * la ou le pays de l'utilisateur est connu (ADR 018).
+   *
+   * L'enumeration figee ici — CNIB, PASSPORT, PERMIT, CEDEAO — etait celle d'un
+   * seul pays : elle refusait la CNI ivoirienne comme la carte nationale
+   * ougandaise, alors que `country_config` les declare.
+   */
+  documentType: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[A-Z][A-Z0-9_]*$/, 'Type de document invalide'),
   documentNumber: z.string().min(1).max(30).optional(),
   firstName: z.string()
     .min(1, 'Prénom requis')
@@ -188,6 +200,27 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
       city,
       documentExpiryDate,
     } = body;
+
+    // Le pays decide de ses pieces d'identite (ADR 018). Refuser en NOMMANT les
+    // documents acceptes : « Type de document invalide » n'apprend rien a
+    // quelqu'un qui tient sa carte nationale a la main.
+    const titulaire = await c.env.DB
+      .prepare('SELECT country FROM users WHERE id = ?')
+      .bind(userId)
+      .first<{ country: string | null }>();
+    const pays = await new CountryConfigService(c.env.DB).forUser(titulaire?.country);
+
+    if (!pays.idDocumentTypes.includes(documentType)) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'KYC_DOCUMENT_TYPE_UNSUPPORTED',
+          message: `Ce type de document n'est pas accepté pour ${pays.name}. Documents acceptés : ${pays.idDocumentTypes.join(', ')}.`,
+          details: { accepted: pays.idDocumentTypes, country: pays.code },
+        },
+        requestId: crypto.randomUUID(),
+      }, 400);
+    }
 
     // Check if user already has a pending or verified KYC
     const existingKyc = await c.env.DB

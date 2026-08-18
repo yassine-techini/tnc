@@ -338,6 +338,14 @@ CREATE TABLE users (
 CREATE TABLE kyc_documents (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- ADR 018 : la base garde la FORME, le pays decide du contenu. La contrainte
+  -- enumerait les documents d un seul pays et refusait la CNI ivoirienne comme
+  -- la carte nationale ougandaise.
+  document_type TEXT NOT NULL DEFAULT 'PASSPORT' CHECK (
+    length(document_type) BETWEEN 2 AND 40
+    AND document_type = upper(document_type)
+    AND instr(document_type, ' ') = 0
+  ),
   front_image_url TEXT NOT NULL,
   back_image_url TEXT,
   selfie_url TEXT NOT NULL,

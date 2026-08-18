@@ -50,14 +50,45 @@ vi.spyOn(SecurityService.prototype, 'logSecurityEvent').mockImplementation((e) =
   logSecurityEvent(e)
 );
 
-/** Un utilisateur, ou `null` pour un identifiant inconnu. */
-function db(utilisateur: LigneUtilisateur | null) {
+/**
+ * Un utilisateur, ou `null` pour un identifiant inconnu.
+ *
+ * `seuilDuPays` fixe le seuil que `country_config` renvoie : `null` signifie que
+ * le pays n'en a pas fixe, et la cle globale sert alors de defaut (ADR 018).
+ */
+function db(utilisateur: LigneUtilisateur | null, seuilDuPays: number | null = null) {
+  const reponse = (sql: string) => {
+    if (sql.includes('country_config')) {
+      return {
+        code: 'BF',
+        name: 'Burkina Faso',
+        currency: 'XOF',
+        currency_symbol: 'FCFA',
+        currency_decimals: 0,
+        phone_prefix: '+226',
+        certificate_prefix: 'BF',
+        id_document_types: '[]',
+        payment_methods: '[]',
+        locale: 'fr-FR',
+        timezone: 'Africa/Ouagadougou',
+        business_holidays: '[]',
+        high_value_threshold: seuilDuPays,
+        withdraw_daily_standard: null as number | null,
+        withdraw_daily_verified: null as number | null,
+        enabled: 1,
+      };
+    }
+    if (sql.includes('default_country')) return { value: 'BF' };
+    if (sql.includes('FROM users')) return utilisateur;
+    return null;
+  };
+
   return {
-    prepare: vi.fn().mockReturnValue({
-      bind: vi.fn().mockReturnValue({
-        first: vi.fn().mockResolvedValue(utilisateur),
-      }),
-    }),
+    prepare: vi.fn().mockImplementation((sql: string) => ({
+      // Certaines requetes sont liees, d'autres non : les deux formes existent.
+      bind: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(reponse(sql)) }),
+      first: vi.fn().mockResolvedValue(reponse(sql)),
+    })),
   } as unknown as D1Database;
 }
 
@@ -74,10 +105,11 @@ const cache = {} as KVNamespace;
 const appel = (
   montant: number,
   utilisateur: LigneUtilisateur | null,
-  totpCode?: string
+  totpCode?: string,
+  seuilDuPays: number | null = null
 ) =>
   requireTwoFactorIfHighValue({
-    db: db(utilisateur),
+    db: db(utilisateur, seuilDuPays),
     cache,
     encryptionKey: 'cle',
     userId: 'usr_1',
@@ -104,6 +136,24 @@ describe('Sous le seuil', () => {
     // Sinon la regle rendrait la plateforme inutilisable pour qui achete un
     // gramme, ce que la specification ne demande pas.
     const r = await appel(50_000, SANS_2FA);
+
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('Le seuil appartient au pays (ADR 018)', () => {
+  it('prend celui du pays quand il est fixe, meme sous la cle globale', async () => {
+    // La cle globale vaut 1 000 000. Un pays qui fixe 200 000 doit voir le
+    // second facteur exige a 300 000 — ce que l'ancienne version, qui ne lisait
+    // que la cle globale, laissait passer sans rien demander.
+    const r = await appel(300_000, { two_factor_secret: null, two_factor_enabled: 0 }, undefined, 200_000);
+
+    expect(r.ok).toBe(false);
+    expect(r.thresholdXof).toBe(200_000);
+  });
+
+  it('retombe sur la cle globale quand le pays n en fixe pas', async () => {
+    const r = await appel(300_000, { two_factor_secret: null, two_factor_enabled: 0 }, undefined, null);
 
     expect(r.ok).toBe(true);
   });

@@ -12,6 +12,7 @@
 
 import type { D1Database, KVNamespace } from '@cloudflare/workers-types';
 import { SecurityService } from '../services/security.service';
+import { CountryConfigService } from '../services/country-config.service';
 import { ConfigService } from '../services/config.service';
 import { decryptTotpSecret } from './totp-secret';
 
@@ -78,7 +79,25 @@ export async function requireTwoFactorIfHighValue(
   const configService = new ConfigService(db, cache);
   const securityService = new SecurityService(db, cache, configService);
 
-  const { highValueThresholdXof: seuil } = await securityService.getSecurityConfig();
+  /**
+   * Le seuil appartient au PAYS (ADR 018), pas a la plateforme.
+   *
+   * `high_value_threshold_xof` etait une cle globale nommee en XOF, appliquee
+   * telle quelle partout : 1 000 000 vaut 1 626 USD en XOF, 270 USD en UGX et
+   * 83 333 USD en GHS. En Ouganda le second facteur aurait ete reclame pour
+   * presque chaque operation ; au Ghana, jamais.
+   *
+   * La cle globale reste la valeur par DEFAUT, pour un pays qui n'a pas fixe la
+   * sienne — et non la valeur universelle qu'elle etait.
+   */
+  const titulaire = await db
+    .prepare('SELECT country FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ country: string | null }>();
+  const pays = await new CountryConfigService(db).forUser(titulaire?.country);
+
+  const { highValueThresholdXof: seuilParDefaut } = await securityService.getSecurityConfig();
+  const seuil = pays.highValueThreshold ?? seuilParDefaut;
 
   // Un montant non fini ne doit pas glisser sous le seuil par accident.
   if (!Number.isFinite(amountXof)) {
@@ -92,7 +111,8 @@ export async function requireTwoFactorIfHighValue(
     };
   }
 
-  if (!(await securityService.isHighValueTransaction(Math.abs(amountXof)))) {
+  // Compare au seuil DU PAYS, et non plus a celui de la configuration globale.
+  if (Math.abs(amountXof) < seuil) {
     return { ok: true, challenged: false, thresholdXof: seuil };
   }
 

@@ -1489,7 +1489,7 @@ certificat de propriété n'imprime **aucune devise** — un poids, pas une vale
 qui l'exige (`certificate-document.test.ts:46`). C'est le seul document qui traverse une
 frontière sans rien supposer.
 
-### AI. Le schéma refuse les documents que la configuration déclare 🔴
+### AI. Le schéma refuse les documents que la configuration déclare ✅
 
 `country_config.id_document_types` décrit les pièces acceptées pays par pays. La table qui les
 reçoit ne les connaît pas :
@@ -1514,7 +1514,19 @@ travail de configuration par pays a été fait ; la colonne qu'il alimente est r
 un pays. Ouvrir un second pays ne produira pas un message clair, mais une violation de
 contrainte à l'insertion.
 
-### AJ. Les seuils d'argent sont des nombres, pas des montants 🔴
+**Corrigé** — [ADR 018](adr/018-ce-qui-appartient-au-pays.md).
+
+La base garde la **forme**, le pays décide du **contenu** (migration 0038) : un jeton non vide,
+en majuscules, sans espace — ce qui vaut pour tous les pays. L'appartenance à
+`country_config.id_document_types` est vérifiée **au dépôt**, là où le pays de l'utilisateur est
+connu. Un `CHECK` ne peut pas interroger une autre table, et énumérer l'union de tous les pays
+ramènerait une migration à chaque ouverture — exactement ce que `country_config` évite.
+
+Le `z.enum` de la route portait la même énumération : il est remplacé par un contrôle de forme,
+et le refus **nomme les documents acceptés** — « Type de document invalide » n'apprend rien à
+quelqu'un qui tient sa carte nationale à la main.
+
+### AJ. Les seuils d'argent sont des nombres, pas des montants ✅
 
 Trois garde-fous monétaires sont des clés globales, nommées en XOF et appliquées telles quelles
 quel que soit le pays :
@@ -1539,6 +1551,26 @@ désactiver. Au Ghana il ne se déclencherait **jamais**, et un compte de niveau
 pourrait retirer 41 000 USD par jour sans rien déclencher.
 
 Un seuil exprimé en une devise et appliqué à toutes n'est pas un seuil : c'est un nombre.
+
+**Corrigé** — [ADR 018](adr/018-ce-qui-appartient-au-pays.md).
+
+**La moitié du problème se règle par une distinction** qui n'avait pas été faite : les plafonds
+d'achat sont en **grammes**, donc identiques partout. Un gramme est un gramme à Ouagadougou
+comme à Kampala. Ils restent globaux.
+
+Les trois seuils réellement monétaires passent dans `country_config` (migration 0039) :
+`high_value_threshold`, `withdraw_daily_standard`, `withdraw_daily_verified`. `NULL` signifie
+« non fixé » et fait retomber sur la clé globale, qui retrouve son rôle de **valeur par défaut**
+au lieu de valeur universelle.
+
+Les montants semés sont dérivés d'une référence en USD (1 500 / 800 / 8 000) et **déclarés
+indicatifs** : un plafond de retrait est une contrainte réglementaire, fixée par un régulateur
+et non par un taux de change. Les semer évite qu'un pays activé parte avec les seuils d'un
+autre ; cela ne remplace pas la décision de l'exploitant. Vérifié : les valeurs XOF et UGX
+tombent à ~1 500 / 810 / 8 100 USD des deux côtés, contre un facteur six auparavant.
+
+8 tests, vérifiés par mutation : remettre l'énumération d'un seul pays fait échouer la Côte
+d'Ivoire et l'Ouganda.
 
 ### AK. Le grand livre n'a qu'une devise, et elle n'est nommée nulle part 🟠
 
