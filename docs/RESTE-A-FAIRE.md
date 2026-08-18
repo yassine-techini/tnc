@@ -1010,6 +1010,160 @@ désormais échouer `tsc`.
 
 ---
 
+## Neuvième audit — 18 août 2026, qui a fait quoi, et peut-on le prouver ?
+
+`CLAUDE.md` promet « **audit trail sur toutes les opérations admin** ». C'est une affirmation
+vérifiable, et sur une plateforme souveraine c'est celle qui permet à l'État de contrôler
+l'exploitant. Les huit audits précédents ont regardé ce que le code fait ; celui-ci regarde
+ce qu'il **garde** de ce qu'il a fait.
+
+### Ce que cet audit a confirmé de sain
+
+**Les 14 mutations privilégiées écrivent toutes une trace.** Aucune exception — vérifiée une
+par une, y compris `/producers/:id/approve` qui semblait manquante et délègue en réalité à
+`producer-profile.service.ts`.
+
+`audit_logs` **n'est pas exclu de la sauvegarde** : le registre survit à la perte de la base.
+Le back-office expose `/admin/audit-logs` sous permission `audit:view`.
+
+Et surtout, **la couche service applique la discipline du lot gardé partout** : `lease`,
+`consignment`, `producer-profile`, `settlement` placent l'insertion d'audit **dans le même
+`db.batch`** que l'action, avec la même garde répétée sur chaque instruction. La règle existe,
+elle est comprise, et elle est appliquée avec rigueur — là.
+
+### Z. Huit traces sur quinze ne partagent pas la transaction de leur action 🟠
+
+L'écriture d'audit est faite en instruction séparée dans huit cas sur quinze — dont **six des
+sept routes d'administration** :
+
+| Écriture | Dans le lot ? |
+|---|---|
+| `/stock/adjust` | ✅ `db.batch([ajustement, audit])` |
+| `/users/:id/kyc` | ❌ |
+| `/kyc/:id/review` | ❌ |
+| `/users/:id/suspend` | ❌ |
+| `/users/:id/unsuspend` | ❌ |
+| `/bulk/kyc-approve` | ❌ (dans une boucle, une trace par élément) |
+| `/withdrawals/:id` | ❌ |
+| `disposition.service` · `reconciliation.service` | ❌ |
+| `lease` · `consignment` · `producer-profile` · `settlement` | ✅ |
+
+La forme fautive :
+
+```ts
+await c.env.DB.prepare('UPDATE users SET kyc_status = ?, kyc_level = ? …').run();
+
+// Log admin action
+await c.env.DB.prepare('INSERT INTO audit_logs …').run();
+```
+
+Si la seconde instruction échoue — coupure D1, éviction du worker, expiration — **l'action est
+faite et personne ne l'a faite**. Un utilisateur passe à `VERIFIED`, son plafond d'achat
+journalier passe de 100 g à 1000 g, et le registre est muet.
+
+Le correctif ne demande aucune invention : `/stock/adjust` montre déjà la forme, à trente
+lignes de là, et les quatre services la tiennent. C'est la même asymétrie qu'au sixième audit
+— une discipline réelle, appliquée de mémoire plutôt que par un mécanisme.
+
+Cas particulier : `reconciliation.service` est **la seule écriture qui renseigne `old_value`**,
+donc la plus informative du dépôt, et elle est écrite de la manière la moins sûre.
+
+### AA. La liste qui protège le registre ne correspond à rien 🔴
+
+Un cron purge `audit_logs` au-delà de la rétention (`cleanup_audit_log_days`, **365 jours**),
+en épargnant les actions réputées critiques :
+
+```ts
+const criticalActions = [
+  'KYC_APPROVED', 'KYC_REJECTED', 'USER_SUSPENDED',
+  'WITHDRAWAL_APPROVED', 'STOCK_ADJUSTED', 'ADMIN_CREATED',
+];
+… WHERE created_at < … AND action NOT IN (…)
+```
+
+Confronté à ce que les routes **écrivent réellement** :
+
+| Protégé | Écrit | |
+|---|---|---|
+| `KYC_APPROVED` / `KYC_REJECTED` | `KYC_APPROVE` / `KYC_REJECT` | ❌ |
+| `STOCK_ADJUSTED` | `STOCK_ADJUST` | ❌ |
+| `WITHDRAWAL_APPROVED` | `WITHDRAWAL_APPROVE` | ❌ |
+| `ADMIN_CREATED` | *n'est écrit nulle part* | ❌ |
+| `USER_SUSPENDED` | `USER_SUSPENDED` | ✅ |
+
+**Une entrée sur six protège quelque chose.** Les participes passés de la liste ne rencontrent
+jamais les infinitifs des écrivains.
+
+Ne figurent en outre nulle part dans la liste : `KYC_BULK_APPROVE`, `USER_UNSUSPENDED`,
+`PRODUCER_KYB_APPROVED`, `PRODUCER_KYB_REJECTED`, `CONSIGNMENT_AUDIT_VALIDATED`,
+`LEASE_SETTLED`, `LOT_DISPOSED`, `RECONCILE_TRANSACTION`.
+
+Conséquence : **la trace de qui a ajusté le stock d'or national disparaît au bout d'un an**,
+alors qu'un mécanisme explicite existe pour l'en empêcher. Le mécanisme rassure sans protéger
+— la forme de défaut la plus coûteuse, parce qu'elle décourage de regarder.
+
+`ADMIN_CREATED` mérite sa propre mention : la liste protège la trace d'une action qui n'est
+**jamais tracée**. La création d'un administrateur n'écrit rien.
+
+### AB. Supprimer son compte échoue pour quiconque a demandé un devis 🔴
+
+`DELETE /users/me` supprime en cascade douze tables. Le garde est sérieux — mot de passe
+exigé, solde nul, aucune transaction en cours.
+
+Mais douze autres tables référencent `users(id)` **sans `ON DELETE CASCADE`** et ne figurent
+pas dans le lot : `quotes`, `transaction_verifications`, `certificates`, `lease_positions`,
+`lease_accruals`, `lot_dispositions`, `storage_fee_accruals`, les quatre tables de
+consignation, le profil raffineur.
+
+Les clés étrangères étant appliquées, `DELETE FROM users` échoue, tout le lot est annulé, et
+l'utilisateur reçoit :
+
+```
+INTERNAL_ERROR — « Erreur lors de la suppression du compte »   (500)
+```
+
+`quotes` suffit à déclencher cela : **tout utilisateur ayant demandé un seul devis** ne peut
+pas supprimer son compte, et n'apprend pas pourquoi. C'est-à-dire tout utilisateur qui s'est
+servi de la plateforme pour ce à quoi elle sert. **Aucun test ne couvre ce chemin.**
+
+Deux défauts de conception se cachent derrière la panne :
+
+- **Le solde à zéro ne prouve pas qu'on ne détient rien.** La location sort les grammes du
+  portefeuille (`token_balance − principal_g`) : un utilisateur avec 100 g en position active
+  affiche un solde nul et franchit le garde. Rien ne vérifie `lease_positions`.
+- **Les transactions terminées seraient effacées** (`DELETE FROM transactions WHERE user_id`)
+  si la suppression aboutissait. Sur une plateforme régulée, le registre des opérations se
+  conserve indépendamment de la fermeture du compte — et il alimente les volumes mensuels
+  publiés à l'État ainsi que la réconciliation des périodes passées. Effacer le compte n'est
+  pas effacer l'histoire.
+
+### AC. L'État écrit dans le registre et ne peut pas le lire 🟡
+
+`state.ts:934` insère une entrée `STATE_EXPORT` : les exports du portail souverain sont tracés.
+C'est juste — le lecteur aussi doit rendre des comptes.
+
+Mais **aucune route du portail État n'expose `audit_logs`**. La lecture du registre est
+réservée au back-office, sous la permission `audit:view` de l'exploitant.
+
+Le registre existe pour rendre l'exploitant responsable devant l'audience qui a alloué l'or.
+Dans son état actuel, cette audience est la seule à ne pas y avoir accès : elle y est inscrite
+sans pouvoir le consulter.
+
+Ce n'est pas un défaut de code — rien n'est cassé. C'est une décision qui n'a pas été prise, et
+elle appartient au contrat entre l'exploitant et l'État plutôt qu'au dépôt.
+
+### Observation — le registre dit ce qui est, pas ce qui était
+
+Sur quinze écritures, **deux renseignent `old_value`** (`reconciliation`, et partiellement
+`security.service`). La colonne existe depuis la première migration.
+
+Une entrée `KYC_APPROVE` indique que le dossier est approuvé ; elle ne dit pas s'il était en
+attente, déjà approuvé, ou rejeté la veille. Pour reconstituer une décision il faut donc
+l'entrée **et** l'état antérieur, que seul le hasard des autres entrées permet parfois de
+retrouver.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
