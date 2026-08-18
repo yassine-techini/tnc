@@ -1572,7 +1572,7 @@ tombent à ~1 500 / 810 / 8 100 USD des deux côtés, contre un facteur six aupa
 8 tests, vérifiés par mutation : remettre l'énumération d'un seul pays fait échouer la Côte
 d'Ivoire et l'Ouganda.
 
-### AK. Le grand livre n'a qu'une devise, et elle n'est nommée nulle part 🟠
+### AK. Le grand livre n'a qu'une devise, et elle n'est nommée nulle part ✅
 
 `wallets.cash_balance`, `transactions.cash_amount`, `fees`, `total_spent` : **aucune colonne ne
 porte de devise.** Le commentaire du schéma dit « Total XOF dépensés » — l'unité vit dans un
@@ -1589,7 +1589,32 @@ il ne l'est pas.
 Le dépôt le sait — c'est écrit dans la migration ougandaise. Ce constat ne révèle donc pas une
 ignorance, mais un **écart entre ce qui est su et ce que le schéma permet**.
 
-### AL. `currency_decimals` est exposée et n'entre dans aucun calcul 🟠
+**Corrigé** — [ADR 019](adr/019-une-devise-sur-le-grand-livre.md).
+
+**La devise vit sur l'argent, figée à l'écriture.** `wallets.currency` et
+`transactions.currency` (migration 0040). La dériver du pays au moment de la lecture serait
+faux : un titulaire peut changer de pays, et une écriture passée doit garder l'unité dans
+laquelle elle a été faite.
+
+**Deux colonnes, pas dix-neuf.** Les autres montants — devis, rendements, frais, acomptes — se
+règlent *dans* un portefeuille et partagent sa devise par construction. Chacune des huit
+insertions de transaction reprend la devise du portefeuille **dans la même instruction**, si
+bien qu'une ligne ne peut pas naître sans unité ni diverger du solde qu'elle mouvemente.
+
+**Le prix a une référence, pas une conversion figée.** `gold_prices.price_usd` reste la
+référence — le métal est coté en USD — et les taux vivent dans `exchange_rates`, une ligne par
+devise et par relevé. `price_xof` n'est pas renommée : elle contient bien le prix en XOF, elle
+reste exacte. Ce qui change est qu'elle cesse d'être **la** conversion pour devenir **une**
+conversion.
+
+**Sans taux pour cette devise, on refuse.** Servir des francs CFA à un Ougandais parce que le
+sien manque serait pire que de ne rien servir : le chiffre aurait l'air juste.
+
+14 tests sur une vraie base, vérifiés par mutation dans les trois sens : retomber sur le XOF
+au lieu d'échouer fermé, arrondir à l'entier quelle que soit la devise, et écrire une
+transaction sans reprendre la devise de son portefeuille.
+
+### AL. `currency_decimals` est exposée et n'entre dans aucun calcul ⚙️
 
 La colonne existe, la route publique la renvoie, et **aucun calcul monétaire ne la consulte**.
 Quatre services définissent la même ligne :
@@ -1610,6 +1635,18 @@ const xof = (n: number) => `${groupDigits(n)} XOF`;
 
 Un producteur ougandais recevrait un relevé libellé en XOF. Le certificat, lui, a résolu la
 question en n'imprimant aucune devise.
+
+**Partiellement corrigé** — `arrondirMonnaie(montant, decimales)` existe et remplace la logique
+des quatre copies de `const xof = (n) => Math.round(n)` pour tout ce qui passe par le nouveau
+module ([ADR 019](adr/019-une-devise-sur-le-grand-livre.md) § 4) : dès qu'une ligne connaît sa
+devise, l'arrondi doit suivre ses décimales.
+
+**Reste à faire** : les quatre services portent encore leur propre `xof()` et ne consultent pas
+`currency_decimals`. Les remplacer demande de leur faire connaître la devise du portefeuille
+qu'ils mouvementent — mécanique, mais qui touche le calcul du rendement, des frais de garde,
+des acomptes et de la répartition. C'est un chantier à part, désormais possible.
+
+Le relevé de règlement imprime toujours « XOF » en dur.
 
 ### AM. On peut s'inscrire depuis n'importe quel pays, mais pas y changer son numéro 🟡
 

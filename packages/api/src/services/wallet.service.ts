@@ -71,13 +71,28 @@ export class WalletService {
     return result || null;
   }
 
+  /**
+   * Cree un portefeuille dans la devise DU PAYS de son titulaire (ADR 019).
+   *
+   * La devise est figee ici : la deriver du pays a la lecture serait faux, un
+   * titulaire pouvant changer de pays alors que ses ecritures passees gardent
+   * l'unite dans laquelle elles ont ete faites.
+   *
+   * `SELECT … FROM country_config` dans la meme instruction : le portefeuille ne
+   * peut pas naitre sans devise, et retombe sur celle du pays par defaut plutot
+   * que sur une valeur vide.
+   */
   async create(userId: string, walletId: string): Promise<WalletRow> {
     await this.db
       .prepare(
-        `INSERT INTO wallets (id, user_id, token_balance, cash_balance)
-         VALUES (?, ?, 0, 0)`
+        `INSERT INTO wallets (id, user_id, token_balance, cash_balance, currency)
+         VALUES (?, ?, 0, 0, COALESCE(
+           (SELECT c.currency FROM country_config c
+             JOIN users u ON u.country = c.code WHERE u.id = ?),
+           'XOF'
+         ))`
       )
-      .bind(walletId, userId)
+      .bind(walletId, userId, userId)
       .run();
 
     const wallet = await this.findById(walletId);
@@ -127,8 +142,9 @@ export class WalletService {
   }): Promise<TransactionRow> {
     await this.db
       .prepare(
-        `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference)
-         VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO transactions
+           (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference, currency)
+         VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, (SELECT currency FROM wallets WHERE id = ?))`
       )
       .bind(
         data.id,
@@ -140,7 +156,8 @@ export class WalletService {
         data.pricePerGram || null,
         data.fees,
         data.paymentMethod || null,
-        data.paymentReference || null
+        data.paymentReference || null,
+        data.walletId
       )
       .run();
 
@@ -348,10 +365,11 @@ export class WalletService {
           .bind(p.total, p.tokenAmount, p.tokenAmount, p.total, p.walletId),
         this.db
           .prepare(
-            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at)
-             VALUES (?, ?, ?, 'BUY', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'))`
+            `INSERT INTO transactions
+               (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at, currency)
+             VALUES (?, ?, ?, 'BUY', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'), (SELECT currency FROM wallets WHERE id = ?))`
           )
-          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null),
+          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null, p.walletId),
       ]);
       return { ok: true, reason: null };
     } catch (e) {
@@ -408,10 +426,11 @@ export class WalletService {
           .bind(p.tokenAmount, GOLD_STOCK_ID),
         this.db
           .prepare(
-            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at)
-             VALUES (?, ?, ?, 'SELL', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'))`
+            `INSERT INTO transactions
+               (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, completed_at, currency)
+             VALUES (?, ?, ?, 'SELL', 'COMPLETED', ?, ?, ?, ?, ?, datetime('now'), (SELECT currency FROM wallets WHERE id = ?))`
           )
-          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null),
+          .bind(p.transactionId, p.userId, p.walletId, p.tokenAmount, p.cashAmount, p.pricePerGram, p.fees, p.paymentMethod ?? null, p.walletId),
       ]);
       return { ok: true, reason: null };
     } catch (e) {
@@ -451,10 +470,11 @@ export class WalletService {
       await this.db.batch([
         this.db
           .prepare(
-            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference)
-             VALUES (?, ?, ?, 'WITHDRAWAL', 'PENDING', NULL, ?, NULL, ?, ?, ?)`
+            `INSERT INTO transactions
+               (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_method, payment_reference, currency)
+             VALUES (?, ?, ?, 'WITHDRAWAL', 'PENDING', NULL, ?, NULL, ?, ?, ?, (SELECT currency FROM wallets WHERE id = ?))`
           )
-          .bind(p.transactionId, p.userId, p.walletId, p.amount, p.fees, p.method, p.paymentReference ?? null),
+          .bind(p.transactionId, p.userId, p.walletId, p.amount, p.fees, p.method, p.paymentReference ?? null, p.walletId),
         this.db
           .prepare(
             `INSERT INTO withdrawals (id, transaction_id, method, amount, fees, net_amount, phone_number, bank_account, bank_name, status, created_at)

@@ -148,14 +148,15 @@ export class SettlementService {
       this.db
         .prepare(
           `INSERT INTO transactions
-             (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_reference, completed_at)
-           SELECT ?, ?, ?, 'CONSIGNMENT', 'COMPLETED', ?, ?, ?, 0, ?, datetime('now')
+             (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, fees, payment_reference, completed_at, currency)
+           SELECT ?, ?, ?, 'CONSIGNMENT', 'COMPLETED', ?, ?, ?, 0, ?, datetime('now'),
+                  (SELECT currency FROM wallets WHERE id = ?)
            WHERE ${guard}`
         )
         .bind(
           crypto.randomUUID(), lot.producer_id, walletId,
           tokensG > 0 ? tokensG : null, cashXof, terms.pricePerGram || null,
-          `ADVANCE:${consignmentId}`, consignmentId
+          `ADVANCE:${consignmentId}`, walletId, consignmentId
         )
     );
 

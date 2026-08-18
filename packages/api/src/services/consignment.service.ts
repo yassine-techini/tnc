@@ -385,11 +385,12 @@ export class ConsignmentService {
               this.db
                 .prepare(
                   `INSERT INTO transactions
-                     (id, user_id, wallet_id, type, status, token_amount, cash_amount, fees, payment_reference, completed_at)
-                   SELECT ?, ?, ?, 'CONSIGNMENT', 'COMPLETED', ?, 0, 0, ?, datetime('now')
+                     (id, user_id, wallet_id, type, status, token_amount, cash_amount, fees, payment_reference, completed_at, currency)
+                   SELECT ?, ?, ?, 'CONSIGNMENT', 'COMPLETED', ?, 0, 0, ?, datetime('now'),
+                          (SELECT currency FROM wallets WHERE id = ?)
                    WHERE EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
                 )
-                .bind(crypto.randomUUID(), current.producer_id, producerWalletId, producerTokens, current.reference, id),
+                .bind(crypto.randomUUID(), current.producer_id, producerWalletId, producerTokens, current.reference, producerWalletId, id),
             ]
           : []),
         this.guardedEventStmt(id, current.status, 'AUDIT_VALIDATED', admin.id, admin.role, `Audit validé à Dubaï — ${p.refinedWeightG} g raffinés, ${producerTokens} g crédités au producteur`, 'ARRIVED_DUBAI'),

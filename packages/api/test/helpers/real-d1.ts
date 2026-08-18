@@ -88,6 +88,8 @@ const SCHEMA = `
 CREATE TABLE wallets (
   id TEXT PRIMARY KEY,
   user_id TEXT UNIQUE NOT NULL,
+  -- ADR 019 : un portefeuille a UNE devise, figee a sa creation.
+  currency TEXT NOT NULL DEFAULT 'XOF',
   token_balance REAL DEFAULT 0 CHECK (token_balance >= 0),
   cash_balance REAL DEFAULT 0 CHECK (cash_balance >= 0),
   total_bought REAL DEFAULT 0,
@@ -128,7 +130,8 @@ CREATE TABLE transactions (
   failure_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  currency TEXT NOT NULL DEFAULT 'XOF'
 );
 CREATE TABLE withdrawals (
   id TEXT PRIMARY KEY,
@@ -283,6 +286,13 @@ CREATE TABLE gold_loans (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE exchange_rates (
+  id TEXT PRIMARY KEY,
+  currency TEXT NOT NULL,
+  rate_per_usd REAL NOT NULL CHECK (rate_per_usd > 0),
+  source TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE gold_prices (
   id TEXT PRIMARY KEY,
   price_usd REAL NOT NULL,
@@ -317,6 +327,8 @@ CREATE TABLE users (
   last_name TEXT,
   two_factor_enabled INTEGER DEFAULT 0,
   two_factor_secret TEXT,
+  -- Le pays determine la devise du portefeuille (ADR 019).
+  country TEXT NOT NULL DEFAULT 'BF',
   tokens_invalid_before TEXT,
   suspended INTEGER DEFAULT 0,
   suspended_at TEXT,

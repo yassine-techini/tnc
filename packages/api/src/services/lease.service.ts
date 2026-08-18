@@ -359,8 +359,9 @@ export class LeaseService {
           .bind(yieldXof, position.wallet_id, order.id),
         this.db
           .prepare(
-            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, metadata, created_at, completed_at)
-             SELECT ?, ?, ?, 'LEASE_YIELD', 'COMPLETED', NULL, ?, ?, ?, datetime('now'), datetime('now')
+            `INSERT INTO transactions (id, user_id, wallet_id, type, status, token_amount, cash_amount, price_per_gram, metadata, created_at, completed_at, currency)
+             SELECT ?, ?, ?, 'LEASE_YIELD', 'COMPLETED', NULL, ?, ?, ?, datetime('now'), datetime('now'),
+                    (SELECT currency FROM wallets WHERE id = ?)
              WHERE ${guard}`
           )
           .bind(
@@ -370,6 +371,7 @@ export class LeaseService {
             yieldXof,
             pricePerGram > 0 ? pricePerGram : null,
             JSON.stringify({ positionId: position.id, principalG, annualRate: position.annual_rate }),
+            position.wallet_id,
             order.id
           )
       );

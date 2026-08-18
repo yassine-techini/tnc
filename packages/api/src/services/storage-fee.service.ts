@@ -208,8 +208,9 @@ export class StorageFeeService {
         this.db
           .prepare(
             `INSERT INTO transactions
-               (id, user_id, wallet_id, type, status, token_amount, cash_amount, metadata, created_at, completed_at)
-             SELECT ?, ?, ?, 'FEE', 'COMPLETED', NULL, ?, ?, datetime('now'), datetime('now')
+               (id, user_id, wallet_id, type, status, token_amount, cash_amount, metadata, created_at, completed_at, currency)
+             SELECT ?, ?, ?, 'FEE', 'COMPLETED', NULL, ?, ?, datetime('now'), datetime('now'),
+                    (SELECT currency FROM wallets WHERE id = ?)
              WHERE ${guard}`
           )
           .bind(
@@ -218,6 +219,7 @@ export class StorageFeeService {
             walletId,
             amountXof,
             JSON.stringify({ kind: 'STORAGE_FEE', feeId }),
+            walletId,
             feeId
           ),
         this.db
