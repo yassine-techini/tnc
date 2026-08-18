@@ -17,7 +17,15 @@
  * rejouer le job ne facture pas deux fois, qu'il ait payé ou non.
  */
 
-const xof = (n: number) => Math.round(n);
+import { arrondirMonnaie, DECIMALES_DU_PORTEFEUILLE } from '../lib/monnaie';
+
+/**
+ * Arrondi selon les decimales de la devise du titulaire (ADR 019 SS 4).
+ *
+ * `Math.round` etait juste pour le XOF et l'UGX, faux pour toute devise a
+ * centimes : chaque frais y aurait perdu les siens, toujours dans le meme sens.
+ */
+const xof = (n: number, decimales = 0) => arrondirMonnaie(n, decimales);
 
 export interface StorageFeeRow {
   id: string;
@@ -36,6 +44,8 @@ export interface StorageFeeHolder {
   user_id: string;
   wallet_id: string;
   stored_g: number;
+  /** Decimales de la devise, jointes par `holdersToCharge`. */
+  currency_decimals?: number;
 }
 
 /** Un jour de garde, Actual/365 sur la valeur au comptant de l'or gardé. */
@@ -43,9 +53,11 @@ export function dailyStorageFeeXof(input: {
   storedG: number;
   pricePerGram: number;
   annualRate: number;
+  /** Decimales de la devise du titulaire ; 0 pour le XOF et l'UGX. */
+  currencyDecimals?: number;
 }): number {
   if (!(input.storedG > 0) || !(input.pricePerGram > 0) || !(input.annualRate > 0)) return 0;
-  return xof((input.storedG * input.pricePerGram * input.annualRate) / 365);
+  return xof((input.storedG * input.pricePerGram * input.annualRate) / 365, input.currencyDecimals);
 }
 
 export class StorageFeeService {
@@ -70,7 +82,8 @@ export class StorageFeeService {
 
     const rows = await this.db
       .prepare(
-        `SELECT w.user_id, w.id AS wallet_id, w.token_balance AS stored_g
+        `SELECT w.user_id, w.id AS wallet_id, w.token_balance AS stored_g,
+                ${DECIMALES_DU_PORTEFEUILLE} AS currency_decimals
          FROM wallets w
          WHERE w.token_balance > 0
            ${scope}
@@ -103,6 +116,7 @@ export class StorageFeeService {
       storedG: holder.stored_g,
       pricePerGram,
       annualRate,
+      currencyDecimals: holder.currency_decimals,
     });
     if (amountXof <= 0) return { accrued: false, amountXof: 0, paid: false };
 

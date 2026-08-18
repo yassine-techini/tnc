@@ -13,6 +13,21 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 
+/**
+ * Fragment SQL rendant les decimales de la devise d'un portefeuille.
+ *
+ * Les decimales sont une propriete de la DEVISE (norme ISO 4217), pas du pays :
+ * les cinq pays de l'UEMOA partagent le XOF et ses zero decimales. `MIN` rend
+ * donc le resultat deterministe quand plusieurs pays declarent la meme devise.
+ *
+ * Le fragment voyage avec la ligne qui en a besoin, plutot qu'une requete par
+ * calcul : le travail de rendement parcourt les positions une a une, et chacune
+ * peut appartenir a une devise differente.
+ */
+export const DECIMALES_DU_PORTEFEUILLE = `COALESCE(
+  (SELECT MIN(cc.currency_decimals) FROM country_config cc WHERE cc.currency = w.currency), 0
+)`;
+
 /** Un prix du gramme, dans une devise nommee. */
 export interface PrixDuGramme {
   devise: string;

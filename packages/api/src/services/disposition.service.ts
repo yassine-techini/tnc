@@ -20,10 +20,12 @@
  */
 
 import { LeaseService } from './lease.service';
+import { arrondirMonnaie, DECIMALES_DU_PORTEFEUILLE } from '../lib/monnaie';
 import { WalletService } from './wallet.service';
 
 const g = (n: number) => Math.round(n * 1000) / 1000;
-const xof = (n: number) => Math.round(n);
+/** Arrondi selon les decimales de la devise du portefeuille (ADR 019 SS 4). */
+const xof = (n: number, decimales = 0) => arrondirMonnaie(n, decimales);
 
 export type LegStatus = 'NONE' | 'PENDING' | 'DONE' | 'FAILED';
 
@@ -252,7 +254,14 @@ export class DispositionService {
     if (current.sell_status === 'PENDING' && ctx.sellG > 0) {
       const wallets = new WalletService(this.db);
       const transactionId = crypto.randomUUID();
-      const proceeds = xof(ctx.sellG * ctx.sellPricePerGram);
+
+      // Les decimales de la devise du portefeuille vendeur : le produit d'une
+      // vente se credite dans sa monnaie, pas en francs CFA (ADR 019).
+      const decimales = await this.db
+        .prepare(`SELECT ${DECIMALES_DU_PORTEFEUILLE} AS d FROM wallets w WHERE w.id = ?`)
+        .bind(ctx.walletId)
+        .first<{ d: number }>();
+      const proceeds = xof(ctx.sellG * ctx.sellPricePerGram, decimales?.d ?? 0);
 
       const result = await wallets.executeSellAtomic({
         transactionId,

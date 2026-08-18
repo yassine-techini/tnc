@@ -8,6 +8,12 @@
  * - Push: Firebase Cloud Messaging
  */
 
+import {
+  ACCROCHE, PIED, BIENVENUE, CODE_VERIFICATION, KYC_APPROUVE, KYC_REFUSE,
+  TRANSACTION_TERMINEE, ALERTE_SECURITE, RETRAIT_APPROUVE, SMS,
+  type Langue, type TexteCourriel,
+} from '../lib/textes-notification';
+
 export interface NotificationConfig {
   resendApiKey?: string;
   sendgridApiKey?: string;
@@ -53,14 +59,28 @@ export interface NotificationResult {
   error?: string;
 }
 
-// Email templates
-const EMAIL_TEMPLATES = {
-  WELCOME: (name: string) => ({
-    subject: 'Bienvenue sur TNC Trading',
+/**
+ * UNE coquille, un texte par langue (ADR 020).
+ *
+ * Les gabarits melaient texte et mise en page sur des centaines de lignes ; les
+ * dupliquer par langue aurait double ce fichier. Le texte vit desormais dans
+ * `lib/textes-notification`, et cette fonction l'habille.
+ */
+function habiller(t: TexteCourriel, langue: Langue): { subject: string; html: string } {
+  const puces = t.puces?.length
+    ? `<ul>${t.puces.map((p) => `<li>${p}</li>`).join('')}</ul>`
+    : '';
+  const bouton = t.bouton
+    ? `<p style="text-align:center;"><a href="${t.bouton.lien}" class="button">${t.bouton.libelle}</a></p>`
+    : '';
+
+  return {
+    subject: t.sujet,
     html: `
       <!DOCTYPE html>
-      <html>
+      <html lang="${langue}">
       <head>
+        <meta charset="utf-8" />
         <style>
           body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -68,310 +88,30 @@ const EMAIL_TEMPLATES = {
           .header h1 { color: #d4a373; margin: 0; }
           .content { padding: 30px; background: #f9f9f9; }
           .button { display: inline-block; padding: 12px 30px; background: #d4a373; color: white; text-decoration: none; border-radius: 5px; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+          .footer { padding: 20px; text-align: center; color: #888; font-size: 12px; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
             <h1>TNC Trading</h1>
-            <p style="color: #ccc;">Plateforme de Tokenisation d'Or</p>
+            <p style="color:#ccc;">${ACCROCHE[langue]}</p>
           </div>
           <div class="content">
-            <h2>Bienvenue ${name} !</h2>
-            <p>Merci de rejoindre TNC Trading, la plateforme souveraine de tokenisation d'or du Burkina Faso.</p>
-            <p>Avec TNC Trading, vous pouvez :</p>
-            <ul>
-              <li>Acheter des tokens adossés à l'or physique</li>
-              <li>Suivre la valeur de votre portefeuille en temps réel</li>
-              <li>Vendre vos tokens à tout moment</li>
-              <li>Obtenir un certificat de propriété</li>
-            </ul>
-            <p>Pour commencer, complétez votre vérification KYC :</p>
-            <p style="text-align: center;">
-              <a href="https://app.tnc-trading.com/kyc" class="button">Compléter mon KYC</a>
-            </p>
+            <h2>${t.titre}</h2>
+            ${t.paragraphes.map((par) => `<p>${par}</p>`).join('')}
+            ${puces}
+            ${bouton}
           </div>
-          <div class="footer">
-            <p>TNC Trading - Investissez dans l'or du Burkina Faso</p>
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
+          <div class="footer"><p>${PIED[langue]}</p></div>
         </div>
       </body>
       </html>
     `,
-  }),
+  };
+}
 
-  VERIFICATION_CODE: (code: string, type: 'email' | 'phone') => ({
-    subject: `Code de vérification TNC Trading: ${code}`,
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; text-align: center; }
-          .code { font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #1a1a2e; padding: 20px; background: white; border-radius: 10px; display: inline-block; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <h2>Code de vérification</h2>
-            <p>Votre code de vérification ${type === 'email' ? 'email' : 'téléphone'} est :</p>
-            <div class="code">${code}</div>
-            <p style="margin-top: 20px; color: #666;">Ce code expire dans 10 minutes.</p>
-            <p style="color: #999; font-size: 12px;">Si vous n'avez pas demandé ce code, ignorez cet email.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
 
-  KYC_APPROVED: (name: string, level: string) => ({
-    subject: 'Votre KYC a été approuvé - TNC Trading',
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; text-align: center; }
-          .button { display: inline-block; padding: 12px 30px; background: #d4a373; color: white; text-decoration: none; border-radius: 5px; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <div class="success">
-              <h2 style="color: #155724;">✓ KYC Approuvé</h2>
-            </div>
-            <p>Félicitations ${name} !</p>
-            <p>Votre vérification d'identité a été approuvée. Votre niveau est maintenant : <strong>${level}</strong></p>
-            <p>Vous pouvez désormais :</p>
-            <ul>
-              <li>Acheter et vendre des tokens d'or</li>
-              <li>Effectuer des dépôts et retraits</li>
-              <li>Obtenir des certificats de propriété</li>
-            </ul>
-            <p style="text-align: center;">
-              <a href="https://app.tnc-trading.com/market" class="button">Commencer à investir</a>
-            </p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
-
-  KYC_REJECTED: (name: string, reason: string) => ({
-    subject: 'Action requise: Vérification KYC - TNC Trading',
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 20px; border-radius: 5px; }
-          .button { display: inline-block; padding: 12px 30px; background: #d4a373; color: white; text-decoration: none; border-radius: 5px; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <h2>Vérification KYC incomplète</h2>
-            <p>Bonjour ${name},</p>
-            <p>Votre vérification d'identité n'a pas pu être validée.</p>
-            <div class="warning">
-              <strong>Raison :</strong> ${reason}
-            </div>
-            <p>Veuillez soumettre à nouveau vos documents en vous assurant que :</p>
-            <ul>
-              <li>Les photos sont claires et lisibles</li>
-              <li>Tous les coins du document sont visibles</li>
-              <li>Le selfie montre clairement votre visage</li>
-            </ul>
-            <p style="text-align: center;">
-              <a href="https://app.tnc-trading.com/kyc" class="button">Soumettre à nouveau</a>
-            </p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
-
-  TRANSACTION_COMPLETED: (type: string, amount: number, tokenAmount: number) => ({
-    subject: `Transaction ${type} complétée - TNC Trading`,
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .transaction { background: white; padding: 20px; border-radius: 10px; border-left: 4px solid #d4a373; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <h2>Transaction ${type === 'BUY' ? 'd\'achat' : 'de vente'} complétée</h2>
-            <div class="transaction">
-              <p><strong>Type :</strong> ${type === 'BUY' ? 'Achat' : 'Vente'}</p>
-              <p><strong>Montant :</strong> ${amount.toLocaleString('fr-FR')} XOF</p>
-              <p><strong>Tokens :</strong> ${tokenAmount.toFixed(3)} g d'or</p>
-            </div>
-            <p>Consultez votre portefeuille pour voir votre nouveau solde.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
-
-  SECURITY_ALERT: (action: string, details: string) => ({
-    subject: 'Alerte de sécurité - TNC Trading',
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .alert { background: #f8d7da; border: 1px solid #f5c6cb; padding: 20px; border-radius: 5px; }
-          .button { display: inline-block; padding: 12px 30px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <div class="alert">
-              <h2 style="color: #721c24;">⚠️ Alerte de sécurité</h2>
-            </div>
-            <p><strong>Action détectée :</strong> ${action}</p>
-            <p>${details}</p>
-            <p>Si ce n'était pas vous, sécurisez immédiatement votre compte :</p>
-            <p style="text-align: center;">
-              <a href="https://app.tnc-trading.com/security" class="button">Sécuriser mon compte</a>
-            </p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
-
-  WITHDRAWAL_APPROVED: (amount: number, method: string) => ({
-    subject: 'Retrait approuvé - TNC Trading',
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 30px; text-align: center; }
-          .header h1 { color: #d4a373; margin: 0; }
-          .content { padding: 30px; background: #f9f9f9; }
-          .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; text-align: center; }
-          .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>TNC Trading</h1>
-          </div>
-          <div class="content">
-            <div class="success">
-              <h2 style="color: #155724;">✓ Retrait approuvé</h2>
-            </div>
-            <p>Votre demande de retrait a été approuvée.</p>
-            <p><strong>Montant :</strong> ${amount.toLocaleString('fr-FR')} XOF</p>
-            <p><strong>Méthode :</strong> ${method}</p>
-            <p>Les fonds seront transférés dans les prochaines 24-48h.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 TNC Trading. Tous droits réservés.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `,
-  }),
-};
-
-// SMS templates
-const SMS_TEMPLATES = {
-  VERIFICATION_CODE: (code: string) =>
-    `TNC Trading: Votre code de vérification est ${code}. Valide 10 min.`,
-
-  LOGIN_ALERT: (ip: string) =>
-    `TNC Trading: Nouvelle connexion detectee depuis ${ip}. Si ce n'etait pas vous, securisez votre compte.`,
-
-  TRANSACTION_COMPLETED: (type: string, amount: number) =>
-    `TNC Trading: ${type === 'BUY' ? 'Achat' : 'Vente'} de ${amount.toLocaleString('fr-FR')} XOF complete.`,
-
-  WITHDRAWAL_APPROVED: (amount: number) =>
-    `TNC Trading: Retrait de ${amount.toLocaleString('fr-FR')} XOF approuve. Transfert en cours.`,
-
-  TWO_FACTOR_CODE: (code: string) =>
-    `TNC Trading: Code 2FA: ${code}. Ne partagez jamais ce code.`,
-};
 
 export interface NotificationQueueMessage {
   type: 'email' | 'sms' | 'push';
@@ -840,8 +580,8 @@ export class NotificationService {
 
   // Convenience methods using templates
 
-  async sendWelcomeEmail(email: string, name: string): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.WELCOME(name);
+  async sendWelcomeEmail(email: string, name: string, langue: Langue = 'fr'): Promise<NotificationResult> {
+    const template = habiller(BIENVENUE[langue](name), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -853,8 +593,10 @@ export class NotificationService {
     email: string,
     code: string,
     type: 'email' | 'phone'
+  ,
+    langue: Langue = 'fr'
   ): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.VERIFICATION_CODE(code, type);
+    const template = habiller(CODE_VERIFICATION[langue](code, type), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -862,15 +604,17 @@ export class NotificationService {
     });
   }
 
-  async sendVerificationCodeSms(phone: string, code: string): Promise<NotificationResult> {
+  async sendVerificationCodeSms(phone: string, code: string, langue: Langue = 'fr'): Promise<NotificationResult> {
     return this.sendSms({
       to: phone,
-      message: SMS_TEMPLATES.VERIFICATION_CODE(code),
+      message: (SMS.CODE_VERIFICATION[langue] as (c: string) => string)(code),
     });
   }
 
-  async sendKycApproved(email: string, name: string, level: string): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.KYC_APPROVED(name, level);
+  async sendKycApproved(email: string, name: string, level: string,
+    langue: Langue = 'fr'
+  ): Promise<NotificationResult> {
+    const template = habiller(KYC_APPROUVE[langue](name, level), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -878,8 +622,10 @@ export class NotificationService {
     });
   }
 
-  async sendKycRejected(email: string, name: string, reason: string): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.KYC_REJECTED(name, reason);
+  async sendKycRejected(email: string, name: string, reason: string,
+    langue: Langue = 'fr'
+  ): Promise<NotificationResult> {
+    const template = habiller(KYC_REFUSE[langue](name, reason), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -892,8 +638,10 @@ export class NotificationService {
     type: string,
     amount: number,
     tokenAmount: number
+  ,
+    langue: Langue = 'fr'
   ): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.TRANSACTION_COMPLETED(type, amount, tokenAmount);
+    const template = habiller(TRANSACTION_TERMINEE[langue](type, String(amount), tokenAmount), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -905,8 +653,10 @@ export class NotificationService {
     email: string,
     action: string,
     details: string
+  ,
+    langue: Langue = 'fr'
   ): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.SECURITY_ALERT(action, details);
+    const template = habiller(ALERTE_SECURITE[langue](action, details), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -918,8 +668,10 @@ export class NotificationService {
     email: string,
     amount: number,
     method: string
+  ,
+    langue: Langue = 'fr'
   ): Promise<NotificationResult> {
-    const template = EMAIL_TEMPLATES.WITHDRAWAL_APPROVED(amount, method);
+    const template = habiller(RETRAIT_APPROUVE[langue](String(amount), method), langue);
     return this.sendEmail({
       to: email,
       subject: template.subject,
@@ -927,17 +679,17 @@ export class NotificationService {
     });
   }
 
-  async sendWithdrawalApprovedSms(phone: string, amount: number): Promise<NotificationResult> {
+  async sendWithdrawalApprovedSms(phone: string, amount: number, langue: Langue = 'fr'): Promise<NotificationResult> {
     return this.sendSms({
       to: phone,
-      message: SMS_TEMPLATES.WITHDRAWAL_APPROVED(amount),
+      message: (SMS.RETRAIT_APPROUVE[langue] as (m: string) => string)(String(amount)),
     });
   }
 
-  async send2FaCodeSms(phone: string, code: string): Promise<NotificationResult> {
+  async send2FaCodeSms(phone: string, code: string, langue: Langue = 'fr'): Promise<NotificationResult> {
     return this.sendSms({
       to: phone,
-      message: SMS_TEMPLATES.TWO_FACTOR_CODE(code),
+      message: (SMS.CODE_2FA[langue] as (c: string) => string)(code),
     });
   }
 }

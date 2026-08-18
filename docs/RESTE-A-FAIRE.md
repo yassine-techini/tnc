@@ -1614,7 +1614,7 @@ sien manque serait pire que de ne rien servir : le chiffre aurait l'air juste.
 au lieu d'échouer fermé, arrondir à l'entier quelle que soit la devise, et écrire une
 transaction sans reprendre la devise de son portefeuille.
 
-### AL. `currency_decimals` est exposée et n'entre dans aucun calcul ⚙️
+### AL. `currency_decimals` est exposée et n'entre dans aucun calcul ✅
 
 La colonne existe, la route publique la renvoie, et **aucun calcul monétaire ne la consulte**.
 Quatre services définissent la même ligne :
@@ -1648,6 +1648,20 @@ des acomptes et de la répartition. C'est un chantier à part, désormais possib
 
 Le relevé de règlement imprime toujours « XOF » en dur.
 
+**Achevé** — [ADR 020](adr/020-la-langue-de-qui-ecoute.md) § 4.
+
+Les quatre services passent par `arrondirMonnaie(montant, décimales)`, et les décimales
+**voyagent avec la ligne** : `positionsToAccrue` et `holdersToCharge` les joignent, plutôt
+qu'une requête par calcul dans un travail qui parcourt toutes les positions.
+
+Deux libellés figés tombent avec :
+
+- le relevé de règlement PDF imprimait « XOF » quel que soit le pays ;
+- `AdvanceCurrency = 'TOKENS' | 'XOF'` désignait un **mode** de règlement, où « XOF » voulait
+  dire « en espèces ». Pour un raffineur ougandais, « payé en XOF » n'a aucun sens : il est
+  payé en espèces, et ses espèces sont des shillings. La valeur devient `'CASH'`
+  (migration 0041).
+
 ### AM. On peut s'inscrire depuis n'importe quel pays, mais pas y changer son numéro 🟡
 
 L'inscription accepte un numéro international :
@@ -1666,7 +1680,7 @@ Un raffineur ougandais s'inscrit donc sans difficulté, puis ne peut plus jamais
 numéro. Le validateur partagé porte la même hypothèse, mais l'annonce au moins dans son nom
 (`isValidPhoneBF`, `normalizePhoneBF`).
 
-### AN. Tout ce que la plateforme dit est en français 🟠
+### AN. Tout ce que la plateforme dit est en français ⚙️
 
 `country_config.locale` est exposée par la route publique et **jamais consultée côté serveur**.
 L'Ouganda est déclaré `en-UG`.
@@ -1678,6 +1692,27 @@ puis « Votre KYC a été approuvé ».
 Ce n'est pas une question de confort. Les messages d'erreur portent des instructions — quel
 document fournir, quelle limite est atteinte, pourquoi un retrait est refusé — et un message
 incompris se traduit en appel au support, ou en abandon.
+
+**Partiellement corrigé** — [ADR 020](adr/020-la-langue-de-qui-ecoute.md).
+
+**Tout ce que la plateforme *envoie* est bilingue** : 7 courriels et 5 SMS, dans la langue du
+pays du destinataire (`langueDeLUtilisateur`). Le texte est **séparé de la mise en page** —
+les gabarits mêlaient les deux sur des centaines de lignes de HTML, et les dupliquer par langue
+aurait doublé un fichier de 943 lignes. Ajouter une troisième langue coûte désormais un bloc de
+chaînes.
+
+L'accroche ne nomme plus aucun pays : le courriel de bienvenue vantait « la plateforme
+souveraine de tokenisation d'or **du Burkina Faso** », adressé à des raffineurs qui n'y sont
+pas.
+
+**Reste à faire** : les **338 messages d'erreur en ligne** de l'API restent en français. Le
+contrat avec les clients est le **code** (`error.code`), pas le texte, et le web traduit déjà
+côté client à partir du code — c'est la bonne place. Ce qui manque est un catalogue bilingue
+partagé par code, remplaçant la copie privée de `apps/web/src/hooks/useApiError.ts` : l'API
+émet **108 codes distincts**, dont 41 figurent au catalogue partagé actuel.
+
+Le livrer à moitié donnerait un mélange de langues, pire qu'un français cohérent — d'où le
+choix de le laisser entier plutôt que de l'entamer.
 
 ---
 

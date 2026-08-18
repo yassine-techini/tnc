@@ -12,6 +12,8 @@
 import { groupDigits, type PdfDoc, type PdfBlock } from './pdf';
 
 export interface StatementInput {
+  /** Devise du beneficiaire, telle que la porte son portefeuille. */
+  currency?: string;
   reference: string;
   producerName: string;
   producerId: string;
@@ -67,7 +69,15 @@ export interface StatementDisposition {
 }
 
 const g = (n: number) => `${(Math.round(n * 1000) / 1000).toFixed(3)} g`;
-const xof = (n: number) => `${groupDigits(n)} XOF`;
+/**
+ * Un montant, dans la devise du beneficiaire (ADR 019).
+ *
+ * Le libelle etait fige a « XOF » : un producteur ougandais recevait un releve
+ * denomine en francs CFA. Le certificat de propriete avait resolu la question en
+ * n'imprimant AUCUNE devise — un poids, pas une valeur — mais un releve de
+ * reglement porte bien des montants, donc il doit les nommer.
+ */
+const montant = (n: number, devise: string) => `${groupDigits(n)} ${devise}`;
 const pct = (n: number) => `${Math.round(n * 10000) / 100} %`;
 const date = (value: string | null) => (value ? value.slice(0, 10) : '—');
 
@@ -111,6 +121,10 @@ export function statementTotals(input: StatementInput): StatementTotals {
 }
 
 export function buildSettlementStatement(input: StatementInput): PdfDoc {
+  // La devise du beneficiaire. `XOF` reste le defaut : c'est celle des lots
+  // deja regles, tous anterieurs a l'ouverture d'un second pays.
+  const devise = input.currency || 'XOF';
+  const xof = (n: number) => montant(n, devise);
   const totals = statementTotals(input);
   const settled = input.refinedWeightG !== null && input.refinedWeightG !== undefined;
 
@@ -191,7 +205,7 @@ export function buildSettlementStatement(input: StatementInput): PdfDoc {
         ['Acompte versé en espèces', xof(input.advanceCashXof)],
         [
           'Cours retenu pour l\'acompte',
-          input.advancePricePerGram ? `${groupDigits(input.advancePricePerGram)} XOF/g` : '—',
+          input.advancePricePerGram ? `${groupDigits(input.advancePricePerGram)} ${devise}/g` : '—',
         ],
       ],
     });
@@ -244,7 +258,7 @@ export function buildSettlementStatement(input: StatementInput): PdfDoc {
       blocks.push({
         type: 'keyValue',
         rows: [
-          ['Cours retenu pour la vente', `${groupDigits(d.sellPricePerGram)} XOF/g`],
+          ['Cours retenu pour la vente', `${groupDigits(d.sellPricePerGram)} ${devise}/g`],
           ['Répartition exécutée le', date(d.executedAt)],
         ],
       });

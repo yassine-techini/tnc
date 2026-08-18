@@ -26,6 +26,7 @@ import { SecurityService } from '../services/security.service';
 import { requirePermission } from '../middleware/rbac';
 import { verifierAjustementStock } from '../lib/stock-invariant';
 import { chiffresReserve } from '../lib/reserve';
+import { langueDeLUtilisateur } from '../services/country-config.service';
 import { resolvePermissions, ROLE_DEFAULTS } from '../lib/rbac';
 import { isPortalToken, canAccessAdminPortal } from '../lib/portal';
 import { ConfigService } from '../services/config.service';
@@ -1085,6 +1086,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
     // Notify the user of the decision (email). Non-blocking: a notification
     // failure must not fail the review.
     try {
+      const langueDestinataire = await langueDeLUtilisateur(c.env.DB, userId);
       const reviewedUser = await c.env.DB
         .prepare('SELECT email FROM users WHERE id = ?')
         .bind(userId)
@@ -1099,8 +1101,11 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
         });
         const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ') || 'Client';
         const notify = action === 'approve'
-          ? notificationService.sendKycApproved(reviewedUser.email, fullName, newLevel || 'VERIFIED')
-          : notificationService.sendKycRejected(reviewedUser.email, fullName, rejectionReason || 'Document non conforme');
+          // Dans la langue du destinataire (ADR 020) : l'Ouganda est declare
+          // `en-UG`, et un raffineur ougandais recevait « Votre KYC a ete
+          // approuve ».
+          ? notificationService.sendKycApproved(reviewedUser.email, fullName, newLevel || 'VERIFIED', langueDestinataire)
+          : notificationService.sendKycRejected(reviewedUser.email, fullName, rejectionReason || 'Document non conforme', langueDestinataire);
         c.executionCtx.waitUntil(notify.catch((e) => console.error('KYC notification failed:', e)));
       }
     } catch (e) {

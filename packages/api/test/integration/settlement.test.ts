@@ -79,7 +79,7 @@ describe('Settlement (real D1)', () => {
 
   it('a cash advance issues no token at all', async () => {
     const lot = await arrived();
-    const r = await settlement.payAdvance(lot.id, { ...TOKEN_TERMS, currency: 'XOF' });
+    const r = await settlement.payAdvance(lot.id, { ...TOKEN_TERMS, currency: 'CASH' });
 
     expect(r.ok).toBe(true);
     expect(r.tokensG).toBe(0);
@@ -190,7 +190,7 @@ describe('Settlement (real D1)', () => {
 
   it('a cash advance leaves the full token payout at outturn', async () => {
     const lot = await arrived();
-    await settlement.payAdvance(lot.id, { ...TOKEN_TERMS, currency: 'XOF' });
+    await settlement.payAdvance(lot.id, { ...TOKEN_TERMS, currency: 'CASH' });
 
     await consignments.auditValidate(lot.id, AUDITOR, { refinedWeightG: 900, producerShare: 1 });
 
@@ -205,7 +205,7 @@ describe('Settlement (real D1)', () => {
       { ...TOKEN_TERMS, percent: 0 },
       { ...TOKEN_TERMS, percent: 1.5 },
       { ...TOKEN_TERMS, haircut: 0 },
-      { ...TOKEN_TERMS, currency: 'XOF' as const, pricePerGram: 0 },
+      { ...TOKEN_TERMS, currency: 'CASH' as const, pricePerGram: 0 },
     ]) {
       expect(await settlement.payAdvance(lot.id, terms)).toMatchObject({
         ok: false,

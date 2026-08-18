@@ -20,9 +20,17 @@
  */
 import { GOLD_STOCK_ID } from './market.service';
 import { settlementDate, toIsoDate } from '../lib/business-days';
+import { arrondirMonnaie, DECIMALES_DU_PORTEFEUILLE } from '../lib/monnaie';
 
 const g = (n: number) => Math.round(n * 1000) / 1000;
-const xof = (n: number) => Math.round(n);
+/**
+ * Arrondi selon les decimales de la devise du portefeuille (ADR 019 SS 4).
+ *
+ * `Math.round` etait juste pour le XOF et l'UGX, qui n'ont pas de sous-unite, et
+ * faux pour le cedi, le shilling kenyan, le naira ou le rand, qui en ont deux :
+ * chaque rendement y aurait perdu ses centimes, toujours dans le meme sens.
+ */
+const xof = (n: number, decimales = 0) => arrondirMonnaie(n, decimales);
 
 export interface LeaseExitOrderRow {
   id: string;
@@ -50,6 +58,11 @@ export interface LeasePositionRow {
   status: 'ACTIVE' | 'EXITING' | 'CLOSED';
   opened_at: string;
   closed_at: string | null;
+  /**
+   * Decimales de la devise du portefeuille, jointes par `positionsToAccrue`.
+   * Absentes des lectures qui ne servent pas a calculer de l argent.
+   */
+  currency_decimals?: number;
 }
 
 export type LeaseError =
@@ -166,7 +179,7 @@ export class LeaseService {
   ): Promise<{ ok: boolean; amountXof: number }> {
     if (position.status !== 'ACTIVE' || !(pricePerGram > 0)) return { ok: false, amountXof: 0 };
 
-    const amountXof = xof((position.principal_g * pricePerGram * position.annual_rate) / 365);
+    const amountXof = xof((position.principal_g * pricePerGram * position.annual_rate) / 365, position.currency_decimals);
     if (amountXof <= 0) return { ok: false, amountXof: 0 };
 
     try {
@@ -200,11 +213,16 @@ export class LeaseService {
 
   /** Positions still owed accrual for `date`. */
   async positionsToAccrue(date: string): Promise<LeasePositionRow[]> {
+    // Les decimales voyagent AVEC la position (ADR 019 SS 4) : chaque position
+    // peut appartenir a une devise differente, et une requete par calcul dans un
+    // travail qui parcourt toutes les positions serait payee a chaque ligne.
     const rows = await this.db
       .prepare(
-        `SELECT * FROM lease_positions
-         WHERE status = 'ACTIVE' AND (last_accrued_on IS NULL OR last_accrued_on < ?)
-         ORDER BY opened_at ASC`
+        `SELECT p.*, ${DECIMALES_DU_PORTEFEUILLE} AS currency_decimals
+         FROM lease_positions p
+         JOIN wallets w ON w.id = p.wallet_id
+         WHERE p.status = 'ACTIVE' AND (p.last_accrued_on IS NULL OR p.last_accrued_on < ?)
+         ORDER BY p.opened_at ASC`
       )
       .bind(date)
       .all<LeasePositionRow>();

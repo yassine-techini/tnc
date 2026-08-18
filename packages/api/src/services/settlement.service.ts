@@ -19,8 +19,17 @@
  * that closes the step goes last, and the caller decides on its `meta.changes`.
  */
 import { GOLD_STOCK_ID } from './market.service';
+import { arrondirMonnaie, DECIMALES_DU_PORTEFEUILLE } from '../lib/monnaie';
 
-export type AdvanceCurrency = 'TOKENS' | 'XOF';
+/**
+ * MODE de reglement de l'acompte, pas une devise (ADR 019).
+ *
+ * La valeur s'appelait `'XOF'` et signifiait « en especes » par opposition a
+ * « en jetons ». Pour un raffineur ougandais, « paye en XOF » n'a aucun sens :
+ * il est paye en especes, et ses especes sont des shillings. `'CASH'` dit ce que
+ * la valeur designe reellement ; la devise, elle, est celle de son portefeuille.
+ */
+export type AdvanceCurrency = 'TOKENS' | 'CASH';
 
 export interface AdvanceTerms {
   /** Share of the lot paid up front, 0..1. */
@@ -49,7 +58,8 @@ const fail = (error: SettlementError): SettlementResult => ({ ok: false, tokensG
 
 /** Grams are carried at 0.001 precision, XOF at the unit. */
 const g = (n: number) => Math.round(n * 1000) / 1000;
-const xof = (n: number) => Math.round(n);
+/** Arrondi selon les decimales de la devise du beneficiaire (ADR 019 SS 4). */
+const xof = (n: number, decimales = 0) => arrondirMonnaie(n, decimales);
 
 export class SettlementService {
   constructor(private db: D1Database) {}
@@ -76,7 +86,7 @@ export class SettlementService {
     if (!(terms.percent > 0 && terms.percent <= 1) || !(terms.haircut > 0 && terms.haircut <= 1)) {
       return fail('INVALID_TERMS');
     }
-    if (terms.currency === 'XOF' && !(terms.pricePerGram > 0)) {
+    if (terms.currency === 'CASH' && !(terms.pricePerGram > 0)) {
       return fail('INVALID_TERMS');
     }
 
@@ -102,11 +112,15 @@ export class SettlementService {
     const weight = this.advanceWeight(lot.weight_declared_g, lot.purity_declared, terms);
     if (weight <= 0) return fail('INVALID_TERMS');
 
-    const tokensG = terms.currency === 'TOKENS' ? weight : 0;
-    const cashXof = terms.currency === 'XOF' ? xof(weight * terms.pricePerGram) : 0;
-
     const walletId = await this.ensureWallet(lot.producer_id);
     if (!walletId) return fail('CONFLICT');
+
+    // Les decimales de la devise DU BENEFICIAIRE : un acompte en especes se
+    // regle dans la monnaie de son portefeuille, pas en francs CFA (ADR 019).
+    const decimales = await this.decimalesDuPortefeuille(walletId);
+
+    const tokensG = terms.currency === 'TOKENS' ? weight : 0;
+    const cashXof = terms.currency === 'CASH' ? xof(weight * terms.pricePerGram, decimales) : 0;
 
     const guard = `EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI' AND advance_paid_at IS NULL)`;
 
@@ -208,6 +222,17 @@ export class SettlementService {
   }
 
   /** Create the producer's wallet if needed; returns its id. */
+  /** Decimales de la devise d'un portefeuille ; 0 pour le XOF et l'UGX. */
+  private async decimalesDuPortefeuille(walletId: string): Promise<number> {
+    const ligne = await this.db
+      .prepare(
+        `SELECT ${DECIMALES_DU_PORTEFEUILLE} AS d FROM wallets w WHERE w.id = ?`
+      )
+      .bind(walletId)
+      .first<{ d: number }>();
+    return ligne?.d ?? 0;
+  }
+
   private async ensureWallet(userId: string): Promise<string | null> {
     await this.db
       .prepare(

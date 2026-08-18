@@ -10,6 +10,8 @@
  * returns what can actually take a payment rather than what is aspired to.
  */
 
+import { langueDe, type Langue } from '../lib/textes-notification';
+
 export interface PaymentMethodConfig {
   id: string;
   label: string;
@@ -147,6 +149,26 @@ export function enabledPaymentMethods(country: CountryConfig): PaymentMethodConf
  */
 export function isServiceable(country: CountryConfig): boolean {
   return country.enabled && enabledPaymentMethods(country).length > 0;
+}
+
+/**
+ * La langue d'un utilisateur, deduite de la locale de son pays (ADR 020).
+ *
+ * `country_config.locale` etait expose par la route publique et jamais consulte
+ * cote serveur : l'Ouganda est declare `en-UG`, et un raffineur ougandais
+ * recevait « Bienvenue sur TNC Trading ».
+ */
+export async function langueDeLUtilisateur(db: D1Database, userId: string): Promise<Langue> {
+  const ligne = await db
+    .prepare(
+      `SELECT COALESCE(cc.locale, 'fr-FR') AS locale
+       FROM users u LEFT JOIN country_config cc ON cc.code = u.country
+       WHERE u.id = ?`
+    )
+    .bind(userId)
+    .first<{ locale: string }>();
+
+  return langueDe(ligne?.locale);
 }
 
 export class CountryConfigService {
