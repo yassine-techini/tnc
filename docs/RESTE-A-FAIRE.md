@@ -1257,6 +1257,162 @@ retrouver.
 
 ---
 
+## Dixième audit — 18 août 2026, de quel minuit parle-t-on ?
+
+La plateforme opère entre le Burkina Faso et Dubaï, ses travaux tournent à 4 h, 5 h et 6 h
+UTC, et chaque rendement, frais, rapport et expiration repose sur une frontière de journée.
+Les neuf audits précédents ont regardé les valeurs, les droits et les traces ; celui-ci
+regarde **les dates**.
+
+### Ce que cet audit a confirmé de sain
+
+**Les onze crons sont ordonnés et le disent** — réconciliation à minuit, attestation à 00 h 30
+« après la réconciliation », rendement à 4 h « pour le jour écoulé », règlement à 5 h « après
+le rendement », frais de garde à 6 h « après le règlement ». Et UTC **est** le fuseau du
+Burkina Faso : minuit UTC est bien minuit à Ouagadougou.
+
+`business-days.ts` refuse de coder les jours fériés en dur, avec sa raison écrite : ils
+diffèrent selon la juridiction et changent chaque année, donc « une liste fausse produirait
+silencieusement de mauvaises dates de règlement ».
+
+Trois colonnes de date comparent l'horloge de SQLite des deux côtés — `sessions.expires_at`,
+`active_sessions.expires_at`, `users.locked_until` — et sont donc correctes.
+
+Vérifié plutôt que supposé : `gold_prices.timestamp` prend le défaut `datetime('now')`, au
+format à espace, ce qui **correspond** aux bornes que `prixDuJour` interroge (ADR 011). Mon
+propre code de rattrapage ne souffre pas du défaut ci-dessous.
+
+### AD. Le verrou de prix de cinq minutes ne verrouille rien 🔴
+
+`quotes.expires_at` est écrit en **ISO 8601** :
+
+```ts
+const expiresAt = new Date(Date.now() + quoteExpiryMinutes * 60 * 1000).toISOString();
+// → "2026-08-18T10:08:06.589Z"
+```
+
+et comparé à l'horloge de SQLite :
+
+```sql
+WHERE id = ? AND user_id = ? AND status = 'PENDING' AND expires_at > datetime('now')
+--                                                                   "2026-08-18 10:03:06"
+```
+
+SQLite compare deux TEXT, **caractère par caractère**. Au rang 11 : `T` (0x54) contre l'espace
+(0x20). L'ISO est donc toujours le plus grand dès que la date est la même.
+
+Mesuré sur le moteur, pas déduit :
+
+```
+devis expiré il y a une heure  -> consommé = true
+devis valide encore 5 minutes  -> consommé = true
+```
+
+**Un devis n'expire pas au bout de cinq minutes : il expire au passage de minuit UTC.**
+
+C'est le chemin de l'argent. Le devis fige un prix ; c'est précisément ce contre quoi
+l'expiration protège. Un utilisateur peut demander un devis, attendre que le cours bouge en sa
+faveur, et l'exécuter des heures plus tard au prix figé. `TRADING_PRICE_EXPIRED` ne se
+déclenche jamais dans la journée.
+
+Le nettoyage nocturne (`expires_at < datetime('now')`) est faux du même coup, dans l'autre
+sens : il ne ramasse rien le jour même.
+
+### AE. Une suspension survit à son terme jusqu'à minuit 🟠
+
+Même dépareillement, direction inverse. `suspended_until` est écrit en ISO
+(`new Date(...).toISOString()`) et le travail de nuit lève les suspensions par
+`suspended_until < datetime('now')` — comparaison qui reste **fausse** tant que la date n'a
+pas changé :
+
+```
+suspended_until   : 2026-08-18T09:04:50.630Z
+datetime('now')   : 2026-08-18 10:04:50
+levée automatique -> 0 ligne  (la suspension survit à son terme)
+```
+
+Une suspension de 24 h prononcée à 14 h se lève à minuit UTC le surlendemain, pas à 14 h le
+lendemain. L'erreur va dans le sens fermé — elle prolonge une sanction au lieu de l'écourter —
+mais elle prolonge quand même, sans que personne l'ait décidé.
+
+**Le fond commun d'AD et AE** : deux formats de date coexistent dans la base, celui de
+JavaScript (`toISOString`) et celui de SQLite (`datetime()`), et les colonnes sont comparées
+comme des chaînes. Trois colonnes s'en tirent parce qu'elles sont écrites par SQLite des deux
+côtés ; deux ne s'en tirent pas.
+
+### AF. L'écran de sécurité affiche des heures fausses hors du Burkina 🟠
+
+Un correctif de la troisième campagne avait porté ce défaut à la racine : `parseApiDate`, dans
+`packages/shared`, lit les horodatages sans fuseau de SQLite comme de l'UTC — « on le dit
+explicitement plutôt que de laisser le moteur choisir ».
+
+`apps/web/src/lib/formatters.ts` garde sa **copie privée**, qui fait simplement
+`new Date(date)`. V8 lit alors la forme à espace comme une heure **locale** :
+
+```
+machine à UTC+2
+  new Date("2026-08-18 09:00:00") -> 2026-08-18T07:00:00.000Z
+  vérité                          -> 2026-08-18T09:00:00.000Z
+```
+
+Un événement vieux de 30 minutes s'affiche « il y a 2 h 30 ». Cinq écrans sont concernés,
+dont :
+
+- `SessionCard` — « Dernière activité » sur l'écran des **sessions actives**. C'est là qu'un
+  titulaire repère une intrusion ; une heure fausse y coûte plus qu'ailleurs.
+- `TransactionItem` — la date et l'heure de chaque transaction.
+
+Un utilisateur à Ouagadougou (UTC+0) voit l'heure juste : c'est exactement pour cela que le
+défaut a survécu. La diaspora et l'exploitant, non.
+
+Le constat précédent notait cette copie comme « un nettoyage à part ». Elle n'est pas un
+nettoyage : elle est le défaut d'origine, resté en place.
+
+### AG. Les bornes du rapport mensuel se construisent en heure locale 🔵
+
+```ts
+const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+const monthStart    = previousMonth.toISOString().split('T')[0];
+```
+
+`new Date(y, m, d)` construit un **minuit local**, converti ensuite en UTC. Pour un 1ᵉʳ
+septembre :
+
+| Fuseau d'exécution | Période retenue |
+|---|---|
+| UTC / Ouagadougou | du 2026-08-01 au 2026-08-31 |
+| Paris (été), Dubaï | du **2026-07-31** au **2026-08-30** |
+
+À l'est d'UTC, le rapport transmis à l'État inclut un jour de juillet et perd le 31 août.
+
+En production le défaut ne se manifeste pas : les Workers tournent en UTC. C'est donc la même
+forme que le constat W — une hypothèse tacite qui tient tant qu'on ne la contredit pas. Le
+dépôt possède pourtant l'idiome correct (`toIsoDate`, `jourIso`, arithmétique en UTC) et
+l'emploie dans le code récent.
+
+### AH. La liste de jours fériés que personne ne remplit 🔵
+
+`settlementDate(requestedAt, businessDays, holidays = [])` accepte une liste de jours fériés,
+et `business-days.ts` explique pourquoi elle n'est pas codée en dur : « quand les jours fériés
+comptent, passez-les ».
+
+L'unique appelant est `lease.service.ts:229` :
+
+```ts
+const settlesOn = settlementDate(now, businessDays);
+```
+
+Aucun jour férié n'est passé, et **aucune liste n'existe nulle part** — ni table, ni clé de
+configuration. Le T+3 d'une sortie de location peut donc échoir un 11 décembre ou un jour
+d'Aïd. Le règlement lui-même est une écriture interne, qui n'a pas besoin d'une banque
+ouverte ; mais le délai est présenté comme la **période de rappel du prêt**, et la contrepartie
+qui doit rendre l'or, elle, est fermée.
+
+Ce n'est pas un défaut de code : c'est une décision qui n'a pas été prise, et son coût est
+d'un jour ouvré.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
