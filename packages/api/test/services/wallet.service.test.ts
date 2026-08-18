@@ -97,7 +97,7 @@ describe('WalletService', () => {
       await walletService.updateTokenBalance('wallet-123', 10);
 
       expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('token_balance = token_balance + ?')
+        expect.stringContaining('token_balance = ROUND(token_balance + ?, 3)')
       );
     });
 

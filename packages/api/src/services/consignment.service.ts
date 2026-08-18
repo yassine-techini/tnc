@@ -365,8 +365,8 @@ export class ConsignmentService {
         this.db
           .prepare(
             `UPDATE gold_stock
-             SET total_allocated = total_allocated + ?,
-                 tokens_issued = tokens_issued + ?,
+             SET total_allocated = ROUND(total_allocated + ?, 3),
+                 tokens_issued = ROUND(tokens_issued + ?, 3),
                  updated_at = datetime('now')
              WHERE id = ?
                AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
@@ -377,7 +377,7 @@ export class ConsignmentService {
           ? [
               this.db
                 .prepare(
-                  `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now')
+                  `UPDATE wallets SET token_balance = ROUND(token_balance + ?, 3), updated_at = datetime('now')
                    WHERE id = ?
                      AND EXISTS (SELECT 1 FROM gold_consignments WHERE id = ? AND status = 'ARRIVED_DUBAI')`
                 )

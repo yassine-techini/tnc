@@ -386,7 +386,7 @@ export class MarketService {
     const result = await this.db
       .prepare(
         `UPDATE gold_stock
-         SET tokens_issued = tokens_issued + ?,
+         SET tokens_issued = ROUND(tokens_issued + ?, 3),
              updated_at = datetime('now')
          WHERE id = ?
            AND (total_allocated - tokens_issued) >= ?`
@@ -405,7 +405,7 @@ export class MarketService {
     const result = await this.db
       .prepare(
         `UPDATE gold_stock
-         SET tokens_issued = tokens_issued - ?,
+         SET tokens_issued = ROUND(tokens_issued - ?, 3),
              updated_at = datetime('now')
          WHERE id = ?
            AND tokens_issued >= ?`

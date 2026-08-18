@@ -119,7 +119,7 @@ export class SettlementService {
         this.db
           .prepare(
             `UPDATE gold_stock
-             SET total_allocated = total_allocated + ?, tokens_issued = tokens_issued + ?,
+             SET total_allocated = ROUND(total_allocated + ?, 3), tokens_issued = ROUND(tokens_issued + ?, 3),
                  updated_at = datetime('now')
              WHERE id = ? AND ${guard}`
           )
@@ -128,7 +128,7 @@ export class SettlementService {
       statements.push(
         this.db
           .prepare(
-            `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now')
+            `UPDATE wallets SET token_balance = ROUND(token_balance + ?, 3), updated_at = datetime('now')
              WHERE id = ? AND ${guard}`
           )
           .bind(tokensG, walletId, consignmentId)

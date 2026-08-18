@@ -110,7 +110,7 @@ export class LeaseService {
         // Gold leaves the vault. Disclosed by the attestation from here on.
         this.db
           .prepare(
-            `UPDATE gold_stock SET gold_on_loan = gold_on_loan + ?, updated_at = datetime('now')
+            `UPDATE gold_stock SET gold_on_loan = ROUND(gold_on_loan + ?, 3), updated_at = datetime('now')
              WHERE id = ? AND EXISTS (SELECT 1 FROM wallets WHERE id = ? AND token_balance >= ?)`
           )
           .bind(amount, GOLD_STOCK_ID, wallet.id, amount),
@@ -136,7 +136,7 @@ export class LeaseService {
         // this runs, and its `changes` is what the caller decides on.
         this.db
           .prepare(
-            `UPDATE wallets SET token_balance = token_balance - ?, updated_at = datetime('now')
+            `UPDATE wallets SET token_balance = ROUND(token_balance - ?, 3), updated_at = datetime('now')
              WHERE id = ? AND token_balance >= ?`
           )
           .bind(amount, wallet.id, amount),
@@ -317,7 +317,7 @@ export class LeaseService {
       // ...and the grams become spendable again.
       this.db
         .prepare(
-          `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now')
+          `UPDATE wallets SET token_balance = ROUND(token_balance + ?, 3), updated_at = datetime('now')
            WHERE id = ? AND ${guard}`
         )
         .bind(principalG, position.wallet_id, order.id),

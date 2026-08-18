@@ -171,7 +171,14 @@ export class DispositionService {
 
     // Vérifié avant de commencer : mieux vaut refuser l'instruction entière que
     // d'exécuter une jambe puis buter sur la suivante.
-    if (wallet.token_balance + 0.0005 < g(sellG + leaseG)) {
+    //
+    // La comparaison était écrite `token_balance + 0.0005 < …` : une tolérance
+    // d'un demi-milligramme, posée ici parce que la dérive flottante s'y était
+    // manifestée. C'était le SEUL endroit à la porter, alors que la vente et la
+    // mise en location comparaient sans indulgence. Les soldes étant désormais
+    // quantifiés à l'écriture (ADR 013), la comparaison exacte est correcte —
+    // et une tolérance résiduelle masquerait un retour de la dérive.
+    if (wallet.token_balance < g(sellG + leaseG)) {
       return fail('INSUFFICIENT_BALANCE');
     }
 

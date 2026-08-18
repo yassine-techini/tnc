@@ -88,7 +88,7 @@ export class WalletService {
   async updateTokenBalance(walletId: string, amount: number): Promise<void> {
     await this.db
       .prepare(
-        `UPDATE wallets SET token_balance = token_balance + ?, updated_at = datetime('now') WHERE id = ?`
+        `UPDATE wallets SET token_balance = ROUND(token_balance + ?, 3), updated_at = datetime('now') WHERE id = ?`
       )
       .bind(amount, walletId)
       .run();
@@ -223,7 +223,7 @@ export class WalletService {
       .prepare(
         `UPDATE wallets
          SET cash_balance = cash_balance - ?,
-             token_balance = token_balance + ?,
+             token_balance = ROUND(token_balance + ?, 3),
              total_bought = total_bought + ?,
              total_spent = total_spent + ?,
              updated_at = datetime('now')
@@ -261,7 +261,7 @@ export class WalletService {
     const walletUpdate = await this.db
       .prepare(
         `UPDATE wallets
-         SET token_balance = token_balance - ?,
+         SET token_balance = ROUND(token_balance - ?, 3),
              cash_balance = cash_balance + ?,
              updated_at = datetime('now')
          WHERE id = ? AND token_balance >= ?`
@@ -331,7 +331,7 @@ export class WalletService {
         this.db
           .prepare(
             `UPDATE gold_stock
-             SET tokens_issued = tokens_issued + ?, updated_at = datetime('now')
+             SET tokens_issued = ROUND(tokens_issued + ?, 3), updated_at = datetime('now')
              WHERE id = ?`
           )
           .bind(p.tokenAmount, GOLD_STOCK_ID),
@@ -339,7 +339,7 @@ export class WalletService {
           .prepare(
             `UPDATE wallets
              SET cash_balance = cash_balance - ?,
-                 token_balance = token_balance + ?,
+                 token_balance = ROUND(token_balance + ?, 3),
                  total_bought = total_bought + ?,
                  total_spent = total_spent + ?,
                  updated_at = datetime('now')
@@ -389,7 +389,7 @@ export class WalletService {
         this.db
           .prepare(
             `UPDATE wallets
-             SET token_balance = token_balance - ?,
+             SET token_balance = ROUND(token_balance - ?, 3),
                  cash_balance = cash_balance + ?,
                  updated_at = datetime('now')
              WHERE id = ?`
@@ -402,7 +402,7 @@ export class WalletService {
         this.db
           .prepare(
             `UPDATE gold_stock
-             SET tokens_issued = tokens_issued - ?, updated_at = datetime('now')
+             SET tokens_issued = ROUND(tokens_issued - ?, 3), updated_at = datetime('now')
              WHERE id = ?`
           )
           .bind(p.tokenAmount, GOLD_STOCK_ID),

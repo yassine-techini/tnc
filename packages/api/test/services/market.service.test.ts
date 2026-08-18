@@ -373,7 +373,7 @@ describe('MarketService', () => {
 
       expect(result).toBe(true);
       expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('tokens_issued = tokens_issued + ?')
+        expect.stringContaining('tokens_issued = ROUND(tokens_issued + ?, 3)')
       );
     });
 
@@ -396,7 +396,7 @@ describe('MarketService', () => {
 
       expect(result).toBe(true);
       expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining('tokens_issued = tokens_issued - ?')
+        expect.stringContaining('tokens_issued = ROUND(tokens_issued - ?, 3)')
       );
     });
 
