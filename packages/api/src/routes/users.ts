@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { KycService } from '../services/kyc.service';
+import { AccountClosureService } from '../services/account-closure.service';
 import { AuthService } from '../services/auth.service';
 import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
@@ -1498,70 +1499,44 @@ users.delete('/me', async (c) => {
     }
     // Note: No rehash needed - account is being deleted
 
-    // Check wallet balance
-    const wallet = await c.env.DB
-      .prepare('SELECT token_balance, cash_balance FROM wallets WHERE user_id = ?')
-      .bind(userId)
-      .first<{ token_balance: number; cash_balance: number }>();
+    // Ce qui empêche la fermeture SE DIT, condition par condition (ADR 015).
+    // La route renvoyait INTERNAL_ERROR 500 sans rien expliquer, et échouait
+    // pour tout utilisateur ayant demandé un seul devis : `quotes` référence
+    // `users` sans `ON DELETE CASCADE`, comme onze autres tables.
+    const cloture = new AccountClosureService(c.env.DB, c.env.STORAGE);
 
-    if (wallet && (wallet.token_balance > 0 || wallet.cash_balance > 0)) {
+    const obstacle = await cloture.obstacles(userId);
+    if (!obstacle.ok) {
       return c.json({
         success: false,
-        error: {
-          code: 'BALANCE_NOT_ZERO',
-          message: 'Vous devez d\'abord solder votre compte (retirer tous vos FCFA et vendre tous vos tokens)',
-          details: {
-            tokenBalance: wallet.token_balance,
-            cashBalance: wallet.cash_balance,
-          },
-        },
+        error: { code: obstacle.code, message: obstacle.message, details: obstacle.details },
         requestId,
       }, 400);
     }
 
-    // Check for pending transactions
-    const pendingTx = await c.env.DB
-      .prepare("SELECT COUNT(*) as count FROM transactions WHERE user_id = ? AND status IN ('PENDING', 'PROCESSING')")
-      .bind(userId)
-      .first<{ count: number }>();
-
-    if (pendingTx && pendingTx.count > 0) {
+    // Les objets R2 partent AVANT les lignes qui les désignent. L'ordre inverse
+    // laissait les pièces d'identité chiffrées en ligne, sans plus rien pour
+    // les retrouver.
+    const pieces = await cloture.supprimerPieces(userId);
+    if (!pieces.ok) {
       return c.json({
         success: false,
-        error: {
-          code: 'PENDING_TRANSACTIONS',
-          message: 'Vous avez des transactions en cours. Veuillez attendre leur finalisation.',
-        },
+        error: { code: pieces.code, message: pieces.message },
         requestId,
-      }, 400);
+      }, 503);
     }
 
-    // Delete all user data (cascade delete)
-    // Order matters due to foreign key constraints
-    await c.env.DB.batch([
-      c.env.DB.prepare('DELETE FROM price_alerts WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM notification_preferences WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM notifications WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM active_sessions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM kyc_documents WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM wallets WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM password_history WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM audit_logs WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM security_events WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId),
-    ]);
+    const maintenant = new Date().toISOString();
+    await c.env.DB.batch(cloture.fermeture(userId, maintenant));
 
-    // Log the account deletion
     const securityService = new SecurityService(c.env.DB, c.env.CACHE);
     const ipAddress = c.req.header('CF-Connecting-IP') ||
       c.req.header('X-Forwarded-For')?.split(',')[0]?.trim() ||
       'unknown';
 
     await securityService.logAuditEvent({
-      userId: 'DELETED_' + userId,
-      action: 'ACCOUNT_DELETED',
+      userId,
+      action: 'ACCOUNT_CLOSED',
       entityType: 'user',
       entityId: userId,
       ipAddress,
@@ -1573,7 +1548,9 @@ users.delete('/me', async (c) => {
     return c.json({
       success: true,
       data: {
-        message: 'Votre compte a été supprimé définitivement',
+        // Le message disait « supprimé définitivement » alors que rien ne
+        // l'était vraiment. Il dit maintenant ce qui se passe.
+        message: 'Votre compte est fermé. Vos données personnelles ont été supprimées ; le registre de vos opérations est conservé.',
       },
       requestId,
     });

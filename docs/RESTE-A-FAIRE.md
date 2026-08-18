@@ -1137,7 +1137,7 @@ du registre que personne n'écrit. C'est ce second sens qui manquait, et c'est l
 18 tests. Vérifié par mutation dans les trois sens : entrée fantôme, action hors registre,
 retour du gabarit.
 
-### AB. Supprimer son compte échoue pour quiconque a demandé un devis 🔴
+### AB. Supprimer son compte échoue pour quiconque a demandé un devis ✅
 
 `DELETE /users/me` supprime en cascade douze tables. Le garde est sérieux — mot de passe
 exigé, solde nul, aucune transaction en cours.
@@ -1168,6 +1168,38 @@ Deux défauts de conception se cachent derrière la panne :
   conserve indépendamment de la fermeture du compte — et il alimente les volumes mensuels
   publiés à l'État ainsi que la réconciliation des périodes passées. Effacer le compte n'est
   pas effacer l'histoire.
+
+**Corrigé** — [ADR 015](adr/015-fermer-un-compte-n-est-pas-effacer-l-histoire.md).
+
+**Fermer un compte, ce n'est pas effacer l'histoire.** La ligne `users` subsiste, anonymisée
+(`closed+<id>@invalid`, migration 0036) : c'est ce qui permet de tenir les deux obligations à
+la fois — retirer la donnée personnelle, et conserver le registre des opérations qui alimente
+les volumes publiés à l'État.
+
+Sont retirés : pièces d'identité **et leurs objets R2**, sessions, préférences, alertes,
+notifications, historique de mots de passe, événements de sécurité. Sont conservés :
+transactions, piste d'audit, certificats, historique de location. Ce sont des écritures, pas
+du profil.
+
+**Ce qui empêche la fermeture se dit** — `LEASE_POSITION_OPEN`, `CONSIGNMENT_IN_PROGRESS`,
+`STORAGE_FEES_OUTSTANDING`, chacun avec son montant. La première est celle qui manquait
+vraiment : le solde à zéro d'un prêteur est à zéro **parce que** son or est prêté.
+
+**Les objets R2 partent avant les lignes qui les désignent.** L'ordre inverse — celui qui était
+en place — supprimait les lignes et laissait les images chiffrées dans R2 sans plus rien pour
+les retrouver : la donnée personnelle survivait à sa propre suppression. Un échec de
+suppression **interrompt** la fermeture ; annoncer un compte fermé en laissant les pièces en
+ligne serait le pire des deux mondes.
+
+La fermeture est tracée (`ACCOUNT_CLOSED`, action permanente du registre), avec une garde sur
+la valeur **exacte** posée par le lot : rejouer n'écrit pas une seconde fermeture.
+
+14 tests sur une vraie base — dont un qui **reproduit le défaut d'origine** (`DELETE FROM
+users` lève `FOREIGN KEY constraint failed` dès qu'un devis existe). Sans lui, on prouverait
+seulement que le nouveau chemin marche, pas qu'il remplace quelque chose de cassé.
+
+Le harnais de test a été aligné sur la production au passage : `audit_logs.user_id` et
+`old_value` y manquaient, ainsi que sept tables.
 
 ### AC. L'État écrit dans le registre et ne peut pas le lire 🟡
 

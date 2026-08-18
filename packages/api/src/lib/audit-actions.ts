@@ -52,6 +52,8 @@ export const ACTIONS_AUDIT: Record<string, ActionAudit> = {
   ADMIN_CREATED: { permanent: true, motif: 'Cree un compte qui peut tout ce qui precede' },
   ADMIN_PASSWORD_RESET: { permanent: true, motif: "Rend l'acces a un tel compte" },
 
+  ACCOUNT_CLOSED: { permanent: true, motif: 'Fermeture de compte : une operation sur des avoirs' },
+
   // ── Mouvements d'avoirs ──────────────────────────────────────────────────
   LEASE_OPENED: { permanent: true, motif: "Sort de l'or du portefeuille vers le pret" },
   LEASE_SETTLED: { permanent: true, motif: "Le rend, avec le rendement accumule" },

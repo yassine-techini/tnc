@@ -153,9 +153,13 @@ CREATE TABLE withdrawals (
 CREATE TABLE audit_logs (
   id TEXT PRIMARY KEY,
   admin_id TEXT,
+  -- Present en production depuis la premiere migration : une action d'un
+  -- utilisateur porte son user_id, une action d'administrateur son admin_id.
+  user_id TEXT,
   action TEXT,
   entity_type TEXT,
   entity_id TEXT,
+  old_value TEXT,
   new_value TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -307,11 +311,43 @@ CREATE TABLE reserve_attestations (
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
+  phone TEXT UNIQUE NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL DEFAULT '',
+  first_name TEXT,
+  last_name TEXT,
+  two_factor_enabled INTEGER DEFAULT 0,
+  two_factor_secret TEXT,
+  tokens_invalid_before TEXT,
+  -- ADR 015 : fermer un compte, c est anonymiser la ligne, pas la supprimer.
+  closed_at TEXT,
   kyc_level TEXT DEFAULT 'BASIC' CHECK (kyc_level IN ('BASIC','STANDARD','VERIFIED')),
   kyc_status TEXT DEFAULT 'PENDING' CHECK (kyc_status IN ('PENDING','SUBMITTED','APPROVED','REJECTED','EXPIRED')),
   role TEXT NOT NULL DEFAULT 'investor',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Les tables de donnees personnelles que la fermeture retire. La table quotes est
+-- la pour la raison inverse : elle REFERENCE users sans cascade, et c'est elle
+-- qui faisait echouer l'ancienne suppression pour tout utilisateur ayant trade.
+-- (Sans accent grave : ce schema vit dans une chaine gabarit.)
+CREATE TABLE kyc_documents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  front_image_url TEXT NOT NULL,
+  back_image_url TEXT,
+  selfie_url TEXT NOT NULL,
+  status TEXT DEFAULT 'SUBMITTED'
+);
+CREATE TABLE price_alerts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE notification_preferences (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE active_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE password_history (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE security_events (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id));
+CREATE TABLE quotes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  token_amount REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE lot_dispositions (
   id TEXT PRIMARY KEY,
