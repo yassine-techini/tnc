@@ -23,10 +23,10 @@
     "check:dates": "node scripts/check-date-columns.mjs"
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.4.3",
+    "@hono/zod-validator": "^0.9.0",
     "@tnc-trading/shared": "workspace:*",
     "argon2-browser": "^1.18.0",
-    "hono": "^4.11.7",
+    "hono": "^4.13.2",
     "jose": "^5.9.0",
     "zod": "^3.23.0",
     "viem": "^2.21.0"
