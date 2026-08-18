@@ -797,7 +797,10 @@ admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => 
     // Log admin action
     await c.env.DB
       .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\'))')
-      .bind(crypto.randomUUID(), c.get('adminId'), `KYC_${action.toUpperCase()}`, 'user', id, JSON.stringify({ reason }))
+      // Action EXPLICITE, pas construite par gabarit : `KYC_${action.toUpperCase()}`
+      // rendait la valeur ecrite invisible a la lecture comme au controle, et
+      // c'est ainsi que la liste de purge a pu diverger sans que rien ne le dise.
+      .bind(crypto.randomUUID(), c.get('adminId'), action === 'approve' ? 'KYC_APPROVE' : 'KYC_REJECT', 'user', id, JSON.stringify({ reason }))
       .run();
 
     return c.json({
@@ -1983,7 +1986,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       .bind(
         crypto.randomUUID(),
         c.get('adminId'),
-        `WITHDRAWAL_${action.toUpperCase()}`,
+        action === 'approve' ? 'WITHDRAWAL_APPROVE' : 'WITHDRAWAL_REJECT',
         id,
         JSON.stringify({ reason, amount: transaction.cash_amount })
       )

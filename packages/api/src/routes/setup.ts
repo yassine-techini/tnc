@@ -91,35 +91,38 @@ setup.post('/init', async (c) => {
     const adminPasswordHash = await authService.hashPassword(adminPassword);
     const statePasswordHash = await authService.hashPassword(statePassword);
 
-    // Insert super admin
-    await c.env.DB
-      .prepare(`
-        INSERT INTO admins (id, email, name, role, password_hash, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
-      `)
-      .bind(
-        crypto.randomUUID(),
-        'admin@tnc-trading.com',
-        'Super Admin',
-        'SUPER_ADMIN',
-        adminPasswordHash
-      )
-      .run();
+    // Créer un compte qui peut valider un KYC, ajuster le stock national et
+    // approuver un retrait ne laissait AUCUNE trace — alors que la purge du
+    // registre épargnait explicitement `ADMIN_CREATED`, une action que personne
+    // n'écrivait (ADR 014).
+    //
+    // Trace et création dans le MÊME lot : une trace écrite à part peut échouer
+    // seule, et l'administrateur existerait alors sans que personne l'ait créé.
+    const superAdminId = crypto.randomUUID();
+    const stateOperatorId = crypto.randomUUID();
 
-    // Insert state operator
-    await c.env.DB
-      .prepare(`
-        INSERT INTO admins (id, email, name, role, password_hash, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
-      `)
-      .bind(
-        crypto.randomUUID(),
-        'etat@mines.gov.bf',
-        'Ministère des Mines',
-        'STATE_OPERATOR',
-        statePasswordHash
-      )
-      .run();
+    const creerAdmin = (id: string, email: string, nom: string, role: string, hash: string) => [
+      c.env.DB
+        .prepare(`
+          INSERT INTO admins (id, email, name, role, password_hash, active, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+        `)
+        .bind(id, email, nom, role, hash),
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+          VALUES (?, NULL, 'ADMIN_CREATED', 'admin', ?, ?, datetime('now'))
+        `)
+        // `admin_id` est NULL : le bootstrap n'a pas d'auteur identifié, il est
+        // porté par le secret d'installation. Le dire est plus honnête que de
+        // s'attribuer l'action à soi-même.
+        .bind(crypto.randomUUID(), id, JSON.stringify({ email, role, via: 'setup/init' })),
+    ];
+
+    await c.env.DB.batch([
+      ...creerAdmin(superAdminId, 'admin@tnc-trading.com', 'Super Admin', 'SUPER_ADMIN', adminPasswordHash),
+      ...creerAdmin(stateOperatorId, 'etat@mines.gov.bf', 'Ministère des Mines', 'STATE_OPERATOR', statePasswordHash),
+    ]);
 
     // Initialize gold stock if not exists (canonical singleton id 'main')
     const existingStock = await c.env.DB
@@ -306,10 +309,25 @@ setup.post('/reset-admin-password', async (c) => {
     const authService = new AuthService(c.env.JWT_SECRET);
     const passwordHash = await authService.hashPassword(newPassword);
 
-    const result = await c.env.DB
-      .prepare('UPDATE admins SET password_hash = ?, updated_at = datetime(\'now\') WHERE email = ?')
-      .bind(passwordHash, email)
-      .run();
+    // Rendre l'accès à un compte d'administration est une action privilégiée, et
+    // elle ne laissait aucune trace (ADR 014).
+    //
+    // La trace est gardée par la MÊME condition que la mise à jour : si aucun
+    // administrateur ne porte cet e-mail, rien n'est écrit — ni le mot de passe,
+    // ni une trace annonçant une réinitialisation qui n'a pas eu lieu.
+    const resultats = await c.env.DB.batch([
+      c.env.DB
+        .prepare('UPDATE admins SET password_hash = ?, updated_at = datetime(\'now\') WHERE email = ?')
+        .bind(passwordHash, email),
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
+          SELECT ?, NULL, 'ADMIN_PASSWORD_RESET', 'admin', id, ?, datetime('now')
+          FROM admins WHERE email = ?
+        `)
+        .bind(crypto.randomUUID(), JSON.stringify({ email, via: 'setup/reset-admin-password' }), email),
+    ]);
+    const result = resultats[0] as { meta: { changes: number } };
 
     if (result.meta.changes === 0) {
       return c.json({

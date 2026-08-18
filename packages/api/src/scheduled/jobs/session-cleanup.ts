@@ -5,6 +5,7 @@
 
 import type { Env } from '../../types/env';
 import { ConfigService } from '../../services/config.service';
+import { ACTIONS_PERMANENTES } from '../../lib/audit-actions';
 
 export async function cleanupExpiredSessions(env: Env, ctx: ExecutionContext): Promise<void> {
   console.log('[SessionCleanup] Starting session cleanup');
@@ -67,14 +68,12 @@ export async function cleanupExpiredSessions(env: Env, ctx: ExecutionContext): P
     console.log(`[SessionCleanup] Deleted ${notifCount} old notifications`);
 
     // 5. Clean up old audit logs (older than configured days, except critical actions)
-    const criticalActions = [
-      'KYC_APPROVED',
-      'KYC_REJECTED',
-      'USER_SUSPENDED',
-      'WITHDRAWAL_APPROVED',
-      'STOCK_ADJUSTED',
-      'ADMIN_CREATED',
-    ];
+    // DERIVEE du registre, jamais recopiee (ADR 014). La liste ecrite a la main
+    // ici contenait `KYC_APPROVED`, `WITHDRAWAL_APPROVED` et `STOCK_ADJUSTED` ;
+    // les routes ecrivaient `KYC_APPROVE`, `WITHDRAWAL_APPROVE`, `STOCK_ADJUST`.
+    // Une entree sur six protegeait quelque chose, et personne ne pouvait le voir
+    // — la purge s'executait sans erreur, en emportant ce qu'elle devait garder.
+    const criticalActions = ACTIONS_PERMANENTES;
 
     const oldAuditLogs = await env.DB.prepare(`
       DELETE FROM audit_logs

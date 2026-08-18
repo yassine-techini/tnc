@@ -1068,7 +1068,7 @@ lignes de là, et les quatre services la tiennent. C'est la même asymétrie qu'
 Cas particulier : `reconciliation.service` est **la seule écriture qui renseigne `old_value`**,
 donc la plus informative du dépôt, et elle est écrite de la manière la moins sûre.
 
-### AA. La liste qui protège le registre ne correspond à rien 🔴
+### AA. La liste qui protège le registre ne correspond à rien ✅
 
 Un cron purge `audit_logs` au-delà de la rétention (`cleanup_audit_log_days`, **365 jours**),
 en épargnant les actions réputées critiques :
@@ -1104,6 +1104,38 @@ alors qu'un mécanisme explicite existe pour l'en empêcher. Le mécanisme rassu
 
 `ADMIN_CREATED` mérite sa propre mention : la liste protège la trace d'une action qui n'est
 **jamais tracée**. La création d'un administrateur n'écrit rien.
+
+**Corrigé** — [ADR 014](adr/014-registre-des-actions-d-audit.md).
+
+`src/lib/audit-actions.ts` déclare les **33 actions**, dont **26 permanentes**, chacune avec
+son motif écrit. `session-cleanup` **dérive** sa liste au lieu de la recopier : deux listes
+écrites à la main divergent, c'est arrivé, et personne ne pouvait le voir.
+
+**Aucune action n'est plus construite par gabarit.** `KYC_${action.toUpperCase()}` rendait la
+valeur écrite invisible à la lecture comme au contrôle — c'est exactement ainsi que l'écart
+s'est creusé. Les trois sites concernés écrivent des littéraux explicites.
+
+**Les deux traces manquantes existent** : créer un administrateur et réinitialiser son mot de
+passe, toutes deux dans le même lot que l'action. `admin_id` vaut `NULL` — le bootstrap n'a pas
+d'auteur identifié, il est porté par le secret d'installation, et le dire vaut mieux que de
+s'attribuer l'action.
+
+`pnpm check:audit` vérifie les **deux sens** : une action écrite hors registre, et une entrée
+du registre que personne n'écrit. C'est ce second sens qui manquait, et c'est lui qui attrape
+`ADMIN_CREATED` comme les participes passés.
+
+**Deux défauts dans mon propre garde-fou, trouvés par mutation :**
+
+- il *tolérait* les gabarits en bénissant toute action partageant le préfixe — une entrée
+  fantôme `KYC_APPROVED_LEGACY` passait donc sans être écrite nulle part. La tolérance
+  recréait le défaut qu'elle devait empêcher ; le gabarit est désormais refusé.
+- sa première version retirait les commentaires du source avant analyse, et **supprimait au
+  passage 5 des 8 requêtes d'audit** du fichier (un `//` à l'intérieur d'une chaîne emporte la
+  suite). Il se déclarait alors satisfait. Remplacé par un test local ligne par ligne, sans
+  réécriture du source.
+
+18 tests. Vérifié par mutation dans les trois sens : entrée fantôme, action hors registre,
+retour du gabarit.
 
 ### AB. Supprimer son compte échoue pour quiconque a demandé un devis 🔴
 

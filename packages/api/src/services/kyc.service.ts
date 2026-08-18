@@ -382,7 +382,7 @@ export class KycService {
         .run();
 
       // Log the verification request
-      await this.logVerification(request.userId, request.kycDocumentId, 'SUBMITTED', result.job_id);
+      await this.logVerification(request.userId, request.kycDocumentId, 'KYC_SUBMITTED', result.job_id);
 
       return {
         success: true,
@@ -520,7 +520,7 @@ export class KycService {
       await this.logVerification(
         userId,
         kycDoc.id,
-        isVerified ? 'APPROVED' : 'REJECTED',
+        isVerified ? 'KYC_APPROVED' : 'KYC_REJECTED',
         job_id,
         verificationResult
       );
@@ -695,7 +695,8 @@ export class KycService {
   private async logVerification(
     userId: string,
     documentId: string,
-    action: string,
+    /** Action COMPLETE, jamais un fragment : voir `lib/audit-actions` (ADR 014). */
+    action: 'KYC_SUBMITTED' | 'KYC_APPROVED' | 'KYC_REJECTED',
     jobId?: string,
     details?: any
   ): Promise<void> {
@@ -708,7 +709,10 @@ export class KycService {
         .bind(
           crypto.randomUUID(),
           userId,
-          `KYC_${action}`,
+          // Action ecrite en clair. Elle etait construite par gabarit
+          // (`KYC_${action}`), donc invisible a la lecture comme au controle —
+          // et c'est ainsi que la liste de purge a pu diverger sans rien dire.
+          action,
           documentId,
           JSON.stringify({ jobId, ...details })
         )
