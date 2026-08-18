@@ -1031,7 +1031,7 @@ Et surtout, **la couche service applique la discipline du lot gardé partout** :
 `db.batch`** que l'action, avec la même garde répétée sur chaque instruction. La règle existe,
 elle est comprise, et elle est appliquée avec rigueur — là.
 
-### Z. Huit traces sur quinze ne partagent pas la transaction de leur action 🟠
+### Z. Huit traces sur quinze ne partagent pas la transaction de leur action ✅
 
 L'écriture d'audit est faite en instruction séparée dans huit cas sur quinze — dont **six des
 sept routes d'administration** :
@@ -1067,6 +1067,35 @@ lignes de là, et les quatre services la tiennent. C'est la même asymétrie qu'
 
 Cas particulier : `reconciliation.service` est **la seule écriture qui renseigne `old_value`**,
 donc la plus informative du dépôt, et elle est écrite de la manière la moins sûre.
+
+**Corrigé** — [ADR 016](adr/016-la-trace-dans-la-transaction.md).
+
+Les huit sites écrivent action et trace dans un seul `db.batch`. Un lot D1 est tout ou rien :
+la trace ne peut plus manquer sans que l'action soit annulée avec elle.
+
+**Mettre les deux dans un lot ne suffisait pas.** Chaque trace porte désormais la **même
+condition** que son action (`SELECT … FROM <entité> WHERE <même garde>`) — sans quoi elle
+consignerait une décision qu'une mise à jour gardée n'a pas prise.
+
+L'approbation en lot le montrait crûment : sa mise à jour était gardée par
+`kyc_status = 'SUBMITTED'`, **sa trace non**. Un dossier déjà approuvé recevait une trace
+« approuvé en lot » alors que rien n'avait changé, et la réponse annonçait « KYC approuvé »
+sans jamais regarder `changes`. Les deux sont corrigés.
+
+**L'état antérieur est capté par `json_object`, sans lecture supplémentaire** : la trace
+s'exécutant avant la mise à jour dans le lot, son `SELECT` voit l'état d'origine. Cela répond
+à l'observation du neuvième audit — deux écritures sur quinze renseignaient `old_value`.
+
+**Un garde-fou automatique a été tenté puis abandonné**, et c'est la partie de ce correctif
+qu'il faut lire. Décider « cet `INSERT` est-il dans un lot » demande de compter les crochets
+non fermés en ignorant chaînes, gabarits et commentaires ; ma version se perdait sur un
+gabarit imbriqué et signalait comme fautifs des sites que je venais de corriger. Et la moitié
+des traces du dépôt n'ont légitimement aucune action à accompagner — un battement de cron est
+son propre événement.
+
+Après trois gardes de cette campagne qui ont sous-détecté en silence, livrer un quatrième que
+je n'arrive pas à valider aurait été répéter l'erreur que je passe mon temps à nommer. Les
+huit sites sont donc tenus par 18 tests, vérifiés par mutation.
 
 ### AA. La liste qui protège le registre ne correspond à rien ✅
 

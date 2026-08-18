@@ -105,6 +105,33 @@ function finDuBind(source, at) {
   return source.length;
 }
 
+/**
+ * Vrai quand l'INSERT a la position donnee est DANS un `db.batch([...])`.
+ *
+ * On compte les crochets ouverts depuis le dernier `.batch([` : si le compte est
+ * positif, l'instruction fait partie du lot. Une simple recherche en arriere sur
+ * une fenetre fixe se trompait — les lots de ce depot s'ouvrent parfois cinquante
+ * lignes plus haut.
+ */
+/**
+ * CE QUE CE CONTROLE NE VERIFIE PAS : l'atomicite.
+ *
+ * Une trace ecrite hors de la transaction de son action peut manquer alors que
+ * l'action a eu lieu — c'est le constat Z, corrige a la main sur les huit sites
+ * concernes (ADR 016).
+ *
+ * Un controle automatique a ete tente puis ABANDONNE. Detecter « cet INSERT
+ * est-il dans un lot » demande de compter les crochets non fermes en ignorant
+ * chaines, gabarits et commentaires ; la version obtenue se perdait sur un
+ * gabarit imbrique et signalait comme fautifs des sites corrects. Et la moitie
+ * des traces du depot n'ont legitimement aucune action a accompagner : un
+ * battement de cron, un webhook sans correspondance ou une sonde sont a
+ * eux-memes leur evenement.
+ *
+ * Un controle qui se trompe finit desactive. Les huit sites sont donc tenus par
+ * des tests (`test/routes/audit-atomique.test.ts`), pas par ce script.
+ */
+
 export function verifierLeDepot(registre, racine = "src") {
   const ecrites = [];
   for (const f of fichiersSource(racine)) {
@@ -152,6 +179,7 @@ export function verifierLeDepot(registre, racine = "src") {
     if (vues.has(a) || citeeAilleurs(a)) continue;
     problemes.push({ quoi: "action du registre que personne n ecrit", action: a });
   }
+
 
   return problemes;
 }

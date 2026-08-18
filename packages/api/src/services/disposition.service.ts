@@ -329,31 +329,38 @@ export class DispositionService {
     // l'intention est enregistrée et les frais de garde s'y appliqueront.
     const status = legs.length === 0 || allDone ? 'EXECUTED' : noneDone ? 'FAILED' : 'PARTIAL';
 
-    await this.db
-      .prepare(
-        `UPDATE lot_dispositions
-         SET status = ?, failure_reason = ?, executed_at = COALESCE(executed_at, datetime('now'))
-         WHERE id = ?`
-      )
-      .bind(status, failures.length ? failures.join(' · ').slice(0, 500) : null, dispositionId)
-      .run();
-
-    await this.db
-      .prepare(
-        `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-         VALUES (?, NULL, 'LOT_DISPOSED', 'lot_disposition', ?, ?, datetime('now'))`
-      )
-      .bind(
-        crypto.randomUUID(),
-        dispositionId,
-        JSON.stringify({
-          consignmentId: after.consignment_id,
-          sellG: after.sell_g,
-          leaseG: after.lease_g,
-          storeG: after.store_g,
-          status,
-        })
-      )
-      .run();
+    // Clôture et trace dans le MÊME lot (ADR 016). Écrites séparément, une
+    // répartition exécutée pouvait rester sans trace de ce qu'elle avait fait
+    // du lot — vendu, loué ou gardé.
+    //
+    // La trace vient EN PREMIER et porte la même condition, pour capter l'état
+    // antérieur : sans lui, elle dit que la répartition est exécutée sans dire
+    // si elle l'était déjà.
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+           SELECT ?, NULL, 'LOT_DISPOSED', 'lot_disposition', id, json_object('status', status), ?, datetime('now')
+           FROM lot_dispositions WHERE id = ?`
+        )
+        .bind(
+          crypto.randomUUID(),
+          JSON.stringify({
+            consignmentId: after.consignment_id,
+            sellG: after.sell_g,
+            leaseG: after.lease_g,
+            storeG: after.store_g,
+            status,
+          }),
+          dispositionId
+        ),
+      this.db
+        .prepare(
+          `UPDATE lot_dispositions
+           SET status = ?, failure_reason = ?, executed_at = COALESCE(executed_at, datetime('now'))
+           WHERE id = ?`
+        )
+        .bind(status, failures.length ? failures.join(' · ').slice(0, 500) : null, dispositionId),
+    ]);
   }
 }

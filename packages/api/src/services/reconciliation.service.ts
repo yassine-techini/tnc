@@ -139,48 +139,58 @@ export class ReconciliationService {
         };
     }
 
-    // Update transaction
-    await this.db
-      .prepare(`
-        UPDATE transactions
-        SET status = ?,
-            external_reference = COALESCE(?, external_reference),
-            failure_reason = ?,
-            completed_at = CASE WHEN ? = 'COMPLETED' THEN datetime('now') ELSE completed_at END,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `)
-      .bind(newStatus, externalReference || null, reason || null, newStatus, transactionId)
-      .run();
-
-    // Update wallet if completing a deposit
-    if (walletUpdate && transaction.type === 'DEPOSIT' && action === 'complete') {
-      await this.db
+    // Correction, crédit éventuel et trace dans le MÊME lot (ADR 016).
+    //
+    // C'est ici que l'écart comptait le plus : cette écriture est la SEULE du
+    // dépôt à renseigner `old_value`, donc la plus informative — et elle était
+    // faite en instruction séparée, donc la moins sûre. Corriger à la main
+    // l'état d'une transaction sans laisser de trace est précisément ce qu'une
+    // piste d'audit existe pour empêcher.
+    const ecritures = [
+      this.db
         .prepare(`
-          UPDATE wallets
-          SET cash_balance = cash_balance + ?, updated_at = datetime('now')
+          UPDATE transactions
+          SET status = ?,
+              external_reference = COALESCE(?, external_reference),
+              failure_reason = ?,
+              completed_at = CASE WHEN ? = 'COMPLETED' THEN datetime('now') ELSE completed_at END,
+              updated_at = datetime('now')
           WHERE id = ?
         `)
-        .bind(transaction.cash_amount - transaction.fees, transaction.wallet_id)
-        .run();
+        .bind(newStatus, externalReference || null, reason || null, newStatus, transactionId),
+    ];
+
+    if (walletUpdate && transaction.type === 'DEPOSIT' && action === 'complete') {
+      ecritures.push(
+        this.db
+          .prepare(`
+            UPDATE wallets
+            SET cash_balance = cash_balance + ?, updated_at = datetime('now')
+            WHERE id = ?
+          `)
+          .bind(transaction.cash_amount - transaction.fees, transaction.wallet_id)
+      );
     }
 
-    // Log admin action
     if (adminId) {
-      await this.db
-        .prepare(`
-          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
-          VALUES (?, ?, 'RECONCILE_TRANSACTION', 'transaction', ?, ?, ?, datetime('now'))
-        `)
-        .bind(
-          crypto.randomUUID(),
-          adminId,
-          transactionId,
-          JSON.stringify({ status: previousStatus }),
-          JSON.stringify({ status: newStatus, reason, externalReference })
-        )
-        .run();
+      ecritures.push(
+        this.db
+          .prepare(`
+            INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            SELECT ?, ?, 'RECONCILE_TRANSACTION', 'transaction', id, ?, ?, datetime('now')
+            FROM transactions WHERE id = ?
+          `)
+          .bind(
+            crypto.randomUUID(),
+            adminId,
+            JSON.stringify({ status: previousStatus }),
+            JSON.stringify({ status: newStatus, reason, externalReference }),
+            transactionId
+          )
+      );
     }
+
+    await this.db.batch(ecritures);
 
     // Notify user
     if (this.notificationService) {

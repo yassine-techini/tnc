@@ -112,7 +112,12 @@ describe('Le controle du registre', () => {
     // passage 5 des 8 requetes d audit du fichier.
     const src = readFileSyncSafe('src/routes/admin.ts');
 
-    expect(actionsEcrites(src, 'admin.ts').filter((a) => a.action).length).toBeGreaterThanOrEqual(10);
+    // Seuil a 8 et non 10 : la decision de retrait passe desormais par une
+    // constante partagee entre ses deux branches (`ACTION_RETRAIT`), donc ses
+    // deux valeurs ne sont plus litterales au bord de l'INSERT. Le registre les
+    // retrouve par `citeeAilleurs` — une constante nommee reste greppable, a la
+    // difference du gabarit qu'elle remplace.
+    expect(actionsEcrites(src, 'admin.ts').filter((a) => a.action).length).toBeGreaterThanOrEqual(8);
   });
 
   it('est satisfait de l etat actuel du depot', () => {

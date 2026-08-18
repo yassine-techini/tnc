@@ -789,19 +789,46 @@ admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => 
     const newStatus = action === 'approve' ? 'APPROVED' : 'REJECTED';
     const newKycLevel = action === 'approve' ? 'VERIFIED' : 'BASIC';
 
-    await c.env.DB
-      .prepare('UPDATE users SET kyc_status = ?, kyc_level = ?, updated_at = datetime(\'now\') WHERE id = ?')
-      .bind(newStatus, newKycLevel, id)
-      .run();
+    // Décision et trace dans le MÊME lot (ADR 016). Écrites séparément, une
+    // panne entre les deux promouvait l'utilisateur à VERIFIED — plafond
+    // journalier de 100 g à 1000 g — sans que personne ne l'ait décidé.
+    //
+    // La trace porte la MÊME condition que la décision, et capture l'état
+    // ANTÉRIEUR par `json_object` : elle s'exécute avant la mise à jour, donc
+    // sans lecture supplémentaire. Sans lui, la trace dit que le dossier est
+    // approuvé sans dire s'il était en attente, déjà approuvé, ou rejeté la
+    // veille.
+    const resultats = await c.env.DB.batch([
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+          SELECT ?, ?, ?, 'user', id,
+                 json_object('kycStatus', kyc_status, 'kycLevel', kyc_level), ?, datetime('now')
+          FROM users WHERE id = ?
+        `)
+        .bind(
+          crypto.randomUUID(),
+          c.get('adminId'),
+          // Action EXPLICITE, pas construite par gabarit : `KYC_${action.toUpperCase()}`
+          // rendait la valeur ecrite invisible a la lecture comme au controle.
+          action === 'approve' ? 'KYC_APPROVE' : 'KYC_REJECT',
+          JSON.stringify({ kycStatus: newStatus, kycLevel: newKycLevel, reason }),
+          id
+        ),
+      // La décision EN DERNIER : c'est son `changes` que l'appelant interprète.
+      c.env.DB
+        .prepare("UPDATE users SET kyc_status = ?, kyc_level = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(newStatus, newKycLevel, id),
+    ]);
 
-    // Log admin action
-    await c.env.DB
-      .prepare('INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\'))')
-      // Action EXPLICITE, pas construite par gabarit : `KYC_${action.toUpperCase()}`
-      // rendait la valeur ecrite invisible a la lecture comme au controle, et
-      // c'est ainsi que la liste de purge a pu diverger sans que rien ne le dise.
-      .bind(crypto.randomUUID(), c.get('adminId'), action === 'approve' ? 'KYC_APPROVE' : 'KYC_REJECT', 'user', id, JSON.stringify({ reason }))
-      .run();
+    const decision = resultats[resultats.length - 1] as { meta: { changes: number } };
+    if (decision.meta.changes === 0) {
+      return c.json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        requestId: crypto.randomUUID(),
+      }, 404);
+    }
 
     return c.json({
       success: true,
@@ -1002,44 +1029,58 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
 
     const userId = doc.user_id;
 
-    if (action === 'approve') {
-      const kycLevel = newLevel || 'VERIFIED';
+    const approuve = action === 'approve';
+    const kycLevel = newLevel || 'VERIFIED';
 
-      // Update user KYC status
-      await c.env.DB
-        .prepare(`UPDATE users SET kyc_status = 'APPROVED', kyc_level = ?, updated_at = datetime('now') WHERE id = ?`)
-        .bind(kycLevel, userId)
-        .run();
+    // Trois écritures, un seul lot (ADR 016). Séparées, une panne laissait le
+    // dossier validé et l'utilisateur non promu — ou l'inverse — et dans tous
+    // les cas sans trace.
+    //
+    // La trace vient EN PREMIER pour capter l'état antérieur du document, et
+    // porte la même condition que les mises à jour.
+    const misesAJour = approuve
+      ? [
+          c.env.DB
+            .prepare("UPDATE users SET kyc_status = 'APPROVED', kyc_level = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(kycLevel, userId),
+          c.env.DB
+            .prepare("UPDATE kyc_documents SET status = 'VERIFIED', reviewed_at = datetime('now') WHERE id = ?")
+            .bind(doc.id),
+        ]
+      : [
+          c.env.DB
+            .prepare("UPDATE users SET kyc_status = 'REJECTED', updated_at = datetime('now') WHERE id = ?")
+            .bind(userId),
+          c.env.DB
+            .prepare("UPDATE kyc_documents SET status = 'REJECTED', rejection_reason = ?, reviewed_at = datetime('now') WHERE id = ?")
+            .bind(rejectionReason || '', doc.id),
+        ];
 
-      // Update document status
-      await c.env.DB
-        .prepare(`UPDATE kyc_documents SET status = 'VERIFIED', reviewed_at = datetime('now') WHERE id = ?`)
-        .bind(doc.id)
-        .run();
-    } else {
-      // Reject
-      await c.env.DB
-        .prepare(`UPDATE users SET kyc_status = 'REJECTED', updated_at = datetime('now') WHERE id = ?`)
-        .bind(userId)
-        .run();
+    const resultats = await c.env.DB.batch([
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+          SELECT ?, ?, ?, 'kyc', id, json_object('status', status), ?, datetime('now')
+          FROM kyc_documents WHERE id = ?
+        `)
+        .bind(
+          crypto.randomUUID(),
+          c.get('adminId'),
+          approuve ? 'KYC_APPROVE' : 'KYC_REJECT',
+          JSON.stringify({ newLevel, rejectionReason }),
+          doc.id
+        ),
+      ...misesAJour,
+    ]);
 
-      await c.env.DB
-        .prepare(`UPDATE kyc_documents SET status = 'REJECTED', rejection_reason = ?, reviewed_at = datetime('now') WHERE id = ?`)
-        .bind(rejectionReason || '', doc.id)
-        .run();
+    const dossier = resultats[resultats.length - 1] as { meta: { changes: number } };
+    if (dossier.meta.changes === 0) {
+      return c.json({
+        success: false,
+        error: { code: 'KYC_DOCUMENT_NOT_FOUND', message: 'Document introuvable' },
+        requestId: crypto.randomUUID(),
+      }, 404);
     }
-
-    // Audit log
-    await c.env.DB
-      .prepare(`INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, 'kyc', ?, ?, datetime('now'))`)
-      .bind(
-        crypto.randomUUID(),
-        c.get('adminId'),
-        action === 'approve' ? 'KYC_APPROVE' : 'KYC_REJECT',
-        doc.id,
-        JSON.stringify({ newLevel, rejectionReason })
-      )
-      .run();
 
     // Notify the user of the decision (email). Non-blocking: a notification
     // failure must not fail the review.
@@ -1122,34 +1163,46 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
       ? new Date(Date.now() + duration * 60 * 60 * 1000).toISOString()
       : null;
 
-    // Update user
-    await c.env.DB
-      .prepare(`
-        UPDATE users
-        SET suspended = 1,
-            suspended_at = datetime('now'),
-            suspended_until = ?,
-            suspension_reason = ?,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `)
-      .bind(suspendedUntil, reason || 'Non spécifiée', id)
-      .run();
+    // Suspension, révocation des sessions et trace dans le MÊME lot (ADR 016).
+    // Écrites séparément, une panne entre les deux privait un titulaire de
+    // l'accès à ses avoirs sans que personne ne l'ait décidé.
+    const resultats = await c.env.DB.batch([
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+          SELECT ?, ?, 'USER_SUSPENDED', 'user', id,
+                 json_object('suspended', suspended, 'suspensionReason', suspension_reason), ?, datetime('now')
+          FROM users WHERE id = ?
+        `)
+        .bind(
+          crypto.randomUUID(),
+          c.get('adminId'),
+          JSON.stringify({ reason, duration, suspendedUntil }),
+          id
+        ),
+      c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+      // La suspension EN DERNIER : c'est son `changes` qui fait foi.
+      c.env.DB
+        .prepare(`
+          UPDATE users
+          SET suspended = 1,
+              suspended_at = datetime('now'),
+              suspended_until = ?,
+              suspension_reason = ?,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `)
+        .bind(suspendedUntil, reason || 'Non spécifiée', id),
+    ]);
 
-    // Invalidate all active sessions
-    await c.env.DB
-      .prepare('DELETE FROM sessions WHERE user_id = ?')
-      .bind(id)
-      .run();
-
-    // Log admin action
-    await c.env.DB
-      .prepare(`
-        INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-        VALUES (?, ?, 'USER_SUSPENDED', 'user', ?, ?, datetime('now'))
-      `)
-      .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ reason, duration, suspendedUntil }))
-      .run();
+    const suspension = resultats[resultats.length - 1] as { meta: { changes: number } };
+    if (suspension.meta.changes === 0) {
+      return c.json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        requestId: crypto.randomUUID(),
+      }, 404);
+    }
 
     // Send notification to user
     const notificationService = new NotificationService(c.env.DB, {
@@ -1219,28 +1272,41 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
       }, 400);
     }
 
-    // Reactivate user
-    await c.env.DB
-      .prepare(`
-        UPDATE users
-        SET suspended = 0,
-            suspended_at = NULL,
-            suspended_until = NULL,
-            suspension_reason = NULL,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `)
-      .bind(id)
-      .run();
+    // Levée et trace dans le MÊME lot (ADR 016). La levée compte autant que la
+    // mesure : un compte rétabli sans trace est un compte dont personne ne
+    // pourra dire qui l'a rouvert.
+    const resultats = await c.env.DB.batch([
+      c.env.DB
+        .prepare(`
+          INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+          SELECT ?, ?, 'USER_UNSUSPENDED', 'user', id,
+                 json_object('suspendedUntil', suspended_until, 'suspensionReason', suspension_reason), ?, datetime('now')
+          FROM users WHERE id = ? AND suspended = 1
+        `)
+        .bind(crypto.randomUUID(), c.get('adminId'), JSON.stringify({ reason }), id),
+      // La levée EN DERNIER, gardée par la même condition : rejouer sur un
+      // compte déjà rétabli n'écrit ni la levée ni une seconde trace.
+      c.env.DB
+        .prepare(`
+          UPDATE users
+          SET suspended = 0,
+              suspended_at = NULL,
+              suspended_until = NULL,
+              suspension_reason = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND suspended = 1
+        `)
+        .bind(id),
+    ]);
 
-    // Log admin action
-    await c.env.DB
-      .prepare(`
-        INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-        VALUES (?, ?, 'USER_UNSUSPENDED', 'user', ?, ?, datetime('now'))
-      `)
-      .bind(crypto.randomUUID(), c.get('adminId'), id, JSON.stringify({ reason }))
-      .run();
+    const levee = resultats[resultats.length - 1] as { meta: { changes: number } };
+    if (levee.meta.changes === 0) {
+      return c.json({
+        success: false,
+        error: { code: 'USER_NOT_SUSPENDED', message: 'Utilisateur non suspendu' },
+        requestId,
+      }, 400);
+    }
 
     // Send notification to user
     const notificationService = new NotificationService(c.env.DB, {
@@ -1461,24 +1527,38 @@ admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) =
 
     for (const userId of userIds) {
       try {
-        await c.env.DB
-          .prepare(`
-            UPDATE users
-            SET kyc_status = 'APPROVED', kyc_level = 'VERIFIED', updated_at = datetime('now')
-            WHERE id = ? AND kyc_status = 'SUBMITTED'
-          `)
-          .bind(userId)
-          .run();
+        // Approbation et trace dans le MÊME lot (ADR 016), et la trace porte la
+        // MÊME condition que l'approbation.
+        //
+        // Elle ne la portait pas : la mise à jour était gardée par
+        // `kyc_status = 'SUBMITTED'`, la trace non. Un dossier déjà approuvé, ou
+        // rejeté, recevait donc une trace « approuvé en lot » alors que rien
+        // n'avait changé — et la réponse annonçait « KYC approuvé » sans
+        // regarder `changes`.
+        const resultats = await c.env.DB.batch([
+          c.env.DB
+            .prepare(`
+              INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+              SELECT ?, ?, 'KYC_BULK_APPROVE', 'user', id,
+                     json_object('kycStatus', kyc_status, 'kycLevel', kyc_level), ?, datetime('now')
+              FROM users WHERE id = ? AND kyc_status = 'SUBMITTED'
+            `)
+            .bind(crypto.randomUUID(), c.get('adminId'), JSON.stringify({ reason }), userId),
+          c.env.DB
+            .prepare(`
+              UPDATE users
+              SET kyc_status = 'APPROVED', kyc_level = 'VERIFIED', updated_at = datetime('now')
+              WHERE id = ? AND kyc_status = 'SUBMITTED'
+            `)
+            .bind(userId),
+        ]);
 
-        await c.env.DB
-          .prepare(`
-            INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-            VALUES (?, ?, 'KYC_BULK_APPROVE', 'user', ?, ?, datetime('now'))
-          `)
-          .bind(crypto.randomUUID(), c.get('adminId'), userId, JSON.stringify({ reason }))
-          .run();
-
-        results.push({ userId, success: true, message: 'KYC approuvé' });
+        const approbation = resultats[resultats.length - 1] as { meta: { changes: number } };
+        results.push(
+          approbation.meta.changes === 1
+            ? { userId, success: true, message: 'KYC approuvé' }
+            : { userId, success: false, message: 'Dossier non en attente de revue' }
+        );
       } catch (err) {
         results.push({ userId, success: false, message: 'Erreur' });
       }
@@ -1819,6 +1899,11 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       twilioPhoneNumber: c.env.TWILIO_PHONE_NUMBER,
     });
 
+    // Action explicite, partagée par les deux branches : c'est le gabarit
+    // `WITHDRAWAL_${action.toUpperCase()}` qui avait laissé la liste de purge
+    // diverger sans que rien ne le signale (ADR 014).
+    const ACTION_RETRAIT = action === 'approve' ? 'WITHDRAWAL_APPROVE' : 'WITHDRAWAL_REJECT';
+
     if (action === 'approve') {
       // Initialize payment service for payout
       const paymentService = new PaymentService(c.env.DB, c.env.CACHE, {
@@ -1878,6 +1963,22 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
        * erreur et n'interrompt pas le lot, donc la garde doit etre portee partout.
        */
       const resultatsApprobation = await c.env.DB.batch([
+        // La trace DANS le lot, gardée par la même condition que la décision
+        // (ADR 016). Écrite après coup, une panne laissait une sortie de fonds
+        // — ou son refus — sans auteur.
+        c.env.DB
+          .prepare(`
+            INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            SELECT ?, ?, ?, 'transaction', id, json_object('status', status), ?, datetime('now')
+            FROM transactions WHERE id = ? AND status = 'PENDING'
+          `)
+          .bind(
+            crypto.randomUUID(),
+            c.get('adminId'),
+            ACTION_RETRAIT,
+            JSON.stringify({ reason, amount: transaction.cash_amount }),
+            id
+          ),
         c.env.DB
           .prepare(`
             UPDATE withdrawals
@@ -1932,6 +2033,22 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
        */
       const motifRejet = reason || "Rejeté par l'administrateur";
       const resultatsRejet = await c.env.DB.batch([
+        // La trace DANS le lot, gardée par la même condition que la décision
+        // (ADR 016). Écrite après coup, une panne laissait une sortie de fonds
+        // — ou son refus — sans auteur.
+        c.env.DB
+          .prepare(`
+            INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+            SELECT ?, ?, ?, 'transaction', id, json_object('status', status), ?, datetime('now')
+            FROM transactions WHERE id = ? AND status = 'PENDING'
+          `)
+          .bind(
+            crypto.randomUUID(),
+            c.get('adminId'),
+            ACTION_RETRAIT,
+            JSON.stringify({ reason, amount: transaction.cash_amount }),
+            id
+          ),
         c.env.DB
           .prepare(`
             UPDATE wallets
@@ -1976,21 +2093,6 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
         `,
       }).catch(err => console.error('Failed to send rejection email:', err));
     }
-
-    // Log admin action
-    await c.env.DB
-      .prepare(`
-        INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at)
-        VALUES (?, ?, ?, 'transaction', ?, ?, datetime('now'))
-      `)
-      .bind(
-        crypto.randomUUID(),
-        c.get('adminId'),
-        action === 'approve' ? 'WITHDRAWAL_APPROVE' : 'WITHDRAWAL_REJECT',
-        id,
-        JSON.stringify({ reason, amount: transaction.cash_amount })
-      )
-      .run();
 
     return c.json({
       success: true,
