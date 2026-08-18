@@ -1464,6 +1464,154 @@ d'un jour ouvré.
 
 ---
 
+## Onzième audit — 18 août 2026, et le deuxième pays ?
+
+Angle tiré de la correction de périmètre : la plateforme sera exploitée dans plusieurs pays
+d'Afrique, d'abord par des raffineurs et des coopératives. La question n'est donc plus « le
+code est-il juste ? » mais **« qu'est-ce qui suppose encore un seul pays ? »**
+
+Le portail de l'État reste hors périmètre.
+
+### Ce que cet audit a confirmé de sain
+
+`country_config` est bien conçue et déjà peuplée : cinq pays de l'UEMOA plus l'Ouganda, chacun
+avec sa devise, ses documents, ses fournisseurs de paiement, son fuseau et sa locale. Les pays
+non ouvrables sont à `enabled = 0`, et le commentaire dit pourquoi : « partager une devise
+n'est pas avoir les licences pour opérer ».
+
+L'honnêteté va plus loin : les fournisseurs ougandais portent `implemented: false` **parce
+qu'ils le sont**, et le commentaire de la migration énonce exactement le problème que cet audit
+retrouve — « UGX n'est pas XOF : le flux de prix est coté en USD et converti, donc un pays en
+UGX a besoin de son propre taux, pas d'un FCFA relabellisé ».
+
+`certificate_prefix` **est** réellement utilisé par pays (`certificate.service.ts:102`). Et le
+certificat de propriété n'imprime **aucune devise** — un poids, pas une valeur — avec un test
+qui l'exige (`certificate-document.test.ts:46`). C'est le seul document qui traverse une
+frontière sans rien supposer.
+
+### AI. Le schéma refuse les documents que la configuration déclare 🔴
+
+`country_config.id_document_types` décrit les pièces acceptées pays par pays. La table qui les
+reçoit ne les connaît pas :
+
+```sql
+document_type TEXT NOT NULL CHECK (document_type IN ('CNIB', 'PASSPORT', 'PERMIT', 'CEDEAO'))
+```
+
+Confronté aux valeurs déjà semées, sur un vrai moteur :
+
+| Pays | Documents déclarés | Refusés par le schéma |
+|---|---|---|
+| Burkina Faso | CNIB, PASSPORT, PERMIT, CEDEAO | aucun |
+| Côte d'Ivoire, Mali, Sénégal | **CNI**, PASSPORT, PERMIT, CEDEAO | **CNI** |
+| Ouganda | NATIONAL_ID, PASSPORT, DRIVING_PERMIT, REFUGEE_ID | **3 sur 4** |
+
+`CNI` est la carte nationale d'identité de trois pays de l'UEMOA. Pour l'Ouganda, seul le
+passeport survit : **un Ougandais sans passeport ne peut pas faire de KYC du tout.**
+
+La contrainte est antérieure à `country_config` — elle date de la première migration. Le
+travail de configuration par pays a été fait ; la colonne qu'il alimente est restée figée sur
+un pays. Ouvrir un second pays ne produira pas un message clair, mais une violation de
+contrainte à l'insertion.
+
+### AJ. Les seuils d'argent sont des nombres, pas des montants 🔴
+
+Trois garde-fous monétaires sont des clés globales, nommées en XOF et appliquées telles quelles
+quel que soit le pays :
+
+- `high_value_threshold_xof` — au-delà, un second facteur est exigé (ADR 009) ;
+- `dailyWithdraw` des limites KYC — 500 000 pour un compte STANDARD ;
+- `MIN_XOF` / `MAX_XOF` — les bornes d'un ordre.
+
+Ce que « 1 000 000 » signifie réellement, à taux indicatifs :
+
+| Devise | Seuil 2FA | Retrait STANDARD / jour |
+|---|---|---|
+| XOF | 1 626 USD | 813 USD |
+| UGX | **270 USD** | 135 USD |
+| NGN | 667 USD | 333 USD |
+| KES | 7 692 USD | 3 846 USD |
+| GHS | **83 333 USD** | **41 667 USD** |
+
+Les deux extrêmes sont mauvais, et dans des sens opposés. En Ouganda le second facteur serait
+réclamé pour presque chaque opération — une friction qui pousse à relever le seuil, donc à le
+désactiver. Au Ghana il ne se déclencherait **jamais**, et un compte de niveau intermédiaire
+pourrait retirer 41 000 USD par jour sans rien déclencher.
+
+Un seuil exprimé en une devise et appliqué à toutes n'est pas un seuil : c'est un nombre.
+
+### AK. Le grand livre n'a qu'une devise, et elle n'est nommée nulle part 🟠
+
+`wallets.cash_balance`, `transactions.cash_amount`, `fees`, `total_spent` : **aucune colonne ne
+porte de devise.** Le commentaire du schéma dit « Total XOF dépensés » — l'unité vit dans un
+commentaire.
+
+De même, `gold_prices` ne stocke qu'une seule conversion (`price_xof`), à côté du prix USD et
+d'un taux unique.
+
+Conséquence : ouvrir un pays hors zone franc n'est pas un changement de configuration. Il faut
+une dimension « devise » sur les soldes, les transactions et les prix, et un taux par devise.
+`country_config.currency` et `currency_decimals` donnent l'impression que ce travail est fait ;
+il ne l'est pas.
+
+Le dépôt le sait — c'est écrit dans la migration ougandaise. Ce constat ne révèle donc pas une
+ignorance, mais un **écart entre ce qui est su et ce que le schéma permet**.
+
+### AL. `currency_decimals` est exposée et n'entre dans aucun calcul 🟠
+
+La colonne existe, la route publique la renvoie, et **aucun calcul monétaire ne la consulte**.
+Quatre services définissent la même ligne :
+
+```ts
+const xof = (n: number) => Math.round(n);
+```
+
+Arrondir à l'entier est juste pour le XOF et pour l'UGX, qui n'ont pas de sous-unité. Ce l'est
+beaucoup moins pour le cedi, le shilling kényan, le naira ou le rand, qui en ont deux : chaque
+frais, chaque rendement et chaque règlement perdrait ses centimes, toujours dans le même sens.
+
+Et le relevé de règlement imprime la devise en dur :
+
+```ts
+const xof = (n: number) => `${groupDigits(n)} XOF`;
+```
+
+Un producteur ougandais recevrait un relevé libellé en XOF. Le certificat, lui, a résolu la
+question en n'imprimant aucune devise.
+
+### AM. On peut s'inscrire depuis n'importe quel pays, mais pas y changer son numéro 🟡
+
+L'inscription accepte un numéro international :
+
+```ts
+phone: z.string().regex(/^\+?[0-9]{10,15}$/, 'Format de téléphone invalide')
+```
+
+La mise à jour du profil, non :
+
+```ts
+phone: z.string().regex(/^\+226\d{8}$/, 'Format de téléphone invalide (+226XXXXXXXX)')
+```
+
+Un raffineur ougandais s'inscrit donc sans difficulté, puis ne peut plus jamais corriger son
+numéro. Le validateur partagé porte la même hypothèse, mais l'annonce au moins dans son nom
+(`isValidPhoneBF`, `normalizePhoneBF`).
+
+### AN. Tout ce que la plateforme dit est en français 🟠
+
+`country_config.locale` est exposée par la route publique et **jamais consultée côté serveur**.
+L'Ouganda est déclaré `en-UG`.
+
+Sont concernés : **18 sujets de notification** et **118 messages d'erreur métier**, tous
+rédigés en français uniquement. Un raffineur ougandais recevrait « Bienvenue sur TNC Trading »
+puis « Votre KYC a été approuvé ».
+
+Ce n'est pas une question de confort. Les messages d'erreur portent des instructions — quel
+document fournir, quelle limite est atteinte, pourquoi un retrait est refusé — et un message
+incompris se traduit en appel au support, ou en abandon.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
