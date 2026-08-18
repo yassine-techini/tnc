@@ -1772,28 +1772,63 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
       }, verdict.status);
     }
 
-    const newTotal = verdict.newTotal;
-
     /**
-     * Ecriture et trace dans le MEME lot.
+     * Ecriture et trace dans le MEME lot, et increment RELATIF (ADR 022).
      *
      * C'etaient deux `.run()` successifs : un echec entre les deux ajustait la
      * reserve nationale sans laisser de trace de qui l'avait fait.
+     *
+     * Et l'ecriture posait une valeur ABSOLUE calculee en JavaScript a partir
+     * d'une lecture anterieure. Deux ajustements simultanes en perdaient donc un :
+     * +100 g puis +50 g sur 1000 g donnaient 1050 g, et la piste d'audit
+     * enregistrait les deux. `total_allocated + ?` ne peut rien perdre.
+     *
+     * La garde `>= tokens_issued` remplace le controle fait en JavaScript : c'est
+     * elle qui arbitre sous concurrence, et son `changes` que l'appelant lit.
      */
     const ajustement = stock
       ? c.env.DB
-          .prepare("UPDATE gold_stock SET total_allocated = ?, updated_at = datetime('now') WHERE id = ?")
-          .bind(newTotal, stock.id)
+          .prepare(
+            `UPDATE gold_stock
+                SET total_allocated = ROUND(total_allocated + ?1, 3), updated_at = datetime('now')
+              WHERE id = ?2 AND ROUND(total_allocated + ?1, 3) >= tokens_issued`
+          )
+          .bind(amount, stock.id)
       : c.env.DB
-          .prepare("INSERT INTO gold_stock (id, total_allocated, tokens_issued, updated_at) VALUES (?, ?, 0, datetime('now'))")
-          .bind('main', newTotal);
+          .prepare("INSERT INTO gold_stock (id, total_allocated, tokens_issued, updated_at) VALUES (?, ROUND(?, 3), 0, datetime('now'))")
+          .bind('main', verdict.newTotal);
 
-    await c.env.DB.batch([
-      ajustement,
+    const resultats = await c.env.DB.batch([
+      // La trace vient EN PREMIER : elle voit alors l'etat ANTERIEUR, et calcule
+      // le nouveau total en SQL plutot qu'en JavaScript — donc exact meme si un
+      // autre ajustement s'intercale.
       c.env.DB
-        .prepare("INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))")
-        .bind(crypto.randomUUID(), c.get('adminId'), 'STOCK_ADJUST', 'stock', 'main', JSON.stringify({ amount, reason, newTotal })),
+        .prepare(
+          `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, old_value, new_value, created_at)
+           SELECT ?1, ?2, 'STOCK_ADJUST', 'stock', 'main',
+                  json_object('totalAllocated', total_allocated, 'tokensIssued', tokens_issued),
+                  json_object('amount', ?3, 'reason', ?4, 'totalAllocated', ROUND(total_allocated + ?3, 3)),
+                  datetime('now')
+             FROM gold_stock
+            WHERE id = ?5 AND ROUND(total_allocated + ?3, 3) >= tokens_issued`
+        )
+        .bind(crypto.randomUUID(), c.get('adminId'), amount, reason ?? null, stock?.id ?? 'main'),
+      ajustement,
     ]);
+
+    const ecriture = resultats[resultats.length - 1] as { meta: { changes: number } };
+    if (ecriture.meta.changes === 0) {
+      // Un ajustement concurrent a fait passer le total sous ce qui est emis
+      // entre la lecture et l'ecriture. Le refuser vaut mieux que de l'appliquer.
+      return c.json({
+        success: false,
+        error: {
+          code: 'STOCK_BELOW_ISSUED',
+          message: "Ajustement impossible : un autre ajustement vient de modifier le stock. Réessayez.",
+        },
+        requestId: crypto.randomUUID(),
+      }, 409);
+    }
 
     return c.json({
       success: true,

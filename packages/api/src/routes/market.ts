@@ -420,103 +420,108 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     }
   };
 
-  // Check KYC limits
-  const kycLimits = await KycService.getKycLimits(configService);
-  const limits = kycLimits[kycLevel];
-  const dailyVolume = await walletService.getDailyTransactionVolume(userId, 'BUY');
-  const monthlyVolume = await walletService.getMonthlyTransactionVolume(userId, 'BUY');
+  // `finally` plutot que des liberations dispersees (ADR 022) : une
+  // exception entre la prise et le relachement laissait le titulaire
+  // incapable d'acheter, de vendre ou de retirer — les trois partagent ce
+  // verrou — jusqu'a son expiration, deux minutes plus tard.
+  try {
 
-  if (dailyVolume + quote.token_amount > limits.dailyBuy) {
-    await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_LIMIT_EXCEEDED',
-        message: `Limite journalière dépassée. Max: ${limits.dailyBuy}g/jour`,
-      },
-      requestId,
-    }, 400);
-  }
+    // Check KYC limits
+    const kycLimits = await KycService.getKycLimits(configService);
+    const limits = kycLimits[kycLevel];
+    const dailyVolume = await walletService.getDailyTransactionVolume(userId, 'BUY');
+    const monthlyVolume = await walletService.getMonthlyTransactionVolume(userId, 'BUY');
 
-  if (monthlyVolume + quote.token_amount > limits.monthlyBuy) {
-    await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'TRADING_LIMIT_EXCEEDED',
-        message: `Limite mensuelle dépassée. Max: ${limits.monthlyBuy}g/mois`,
-      },
-      requestId,
-    }, 400);
-  }
+    if (dailyVolume + quote.token_amount > limits.dailyBuy) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'TRADING_LIMIT_EXCEEDED',
+          message: `Limite journalière dépassée. Max: ${limits.dailyBuy}g/jour`,
+        },
+        requestId,
+      }, 400);
+    }
 
-  // Get or create wallet
-  let wallet = await walletService.findByUserId(userId);
-  if (!wallet) {
-    const walletId = crypto.randomUUID();
-    wallet = await walletService.create(userId, walletId);
-  }
+    if (monthlyVolume + quote.token_amount > limits.monthlyBuy) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'TRADING_LIMIT_EXCEEDED',
+          message: `Limite mensuelle dépassée. Max: ${limits.monthlyBuy}g/mois`,
+        },
+        requestId,
+      }, 400);
+    }
 
-  // Atomic execution: stock reservation + wallet debit + transaction record run
-  // as a single all-or-nothing D1 batch. CHECK constraints guarantee no
-  // overselling and no overdraft even under concurrent requests; a mid-request
-  // failure leaves NO partial state (no orphan stock reservation).
-  const transactionId = crypto.randomUUID();
-  const result = await walletService.executeBuyAtomic({
-    transactionId,
-    userId,
-    walletId: wallet.id,
-    tokenAmount: quote.token_amount,
-    cashAmount: quote.cash_amount,
-    total: quote.total,
-    pricePerGram: quote.price_per_gram,
-    fees: quote.fees,
-    paymentMethod: body.paymentMethod,
-  });
+    // Get or create wallet
+    let wallet = await walletService.findByUserId(userId);
+    if (!wallet) {
+      const walletId = crypto.randomUUID();
+      wallet = await walletService.create(userId, walletId);
+    }
 
-  if (!result.ok) {
-    const reason = result.reason; // capture before await (await resets narrowing)
-    await releaseLock();
-    const errorMap = {
-      INSUFFICIENT_STOCK: { status: 400, code: 'TRADING_INSUFFICIENT_STOCK', message: 'Stock insuffisant' },
-      INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: 'Solde insuffisant. Veuillez recharger votre compte.' },
-      CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: 'Transaction non aboutie, veuillez réessayer.' },
-    } as const;
-    // No transaction happened on a transient conflict — give the quote back so
-    // the user can retry without requesting a new one.
-    if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
-    const e = errorMap[reason];
-    return c.json({ success: false, error: { code: e.code, message: e.message }, requestId }, e.status);
-  }
-
-  // Transaction successful - release lock
-  await releaseLock();
-
-  const buyResponse = {
-    success: true,
-    data: {
+    // Atomic execution: stock reservation + wallet debit + transaction record run
+    // as a single all-or-nothing D1 batch. CHECK constraints guarantee no
+    // overselling and no overdraft even under concurrent requests; a mid-request
+    // failure leaves NO partial state (no orphan stock reservation).
+    const transactionId = crypto.randomUUID();
+    const result = await walletService.executeBuyAtomic({
       transactionId,
-      type: 'BUY',
+      userId,
+      walletId: wallet.id,
       tokenAmount: quote.token_amount,
-      cashAmount: quote.total,
-      status: 'COMPLETED',
-    } satisfies TradeExecutionData,
-    requestId,
-  };
+      cashAmount: quote.cash_amount,
+      total: quote.total,
+      pricePerGram: quote.price_per_gram,
+      fees: quote.fees,
+      paymentMethod: body.paymentMethod,
+    });
 
-  // Cache idempotency response
-  if (body.idempotencyKey) {
-    const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
-    c.executionCtx.waitUntil(
-      c.env.CACHE.put(
-        `idempotency:buy:${userId}:${body.idempotencyKey}`,
-        JSON.stringify(buyResponse),
-        { expirationTtl: idempotencyTtl }
-      )
-    );
+    if (!result.ok) {
+      const reason = result.reason; // capture before await (await resets narrowing)
+      const errorMap = {
+        INSUFFICIENT_STOCK: { status: 400, code: 'TRADING_INSUFFICIENT_STOCK', message: 'Stock insuffisant' },
+        INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: 'Solde insuffisant. Veuillez recharger votre compte.' },
+        CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: 'Transaction non aboutie, veuillez réessayer.' },
+      } as const;
+      // No transaction happened on a transient conflict — give the quote back so
+      // the user can retry without requesting a new one.
+      if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
+      const e = errorMap[reason];
+      return c.json({ success: false, error: { code: e.code, message: e.message }, requestId }, e.status);
+    }
+
+    // Transaction successful - release lock
+
+    const buyResponse = {
+      success: true,
+      data: {
+        transactionId,
+        type: 'BUY',
+        tokenAmount: quote.token_amount,
+        cashAmount: quote.total,
+        status: 'COMPLETED',
+      } satisfies TradeExecutionData,
+      requestId,
+    };
+
+    // Cache idempotency response
+    if (body.idempotencyKey) {
+      const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
+      c.executionCtx.waitUntil(
+        c.env.CACHE.put(
+          `idempotency:buy:${userId}:${body.idempotencyKey}`,
+          JSON.stringify(buyResponse),
+          { expirationTtl: idempotencyTtl }
+        )
+      );
+    }
+
+    return c.json(buyResponse);
+  } finally {
+    await releaseLock();
   }
-
-  return c.json(buyResponse);
 });
 
 // POST /market/sell - Protected
@@ -644,75 +649,81 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
     }
   };
 
-  // Get wallet
-  const wallet = await walletService.findByUserId(userId);
-  if (!wallet) {
-    await releaseLock();
-    return c.json({
-      success: false,
-      error: {
-        code: 'WALLET_NOT_FOUND',
-        message: 'Portefeuille non trouvé',
-      },
-      requestId,
-    }, 404);
-  }
+  // `finally` plutot que des liberations dispersees (ADR 022) : une
+  // exception entre la prise et le relachement laissait le titulaire
+  // incapable d'acheter, de vendre ou de retirer — les trois partagent ce
+  // verrou — jusqu'a son expiration, deux minutes plus tard.
+  try {
 
-  // Atomic execution: token debit + net-cash credit + stock release + record,
-  // as a single all-or-nothing D1 batch. The token_balance >= 0 CHECK prevents
-  // selling more than held, even under concurrent requests.
-  const transactionId = crypto.randomUUID();
-  const result = await walletService.executeSellAtomic({
-    transactionId,
-    userId,
-    walletId: wallet.id,
-    tokenAmount: quote.token_amount,
-    cashAmount: quote.cash_amount,
-    total: quote.total,
-    pricePerGram: quote.price_per_gram,
-    fees: quote.fees,
-    paymentMethod: body.paymentMethod,
-  });
+    // Get wallet
+    const wallet = await walletService.findByUserId(userId);
+    if (!wallet) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'WALLET_NOT_FOUND',
+          message: 'Portefeuille non trouvé',
+        },
+        requestId,
+      }, 404);
+    }
 
-  if (!result.ok) {
-    const reason = result.reason; // capture before await (await resets narrowing)
-    await releaseLock();
-    if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
-    const message = reason === 'CONFLICT'
-      ? 'Transaction non aboutie, veuillez réessayer.'
-      : 'Solde de tokens insuffisant';
-    const code = reason === 'CONFLICT' ? 'TRADING_CONFLICT' : 'TRADING_INSUFFICIENT_BALANCE';
-    return c.json({ success: false, error: { code, message }, requestId }, reason === 'CONFLICT' ? 409 : 400);
-  }
-
-  // Transaction successful - release lock
-  await releaseLock();
-
-  const sellResponse = {
-    success: true,
-    data: {
+    // Atomic execution: token debit + net-cash credit + stock release + record,
+    // as a single all-or-nothing D1 batch. The token_balance >= 0 CHECK prevents
+    // selling more than held, even under concurrent requests.
+    const transactionId = crypto.randomUUID();
+    const result = await walletService.executeSellAtomic({
       transactionId,
-      type: 'SELL',
+      userId,
+      walletId: wallet.id,
       tokenAmount: quote.token_amount,
-      cashAmount: quote.total,
-      status: 'COMPLETED',
-    } satisfies TradeExecutionData,
-    requestId,
-  };
+      cashAmount: quote.cash_amount,
+      total: quote.total,
+      pricePerGram: quote.price_per_gram,
+      fees: quote.fees,
+      paymentMethod: body.paymentMethod,
+    });
 
-  // Cache idempotency response
-  if (body.idempotencyKey) {
-    const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
-    c.executionCtx.waitUntil(
-      c.env.CACHE.put(
-        `idempotency:sell:${userId}:${body.idempotencyKey}`,
-        JSON.stringify(sellResponse),
-        { expirationTtl: idempotencyTtl }
-      )
-    );
+    if (!result.ok) {
+      const reason = result.reason; // capture before await (await resets narrowing)
+      if (reason === 'CONFLICT') await marketService.restoreQuote(body.quoteId, userId);
+      const message = reason === 'CONFLICT'
+        ? 'Transaction non aboutie, veuillez réessayer.'
+        : 'Solde de tokens insuffisant';
+      const code = reason === 'CONFLICT' ? 'TRADING_CONFLICT' : 'TRADING_INSUFFICIENT_BALANCE';
+      return c.json({ success: false, error: { code, message }, requestId }, reason === 'CONFLICT' ? 409 : 400);
+    }
+
+    // Transaction successful - release lock
+
+    const sellResponse = {
+      success: true,
+      data: {
+        transactionId,
+        type: 'SELL',
+        tokenAmount: quote.token_amount,
+        cashAmount: quote.total,
+        status: 'COMPLETED',
+      } satisfies TradeExecutionData,
+      requestId,
+    };
+
+    // Cache idempotency response
+    if (body.idempotencyKey) {
+      const idempotencyTtl = await configService.getNumber('idempotency_cache_ttl', 86400);
+      c.executionCtx.waitUntil(
+        c.env.CACHE.put(
+          `idempotency:sell:${userId}:${body.idempotencyKey}`,
+          JSON.stringify(sellResponse),
+          { expirationTtl: idempotencyTtl }
+        )
+      );
+    }
+
+    return c.json(sellResponse);
+  } finally {
+    await releaseLock();
   }
-
-  return c.json(sellResponse);
 });
 
 // POST /market/price/refresh - Refresh gold price from external API

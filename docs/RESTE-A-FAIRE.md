@@ -1768,7 +1768,7 @@ le second reçoit le bon motif. Le commentaire du code annonce ce dispositif ; i
 Le verrou expire de lui-même au bout de deux minutes, avec une alarme. L'interblocage a été
 anticipé.
 
-### AO. Deux ajustements de stock simultanés en perdent un 🔴
+### AO. Deux ajustements de stock simultanés en perdent un ✅
 
 `POST /admin/stock/adjust` lit, calcule en JavaScript, puis écrit une valeur **absolue** :
 
@@ -1806,7 +1806,27 @@ Vérifié : avec l'incrément relatif, les deux ajustements donnent bien 1 150 g
 La probabilité est faible — deux administrateurs, à la même seconde. La conséquence ne l'est
 pas : c'est le chiffre qui garantit tous les jetons émis.
 
-### AP. Une exception laisse le verrou fermé 🟠
+**Corrigé** — [ADR 022](adr/022-ce-que-la-base-calcule-elle-meme.md).
+
+`total_allocated = ROUND(total_allocated + ?, 3)`, avec la garde `>= tokens_issued` dans la
+**même instruction**. C'est la forme employée partout ailleurs depuis l'ADR 013 : l'ajustement
+du stock en était le seul écart du dépôt.
+
+`verifierAjustementStock` reste, mais ne décide plus : il produit le message utile dans le cas
+courant, et c'est la garde qui tranche sous concurrence. Même partage que sur le chemin
+d'achat, où le JavaScript donne le motif et la contrainte `CHECK` arbitre — l'un sert à parler,
+l'autre à garantir. Un ajustement concurrent qui ferait passer le total sous les jetons émis
+reçoit désormais un **409 explicite**, et non un succès silencieux.
+
+**La trace calcule l'avant et l'après en SQL.** Elle vient en premier dans le lot, voit donc
+l'état antérieur, et déduit le nouveau total plutôt que de recopier une valeur JavaScript. Elle
+porte la même garde : un ajustement refusé n'écrit aucune trace — une trace annonçant ce qui
+n'a pas eu lieu serait pire que pas de trace.
+
+7 tests sur une vraie base, vérifiés par mutation : remettre la valeur absolue fait échouer le
+garde-fou de forme.
+
+### AP. Une exception laisse le verrou fermé ✅
 
 Le verrou est pris, puis relâché sur chaque `return`. Il n'y a **aucun `try/finally`** :
 
@@ -1831,6 +1851,13 @@ d'incompréhension.
 
 `try/finally` rendrait la libération indépendante du chemin de sortie, ce qui est précisément
 ce qu'un verrou demande.
+
+**Corrigé** — et une précision sur le constat lui-même : **deux gestionnaires sur trois** étaient
+concernés. Le retrait avait déjà son `try/finally` à quelques centaines de lignes de là, et
+montrait donc la forme correcte ; ma formulation laissait entendre que les trois en manquaient.
+
+L'achat et la vente sont désormais enveloppés de même. Une libération dispersée dépend de
+l'exhaustivité du lecteur ; un `finally` n'en dépend pas.
 
 ### AQ. L'implémentation correcte existe et n'est jamais appelée 🔵
 

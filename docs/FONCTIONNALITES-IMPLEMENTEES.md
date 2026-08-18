@@ -19,7 +19,7 @@ trompeur. Chaque entrée porte un statut :
 | 🚫 | Non implémenté (voir [RESTE-A-FAIRE.md](RESTE-A-FAIRE.md)) |
 
 **Volumétrie** : 14 modules API, 30 services métier, **31 migrations**, 11 jobs planifiés,
-4 Durable Objects, 5 applications front, **1 456 tests automatisés** (913 API, 315 `shared`,
+4 Durable Objects, 5 applications front, **1 463 tests automatisés** (920 API, 315 `shared`,
 68 back-office, 65 web, 61 mobile, 34 portail État).
 
 **Tous s'exécutent.** Les 26 tests d'`auth.service.test.ts` étaient jusqu'ici absents du
