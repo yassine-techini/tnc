@@ -11,6 +11,7 @@ import type {
 } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { phoneSchema } from '@tnc-trading/shared/validators';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { UserService } from '../services/user.service';
@@ -62,10 +63,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 const registerSchema = z.object({
   email: z.string().email('Email invalide').max(255),
-  phone: z.string()
-    .min(10, 'Numéro de téléphone invalide')
-    .max(20)
-    .regex(/^\+?[0-9]{10,15}$/, 'Format de téléphone invalide'),
+  // La MEME regle que la mise a jour du profil, partagee (ADR 021) : deux copies
+  // d'une regle sur un meme champ divergent, et c'est ce qui s'est produit.
+  phone: phoneSchema,
   password: z.string()
     .min(SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH, `Le mot de passe doit contenir au moins ${SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH} caractères`)
     .max(SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH),

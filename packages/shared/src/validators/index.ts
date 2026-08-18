@@ -12,9 +12,27 @@ export const uuidSchema = z.string().uuid();
 
 export const emailSchema = z.string().email('Format email invalide');
 
+/**
+ * Un numero de telephone international — ADR 021.
+ *
+ * La regle etait `/^\+226[0-9]{8}$/` : celle d'un seul pays. L'inscription, elle,
+ * acceptait n'importe quel numero international, si bien qu'un raffineur
+ * ougandais s'inscrivait sans peine puis ne pouvait plus jamais corriger son
+ * numero — deux regles pour un meme champ, dont la plus stricte au mauvais bout.
+ *
+ * Une seule regle, partagee : l'inscription et la mise a jour ne peuvent plus
+ * diverger.
+ *
+ * Le prefixe du pays n'est PAS impose. Le telephone sert au code a usage unique,
+ * qui fonctionne partout, et au paiement mobile, qui exige bien un numero local —
+ * mais c'est le retrait qui doit le dire, au moment ou la methode est choisie.
+ * Refuser ici bloquerait un titulaire de la diaspora sur toutes ses operations.
+ */
 export const phoneSchema = z
   .string()
-  .regex(/^\+226[0-9]{8}$/, 'Numéro de téléphone invalide (format: +226XXXXXXXX)');
+  .min(10, 'Numéro de téléphone invalide')
+  .max(20)
+  .regex(/^\+?[0-9]{10,15}$/, 'Format de téléphone invalide (indicatif international attendu)');
 
 export const passwordSchema = z
   .string()

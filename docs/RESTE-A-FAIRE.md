@@ -1662,7 +1662,7 @@ Deux libellés figés tombent avec :
   payé en espèces, et ses espèces sont des shillings. La valeur devient `'CASH'`
   (migration 0041).
 
-### AM. On peut s'inscrire depuis n'importe quel pays, mais pas y changer son numéro 🟡
+### AM. On peut s'inscrire depuis n'importe quel pays, mais pas y changer son numéro ✅
 
 L'inscription accepte un numéro international :
 
@@ -1679,6 +1679,21 @@ phone: z.string().regex(/^\+226\d{8}$/, 'Format de téléphone invalide (+226XXX
 Un raffineur ougandais s'inscrit donc sans difficulté, puis ne peut plus jamais corriger son
 numéro. Le validateur partagé porte la même hypothèse, mais l'annonce au moins dans son nom
 (`isValidPhoneBF`, `normalizePhoneBF`).
+
+**Corrigé** — [ADR 021](adr/021-un-numero-de-telephone-international.md).
+
+Une seule règle, partagée : `phoneSchema` de `packages/shared`, importée par l'inscription **et**
+par la mise à jour. Deux copies d'une règle sur un même champ divergent, et c'est ce qui s'était
+produit. Le validateur partagé portait d'ailleurs déjà la règle burkinabè — mais **personne ne
+l'importait** : il décrivait une intention que le code ne suivait pas.
+
+**L'indicatif du pays n'est pas imposé**, bien que le pays soit connu. Le téléphone sert au code
+à usage unique, qui fonctionne partout, et au paiement mobile, qui exige bien un numéro local —
+mais c'est au retrait de le dire, au moment où la méthode est choisie. Refuser au profil
+bloquerait un titulaire de la diaspora sur **toutes** ses opérations.
+
+12 tests, dont un par pays servi. Vérifié par mutation : remettre la règle burkinabè fait
+échouer six pays.
 
 ### AN. Tout ce que la plateforme dit est en français ⚙️
 

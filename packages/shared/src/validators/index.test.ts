@@ -34,17 +34,36 @@ describe('Common Validators', () => {
   });
 
   describe('phoneSchema', () => {
-    it('accepts valid Burkina Faso phone numbers', () => {
-      expect(phoneSchema.safeParse('+22670123456').success).toBe(true);
-      expect(phoneSchema.safeParse('+22660123456').success).toBe(true);
-      expect(phoneSchema.safeParse('+22650123456').success).toBe(true);
+    /**
+     * La regle etait celle d'un seul pays, et ces tests l'epinglaient — y compris
+     * « rejette +33 : mauvais pays ». L'inscription, elle, acceptait tout numero
+     * international : un raffineur ougandais s'inscrivait puis ne pouvait plus
+     * corriger son numero (ADR 021).
+     */
+    it('accepte un numero de chaque pays servi', () => {
+      for (const numero of [
+        '+22670123456', // Burkina Faso
+        '+2250701234567', // Cote d'Ivoire
+        '+256701234567', // Ouganda
+        '+233201234567', // Ghana
+      ]) {
+        expect(phoneSchema.safeParse(numero).success, numero).toBe(true);
+      }
     });
 
-    it('rejects invalid phone numbers', () => {
-      expect(phoneSchema.safeParse('70123456').success).toBe(false); // Missing country code
-      expect(phoneSchema.safeParse('+22670123').success).toBe(false); // Too short
-      expect(phoneSchema.safeParse('+226701234567').success).toBe(false); // Too long
-      expect(phoneSchema.safeParse('+33612345678').success).toBe(false); // Wrong country
+    it("n'impose pas l'indicatif d'un pays particulier", () => {
+      // Le telephone sert au code a usage unique, qui fonctionne partout. Le
+      // paiement mobile exige bien un numero local, mais c'est au retrait de le
+      // dire — refuser ici bloquerait un titulaire de la diaspora sur toutes ses
+      // operations.
+      expect(phoneSchema.safeParse('+33612345678').success).toBe(true);
+    });
+
+    it("refuse ce qui n'est pas un numero", () => {
+      expect(phoneSchema.safeParse('70123456').success).toBe(false); // trop court
+      expect(phoneSchema.safeParse('+22670123').success).toBe(false); // trop court
+      expect(phoneSchema.safeParse('+226 70 12 34 56').success).toBe(false); // espaces
+      expect(phoneSchema.safeParse('abcdefghij').success).toBe(false);
     });
   });
 

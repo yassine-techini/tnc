@@ -12,6 +12,7 @@ import type {
 import type { PasswordChangedData } from '@tnc-trading/shared/contracts';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { phoneSchema } from '@tnc-trading/shared/validators';
 import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { KycService } from '../services/kyc.service';
@@ -95,7 +96,14 @@ users.get('/me', async (c) => {
 
 // SECURITY: Validation schema for profile updates
 const updateProfileSchema = z.object({
-  phone: z.string().regex(/^\+226\d{8}$/, 'Format de téléphone invalide (+226XXXXXXXX)').optional(),
+  /**
+   * MEME regle que l'inscription, partagee (ADR 021).
+   *
+   * La regle etait `/^\+226\d{8}$/` alors que l'inscription accepte tout numero
+   * international : un raffineur ougandais s'inscrivait sans peine, puis ne
+   * pouvait plus jamais corriger son numero.
+   */
+  phone: phoneSchema.optional(),
   country: z.string().length(2, 'Code pays doit être 2 caractères').optional(),
 }).refine(
   (data) => data.phone || data.country,
