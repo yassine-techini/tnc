@@ -1731,6 +1731,138 @@ choix de le laisser entier plutôt que de l'entamer.
 
 ---
 
+## Douzième audit — 18 août 2026, deux à la fois
+
+Onze audits ont regardé une opération à la fois. Celui-ci en regarde **deux** : que se
+passe-t-il quand elles arrivent ensemble ? La question compte davantage maintenant que la
+plateforme s'adresse à des raffineurs et des coopératives, dont les opérations sont grosses et
+peu nombreuses — donc chacune coûte cher à perdre.
+
+Le portail de l'État reste hors périmètre.
+
+### Ce que cet audit a confirmé de sain
+
+**Le verrou est posé au bon endroit, et il le dit.** Sur le retrait, la lecture du cumul
+journalier *et* le contrôle du retrait en cours se font **après** son acquisition — vérifié par
+l'ordre des lignes, pas par le commentaire, lequel énonce d'ailleurs exactement cette raison.
+Il est pris par utilisateur et partagé entre achat, vente et retrait : un même titulaire ne
+peut pas acheter et retirer simultanément.
+
+**Les soldes et les compteurs s'incrémentent relativement** — `col = col ± ?` — depuis
+l'ADR 013. Cette forme est immunisée contre la mise à jour perdue, y compris
+`failed_login_attempts`, dont un décompte perdu offrirait des tentatives supplémentaires.
+
+**La sortie de location est un lot gardé** : les deux instructions portent `status = 'ACTIVE'`,
+la bascule vient en dernier, et l'appelant décide sur son `changes`. Deux sorties simultanées :
+une gagne, l'autre reçoit `CONFLICT`.
+
+**La répartition d'un lot est protégée par la base** : `UNIQUE (consignment_id)`. Un double
+envoi est refusé par la contrainte, pas par une vérification.
+
+**Et l'achat concurrent est correct par construction, non par accident.** Le contrôle de
+disponibilité est fait en JavaScript pour produire un message déterministe, mais l'arbitre réel
+est `CHECK (tokens_issued <= total_allocated)` — et `classifyTradeError` retraduit la violation
+de contrainte en `INSUFFICIENT_STOCK`. Deux acheteurs simultanés ne peuvent pas sur-émettre, et
+le second reçoit le bon motif. Le commentaire du code annonce ce dispositif ; il est exact.
+
+Le verrou expire de lui-même au bout de deux minutes, avec une alarme. L'interblocage a été
+anticipé.
+
+### AO. Deux ajustements de stock simultanés en perdent un 🔴
+
+`POST /admin/stock/adjust` lit, calcule en JavaScript, puis écrit une valeur **absolue** :
+
+```ts
+const stock   = await …SELECT total_allocated…;
+const newTotal = verdict.newTotal;          // = total_allocated + amount
+…
+.prepare("UPDATE gold_stock SET total_allocated = ?, updated_at = datetime('now') WHERE id = ?")
+.bind(newTotal, stock.id)
+```
+
+Rien ne lie l'écriture à la valeur lue. Mesuré sur un vrai moteur :
+
+```
+Deux ajustements concurrents : +100 g puis +50 g
+  attendu : 1150 g
+  obtenu  : 1050 g
+  perdu   :  100 g
+```
+
+**Cent grammes d'or national disparaissent en silence.** Et la piste d'audit enregistre les
+**deux** ajustements : le registre affirmera qu'ils ont eu lieu tous les deux, tandis que le
+stock n'en reflète qu'un. Un contrôle ultérieur ne pourra pas trancher entre « une livraison
+n'a jamais été saisie » et « une saisie a été perdue ».
+
+C'est le seul endroit du dépôt qui écrive une quantité absolue sans garde. La forme immunisée
+est celle déjà employée partout ailleurs depuis l'ADR 013 :
+
+```sql
+UPDATE gold_stock SET total_allocated = ROUND(total_allocated + ?, 3) WHERE id = ?
+```
+
+Vérifié : avec l'incrément relatif, les deux ajustements donnent bien 1 150 g.
+
+La probabilité est faible — deux administrateurs, à la même seconde. La conséquence ne l'est
+pas : c'est le chiffre qui garantit tous les jetons émis.
+
+### AP. Une exception laisse le verrou fermé 🟠
+
+Le verrou est pris, puis relâché sur chaque `return`. Il n'y a **aucun `try/finally`** :
+
+```ts
+const lockResponse = await txSession.fetch('https://do/lock', …);
+…
+let wallet = await walletService.findByUserId(userId);   // si ceci lève,
+if (!wallet) wallet = await walletService.create(…);      // le verrou reste pris
+const result = await walletService.executeBuyAtomic({…});
+…
+await releaseLock();
+```
+
+Une coupure de base entre l'acquisition et la libération laisse le titulaire incapable
+d'acheter, de vendre ou de retirer — les trois partagent le même verrou.
+
+La conséquence est **bornée** : le verrou expire au bout de deux minutes, et le fichier du
+Durable Object annonce ce repli (« auto-releases locks after timeout to prevent deadlocks »).
+Le défaut n'est donc pas un blocage définitif, mais deux minutes d'immobilisation après une
+erreur passagère — et, pour un raffineur en train de solder une position, deux minutes
+d'incompréhension.
+
+`try/finally` rendrait la libération indépendante du chemin de sortie, ce qui est précisément
+ce qu'un verrou demande.
+
+### AQ. L'implémentation correcte existe et n'est jamais appelée 🔵
+
+`MarketService.atomicPurchaseStock` fait exactement ce qu'il faut — incrément relatif et garde
+de disponibilité dans la **même** instruction :
+
+```sql
+UPDATE gold_stock
+   SET tokens_issued = ROUND(tokens_issued + ?, 3)
+ WHERE id = ? AND (total_allocated - tokens_issued) >= ?
+```
+
+**Aucun appelant.** Le chemin d'achat réel passe par `executeBuyAtomic`, qui contrôle en
+JavaScript et s'en remet à la contrainte `CHECK`.
+
+Les deux approches sont correctes, et celle qui vit est documentée. Mais un lecteur qui cherche
+comment le stock est réservé trouve d'abord la méthode nommée pour cela, et en tire une
+conclusion fausse sur ce qui s'exécute. Le sixième audit avait fait le même constat sur
+`isHighValueTransaction` : un garde-fou construit puis jamais branché.
+
+### Observation — le niveau KYC voyage dans le jeton
+
+`kycLevel` est lu depuis le JWT. Un administrateur qui rétrograde un compte pendant qu'une
+transaction est en cours ne voit son geste appliqué qu'au prochain rafraîchissement, jusqu'à
+quinze minutes plus tard.
+
+Ce n'est pas un défaut introduit ici : c'est le même compromis que la révocation à la fermeture
+de compte (ADR 015), et le middleware ne touche volontairement pas la base. Mais il vaut d'être
+écrit, parce qu'il borne ce que « suspendre immédiatement » veut dire.
+
+---
+
 ## 1. Paiements hors zone franc 🔴
 
 **Le seul manque fonctionnel majeur.** `country_config` décrit l'Ouganda — UGX, indicatif,
