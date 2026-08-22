@@ -181,7 +181,10 @@ de signature, et l'ancrage sur chaîne publique n'est pas fait.
 
 **« Blockchain / smart contracts »** — le token est **comptable en base**, pas on-chain. C'est un
 choix documenté ([ADR 002](adr/002-smart-contracts.md)), et la phase 1 livrée apporte
-l'auditabilité sans registre on-chain. Si le deck promet un token transférable, l'écart est réel.
+l'auditabilité sans registre on-chain. Un deck qui promettrait un token **transférable** promettrait
+autre chose que ce qui sera livré : l'[ADR 024](adr/024-la-chaine-reste-une-projection.md) retient
+la voie A — même si un token ERC-3643 est émis un jour, les transferts resteront restreints aux
+adresses de la plateforme. Ce n'est pas un écart à combler, c'est une décision.
 
 **« Preuve de réserve » face au produit de location** — le rendement étant financé par le **prêt
 de l'or**, une partie de la réserve peut être détenue et absente. L'attestation le dit désormais

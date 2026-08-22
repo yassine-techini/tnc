@@ -16,10 +16,13 @@
 | **Audits** | 12 passes, chacune sous un angle différent |
 | **Pays décrits** | 6 — Burkina Faso actif ; Côte d'Ivoire, Mali, Sénégal, Ouganda décrits et désactivés |
 | **Pour le token TNC** | **Tout l'on-chain reste à faire.** Aucun contrat n'est déployé |
+| **Voie retenue** | **A — transférabilité restreinte au périmètre de la plateforme** ([ADR 024](adr/024-la-chaine-reste-une-projection.md), 22 août 2026) |
 
 **Le point à retenir avant de lire la suite** : la plateforme est mûre côté métier et registre
-comptable. Le passage à un jeton ERC-3643 n'est pas une fonctionnalité de plus — c'est un
-**changement de nature du registre**, traité en partie 5.
+comptable. Un jeton ERC-3643 réellement transférable aurait été un **changement de nature du
+registre** ; la **voie A**, retenue, l'évite — la chaîne reste une projection et
+`wallets.token_balance` reste la vérité. Ce que cette décision règle, et ce qu'elle laisse entier,
+est traité en partie 5.
 
 ---
 
@@ -274,7 +277,7 @@ attend. Ce qui manque est sa projection on-chain.
 | `freezePartialTokens` | La location **sort déjà** les grammes du portefeuille | Traduire la location en gel plutôt qu'en débit |
 | `recoveryAddress` | Récupération de compte | Procédure et gouvernance des clés |
 | `pause` | Suspension de compte | Correspondance directe |
-| `forcedTransfer` | *Rien d'équivalent* | **Décision** : l'exploitant peut-il déplacer les avoirs d'un tiers ? |
+| `forcedTransfer` | *Rien d'équivalent* | Sans objet sous la voie A — toutes les adresses sont détenues par la plateforme |
 
 L'attestation signée et chaînée déjà en place est par ailleurs un excellent candidat pour la
 **preuve de réserve on-chain** : son digest est déjà ancré.
@@ -292,52 +295,77 @@ plateforme**. Dès cet instant, `wallets.token_balance` cesse d'être la vérit�
 devient. Or aujourd'hui, la location, les frais de garde, la répartition des lots, les plafonds
 KYC et les certificats **lisent tous ce solde**.
 
-Deux voies, et il faut en choisir une explicitement :
+Deux voies étaient possibles :
 
-| Voie | Ce que ça implique |
-|---|---|
-| **A — Transférabilité restreinte au périmètre de la plateforme** | La conformité n'autorise que des adresses détenues par la plateforme. La chaîne reste une projection ; D1 reste la vérité. On garde l'architecture actuelle et l'auditabilité, sans transférabilité réelle |
-| **B — Transférabilité réelle** | La chaîne devient la source de vérité des soldes. D1 devient un index. **Toute la logique métier qui lit `token_balance` doit être revue** — c'est un chantier de refonte, pas une intégration |
+| Voie | Ce que ça implique | |
+|---|---|---|
+| **A — Transférabilité restreinte au périmètre de la plateforme** | La conformité n'autorise que des adresses détenues par la plateforme. La chaîne reste une projection ; D1 reste la vérité. On garde l'architecture actuelle et l'auditabilité, sans transférabilité réelle | **retenue** |
+| **B — Transférabilité réelle** | La chaîne devient la source de vérité des soldes. D1 devient un index. **Toute la logique métier qui lit `token_balance` doit être revue** — c'est un chantier de refonte, pas une intégration | écartée |
 
-La voie B est celle qui justifie ERC-3643. Elle doit être choisie les yeux ouverts.
+**La voie A est retenue** ([ADR 024](adr/024-la-chaine-reste-une-projection.md)). En restreignant
+les adresses autorisées, elle supprime la cause de l'incompatibilité et non seulement son symptôme :
+la règle de l'ADR 002 tient, et **aucune ligne du métier n'est à reprendre**.
 
-### 5.6 Les quatre décisions préalables, revues à la lumière d'ERC-3643
+Ce qu'il faut avoir en tête en contrepartie :
 
-**1. Pourquoi la chaîne ?** Choisir ERC-3643 répond implicitement : *pour la transférabilité*.
-L'ADR 002 notait que pour un produit non spéculatif, le bénéfice réel était l'auditabilité. Il
-existe pourtant un usage de transférabilité **non spéculatif et cohérent** avec la cible
-annoncée — raffineurs et coopératives, plusieurs pays : le **règlement entre professionnels**,
-transfrontalier, adossé au métal. C'est un motif défendable, mais il doit être énoncé, car il
-gouverne tout le reste.
+- **La voie A retire le chantier de refonte, pas l'irréversibilité de la chaîne.** Un *mint* erroné
+  ne se répare toujours pas, et l'invariant `totalSupply()` ↔ `tokens_issued` devient inter-systèmes
+  avec un réconciliateur *a posteriori* pour seul garde-fou.
+- **Elle diffère le coût de la voie B, elle ne le supprime pas.** Élargir la liste d'adresses
+  autorisées est une modification de module de conformité ; la reprise du métier reste entière, à
+  l'identique, si la bascule est décidée un jour.
+- **Elle change ce qui justifie ERC-3643.** Sans transferts, la norme n'est plus choisie pour ses
+  transferts sous conformité : elle l'est pour sa **couche d'identité** et pour garder la porte
+  ouverte. C'est défendable, mais il faut l'énoncer.
 
-**2. Qui détient les clés ?** Pour des coopératives puis de petits producteurs, la perte de clé
-est un risque de premier ordre. La conservation par la plateforme est presque certaine au départ
-— ERC-3643 la supporte, et `recoveryAddress` existe pour cela. **À condition de ne pas la vendre
+### 5.6 Les quatre décisions préalables, après le choix de la voie A
+
+La voie A en résout deux par construction et en allège une troisième. La quatrième reste entière.
+
+**1. Pourquoi la chaîne ? — Répondu, et ce n'est pas la transférabilité.** Il restait un usage de
+transférabilité non spéculatif et cohérent avec la cible — le règlement entre professionnels,
+transfrontalier, adossé au métal. La voie A y renonce. Ce qui subsiste comme justification :
+l'**auditabilité**, déjà livrée par l'ancrage, et une **identité vérifiable réutilisable**. C'est
+la seule raison restante d'aller on-chain, et elle doit être assumée comme telle.
+
+**2. Qui détient les clés ? — Répondu : la plateforme.** Si seules ses adresses sont autorisées, la
+conservation est custodiale par construction. `recoveryAddress` existe pour cela et la perte de clé
+cesse d'être un risque de premier ordre pour le porteur. **À condition de ne jamais présenter cela
 comme de l'auto-conservation.**
 
-**3. Quelle chaîne ?** ERC-3643 impose une chaîne EVM. Le critère décisif reste le **coût par
-transfert converti en monnaie locale** : un jeton vaut ~53 000 XOF, et des frais de quelques
-centaines de francs sur un transfert d'un gramme changent l'économie du produit. À cela s'ajoute
-que **les porteurs ne détiendront pas de jeton natif pour payer le gaz** : il faut prévoir un
-relayeur (méta-transactions) ou de l'abstraction de compte.
+**3. Quelle chaîne ? — Allégé.** ERC-3643 impose une chaîne EVM, mais le coût par transfert cesse
+d'être le critère décisif : il n'y a pas de transfert d'utilisateur à utilisateur. Seule la
+plateforme paie du gaz, sur des émissions et destructions peu nombreuses et prévisibles.
+**Le problème du gaz disparaît** — ni relayeur ni abstraction de compte, puisque aucun porteur ne
+signe de transaction. L'avertissement de l'ADR 002 tient en revanche toujours : une chaîne
+permissionnée opérée par le même acteur reproduit l'hypothèse de confiance de la base et ne prouve
+rien à un tiers.
 
-**4. Cadre réglementaire.** ERC-3643 existe pour des instruments **régulés**. Adopter la norme,
-c'est admettre que le jeton en est un. La qualification dans chaque juridiction servie — et pas
-seulement en zone UEMOA — conditionne l'émission bien plus que la technique. **Question
-bloquante, à poser à un conseil juridique avant tout engagement.**
+**4. Cadre réglementaire — toujours ouvert, toujours bloquant.** ERC-3643 existe pour des
+instruments **régulés**. Adopter la norme, c'est admettre que le jeton en est un. Un instrument non
+transférable pose une question *différente* d'un instrument négociable, pas une question *absente*.
+La qualification dans chaque juridiction servie — et pas seulement en zone UEMOA — conditionne
+l'émission bien plus que la technique. **À poser à un conseil juridique avant tout engagement.**
 
 ### 5.7 Chemin proposé
 
 | Phase | Contenu | Risque |
 |---|---|---|
-| **0 — Décider** | Voie A ou B ; qualification juridique ; chaîne et coût réel ; conservation | Aucun code |
+| **0 — Décider** *(en partie faite)* | ~~Voie A ou B~~ · ~~conservation des clés~~ — **tranchés**. Restent la qualification juridique et le choix de la chaîne | Aucun code |
 | **1 — Ancrage** *(déjà en place)* | Publier le digest d'attestation. Aucun solde on-chain | Nul |
 | **2 — Identité on-chain** | ONCHAINID par titulaire, l'exploitant devient émetteur d'attestations, registres déployés — **sans jeton** | Faible : rien ne bouge |
 | **3 — Jeton en miroir** | Émission et destruction pilotées par le registre comptable, via **outbox** et opérations **idempotentes** clefées sur un identifiant D1 ; réconciliation `totalSupply()` ↔ `tokens_issued` | Élevé : une transaction minée ne se rembobine pas |
-| **4 — Transferts** | Conformité modulaire active, relayeur de gaz, récupération de clé | Le plus élevé — change la nature du produit |
+| ~~**4 — Transferts**~~ | **Hors périmètre** sous la voie A | — |
 
-**Les phases 2 et 3 sont séparables, et c'est précieux** : déployer les registres d'identité sans
-jeton apporte une identité vérifiable réutilisable, sans aucun risque sur les avoirs.
+**Les phases 2 et 3 sont séparables, et la voie A rend cette séparation décisive.** La phase 2
+apporte désormais la totalité du bénéfice restant — une identité vérifiable, rattachée à un code
+pays, réutilisable — sans aucun risque sur les avoirs.
+
+La phase 3, elle, porte l'essentiel du risque irréversible **et n'apporte plus la transférabilité
+qui la justifiait**. Ce qu'elle ajoute encore : une offre publiquement lisible en continu là où
+l'attestation ancrée la publie périodiquement, et un galop d'essai vers une éventuelle voie B. Ce
+n'est pas rien, mais ce n'est plus évident — **elle doit être justifiée pour elle-même avant d'être
+engagée**, et non héritée comme une étape obligatoire.
 
 ### 5.8 Points durs, nommés
 
@@ -347,8 +375,9 @@ jeton apporte une identité vérifiable réutilisable, sans aucun risque sur les
   est un **incident**, pas un avertissement — et il faut décider qui fait foi en cas de désaccord.
 - **La clé d'administration du proxy devient le secret le plus critique de la plateforme**, devant
   `JWT_SECRET`. Multisig et HSM ne sont pas optionnels.
-- **Le gaz.** Aucun producteur ne détiendra de jeton natif. Sans relayeur, le produit est
-  inutilisable pour sa cible.
+- **Le gaz — levé par la voie A.** Aucun producteur ne détiendra de jeton natif, mais aucun n'aura à
+  signer de transaction : seule la plateforme paie du gaz, sur des émissions et destructions peu
+  nombreuses. Ce point dur disparaît avec les transferts.
 - **La location.** Elle sort aujourd'hui les grammes du portefeuille. On-chain, c'est un gel
   (`freezePartialTokens`) ou un transfert vers un contrat — deux modèles aux conséquences
   fiscales et comptables différentes.
@@ -360,8 +389,19 @@ jeton apporte une identité vérifiable réutilisable, sans aucun risque sur les
 
 ## 6. Ce que ce document ne tranche pas
 
-- La **qualification juridique** du jeton dans chaque juridiction servie.
-- Le **choix de la chaîne** et son coût réel converti en monnaie locale.
-- **Voie A ou voie B** — la question qui gouverne tout le reste.
-- Si l'exploitant doit pouvoir **déplacer les avoirs d'un tiers** (`forcedTransfer`).
+**Tranché depuis** : la voie A est retenue, et avec elle la conservation des clés — custodiale par
+construction ([ADR 024](adr/024-la-chaine-reste-une-projection.md)).
+
+Restent ouverts :
+
+- La **qualification juridique** du jeton dans chaque juridiction servie — **bloquante** pour toute
+  émission on-chain, quelle que soit la voie.
+- Le **choix de la chaîne** et son coût réel d'exploitation. Le critère a changé : ce n'est plus le
+  coût par transfert, mais le coût des seules émissions et destructions.
+- Si la **phase 3 — jeton en miroir** doit être construite, maintenant qu'elle n'apporte plus la
+  transférabilité.
 - La **durée de conservation** des registres, qui est une contrainte réglementaire.
+
+`forcedTransfer` sort de la liste : sous la voie A, toutes les adresses sont déjà détenues par la
+plateforme, et l'opération n'a plus de sens externe. La gouvernance de la **récupération de compte**
+reste entière.

@@ -2,7 +2,15 @@
 
 ## Statut
 
-**Proposé** — en attente des quatre décisions du § *Ce qu'il faut trancher d'abord*.
+**Partiellement tranché.**
+
+- L'[ADR 003](003-ancrage-attestations.md) tranche la phase 1 (ancrage), qui est livrée.
+- L'[ADR 024](024-la-chaine-reste-une-projection.md) retient la **voie A** : la transférabilité
+  est restreinte aux adresses détenues par la plateforme. **La règle d'architecture posée plus bas
+  — la chaîne est une projection, jamais un second registre — est donc confirmée**, et les
+  questions 1 et 2 du § *Ce qu'il faut trancher d'abord* y trouvent leur réponse.
+- Restent ouvertes : la question 3 (quelle chaîne) et la question 4 (cadre réglementaire, toujours
+  bloquante avant toute émission on-chain).
 
 ## Contexte
 
