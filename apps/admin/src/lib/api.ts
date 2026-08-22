@@ -1015,7 +1015,10 @@ class AdminApiClient {
 export interface ProducerProfile {
   id: string;
   user_id: string;
-  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER';
+  /** Corridor du raffineur : d'ou vient le metal, ou il est affine. */
+  corridor_origin_country?: string | null;
+  corridor_destination_country?: string | null;
   legal_name: string;
   registration_number: string | null;
   mining_authorization: string | null;

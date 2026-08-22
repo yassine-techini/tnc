@@ -15,6 +15,7 @@ import { api, type ProducerProfile } from '../../lib/api';
 
 const ENTITY_TYPES = [
   { value: 'COOPERATIVE' as const, label: 'Coopérative' },
+  { value: 'REFINER' as const, label: 'Raffineur' },
   { value: 'COMPANY' as const, label: 'Société' },
   { value: 'INDIVIDUAL' as const, label: 'Individuel' },
 ];
@@ -126,7 +127,7 @@ function ProfileForm({
   onDone: (p: ProducerProfile) => void;
 }) {
   const c = useThemeColors();
-  const [entityType, setEntityType] = useState<'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY'>(
+  const [entityType, setEntityType] = useState<'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER'>(
     existing?.entity_type ?? 'COOPERATIVE'
   );
   const [legalName, setLegalName] = useState(existing?.legal_name ?? '');
@@ -135,13 +136,21 @@ function ProfileForm({
   const [repName, setRepName] = useState(existing?.representative_name ?? '');
   const [repPhone, setRepPhone] = useState(existing?.representative_phone ?? '');
   const [city, setCity] = useState(existing?.city ?? '');
+  const [corridorOrigin, setCorridorOrigin] = useState(existing?.corridor_origin_country ?? '');
+  const [corridorDest, setCorridorDest] = useState(existing?.corridor_destination_country ?? '');
   const [docs, setDocs] = useState<Array<{ uri: string; name: string; type: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isEntity = entityType !== 'INDIVIDUAL';
+  // Un raffineur recoit et affine : son corridor dit d'ou vient le metal et ou
+  // il part. Le serveur le refuse sans, le bouton le dit avant.
+  const isRefiner = entityType === 'REFINER';
   const canSubmit =
-    legalName.trim().length >= 2 && repName.trim().length >= 2 && (!isEntity || registration.trim().length > 0);
+    legalName.trim().length >= 2 &&
+    repName.trim().length >= 2 &&
+    (!isEntity || registration.trim().length > 0) &&
+    (!isRefiner || (corridorOrigin.trim().length === 2 && corridorDest.trim().length === 2));
 
   async function pickDocument() {
     const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, allowsMultipleSelection: true });
@@ -174,6 +183,8 @@ function ProfileForm({
         representativeName: repName.trim(),
         representativePhone: repPhone.trim() || undefined,
         city: city.trim() || undefined,
+        corridorOriginCountry: isRefiner ? corridorOrigin.trim().toUpperCase() : undefined,
+        corridorDestinationCountry: isRefiner ? corridorDest.trim().toUpperCase() : undefined,
         documents: keys.length ? keys : undefined,
       });
       if (res.data) onDone(res.data);
@@ -225,6 +236,32 @@ function ProfileForm({
 
           <Text style={[styles.label, { color: c.textSecondary }]}>Autorisation d'exploitation</Text>
           <TextInput style={inputStyle} value={authorization} onChangeText={setAuthorization} placeholderTextColor={c.textTertiary} />
+        </>
+      )}
+
+      {isRefiner && (
+        <>
+          <Text style={[styles.label, { color: c.textSecondary }]}>Pays d'origine du métal</Text>
+          <TextInput
+            style={inputStyle}
+            value={corridorOrigin}
+            onChangeText={(t) => setCorridorOrigin(t.toUpperCase().slice(0, 2))}
+            maxLength={2}
+            autoCapitalize="characters"
+            placeholder="BF"
+            placeholderTextColor={c.textTertiary}
+          />
+
+          <Text style={[styles.label, { color: c.textSecondary }]}>Pays d'affinage</Text>
+          <TextInput
+            style={inputStyle}
+            value={corridorDest}
+            onChangeText={(t) => setCorridorDest(t.toUpperCase().slice(0, 2))}
+            maxLength={2}
+            autoCapitalize="characters"
+            placeholder="AE"
+            placeholderTextColor={c.textTertiary}
+          />
         </>
       )}
 

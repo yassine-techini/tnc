@@ -603,7 +603,7 @@ class MobileApiClient {
   }
 
   async submitProducerProfile(data: {
-    entityType: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+    entityType: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER';
     legalName: string;
     registrationNumber?: string;
     miningAuthorization?: string;
@@ -611,6 +611,8 @@ class MobileApiClient {
     representativePhone?: string;
     city?: string;
     region?: string;
+    corridorOriginCountry?: string;
+    corridorDestinationCountry?: string;
     documents?: string[];
   }) {
     return this.request<ProducerProfile>('/api/v1/producer/profile', {
@@ -1058,7 +1060,10 @@ export interface ConsignmentEvent {
 
 export interface ProducerProfile {
   id: string;
-  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  entity_type: 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER';
+  /** Corridor du raffineur : d'ou vient le metal, ou il est affine. */
+  corridor_origin_country?: string | null;
+  corridor_destination_country?: string | null;
   legal_name: string;
   registration_number: string | null;
   mining_authorization: string | null;

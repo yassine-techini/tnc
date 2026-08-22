@@ -17,7 +17,14 @@ import { z } from 'zod';
  * type the service consumes cannot drift apart.
  */
 export const kybSchema = z.object({
-  entityType: z.enum(['INDIVIDUAL', 'COOPERATIVE', 'COMPANY']),
+  /**
+   * `REFINER` a ete ajoute par la migration 0027 — un raffineur n'extrait pas,
+   * il recoit et affine — et cette enumeration ne l'avait jamais suivi. Or
+   * c'est le SEUL chemin d'ecriture vers `producer_profiles` : aucun raffineur
+   * ne pouvait donc exister, et les frais de garde, qui ne facturent que
+   * `entity_type = 'REFINER'`, ne trouvaient jamais personne.
+   */
+  entityType: z.enum(['INDIVIDUAL', 'COOPERATIVE', 'COMPANY', 'REFINER']),
   legalName: z.string().min(2).max(200),
   registrationNumber: z.string().max(64).optional(),
   miningAuthorization: z.string().max(64).optional(),
@@ -30,9 +37,27 @@ export const kybSchema = z.object({
   representativeRole: z.string().max(100).optional(),
   representativePhone: z.string().max(32).optional(),
   documents: z.array(z.string().max(256)).max(10).optional(),
-});
 
-export type EntityType = 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY';
+  /**
+   * Le corridor : d'ou vient le metal, ou il est affine.
+   *
+   * N'a de sens que pour un raffineur — une cooperative extrait, elle ne
+   * transporte pas —, d'ou la regle ci-dessous plutot qu'un champ obligatoire
+   * pour tous.
+   */
+  corridorOriginCountry: z.string().length(2).optional(),
+  corridorDestinationCountry: z.string().length(2).optional(),
+}).refine(
+  (d) =>
+    d.entityType !== 'REFINER' ||
+    Boolean(d.corridorOriginCountry && d.corridorDestinationCountry),
+  {
+    message: 'Un raffineur doit declarer son corridor (origine et destination)',
+    path: ['corridorOriginCountry'],
+  }
+);
+
+export type EntityType = 'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER';
 export type KybStatus = 'SUBMITTED' | 'PROCESSING' | 'VERIFIED' | 'REJECTED';
 
 export interface ProducerProfileRow {
@@ -47,6 +72,9 @@ export interface ProducerProfileRow {
   city: string | null;
   region: string | null;
   country: string;
+  /** Renseigne pour un raffineur, `NULL` pour la filiere extraction. */
+  corridor_origin_country: string | null;
+  corridor_destination_country: string | null;
   representative_name: string;
   representative_role: string | null;
   representative_phone: string | null;
@@ -103,6 +131,7 @@ export class ProducerProfileService {
           `UPDATE producer_profiles
            SET entity_type = ?, legal_name = ?, registration_number = ?, mining_authorization = ?,
                tax_id = ?, address = ?, city = ?, region = ?, country = ?,
+               corridor_origin_country = ?, corridor_destination_country = ?,
                representative_name = ?, representative_role = ?, representative_phone = ?,
                documents = ?, status = 'SUBMITTED', rejection_reason = NULL,
                reviewed_by = NULL, reviewed_at = NULL, updated_at = datetime('now')
@@ -111,6 +140,7 @@ export class ProducerProfileService {
         .bind(
           p.entityType, p.legalName, p.registrationNumber ?? null, p.miningAuthorization ?? null,
           p.taxId ?? null, p.address ?? null, p.city ?? null, p.region ?? null, p.country ?? 'BF',
+          p.corridorOriginCountry ?? null, p.corridorDestinationCountry ?? null,
           p.representativeName, p.representativeRole ?? null, p.representativePhone ?? null,
           documents, userId
         )
@@ -120,14 +150,18 @@ export class ProducerProfileService {
         .prepare(
           `INSERT INTO producer_profiles
              (id, user_id, entity_type, legal_name, registration_number, mining_authorization,
-              tax_id, address, city, region, country, representative_name, representative_role,
+              tax_id, address, city, region, country,
+              corridor_origin_country, corridor_destination_country,
+              representative_name, representative_role,
               representative_phone, documents, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED')`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED')`
         )
         .bind(
           crypto.randomUUID(), userId, p.entityType, p.legalName, p.registrationNumber ?? null,
           p.miningAuthorization ?? null, p.taxId ?? null, p.address ?? null, p.city ?? null,
-          p.region ?? null, p.country ?? 'BF', p.representativeName, p.representativeRole ?? null,
+          p.region ?? null, p.country ?? 'BF',
+          p.corridorOriginCountry ?? null, p.corridorDestinationCountry ?? null,
+          p.representativeName, p.representativeRole ?? null,
           p.representativePhone ?? null, documents
         )
         .run();

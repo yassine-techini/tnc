@@ -10,7 +10,7 @@
 |---|---|
 | **Ce qui tourne** | Une plateforme complète de tokenisation d'or, **sans blockchain** : le jeton est une écriture comptable en base |
 | **Volumétrie** | 14 modules API · 156 endpoints · 31 services · 38 migrations · 11 travaux planifiés · 4 Durable Objects · 5 applications front |
-| **Tests** | **941** côté API, **1 484** au total, tous exécutés |
+| **Tests** | **950** côté API, **1 493** au total, tous exécutés |
 | **Garde-fous** | 6 contrôles statiques bloquants avant chaque suite de tests |
 | **Décisions écrites** | 26 ADR |
 | **Audits** | 12 passes, chacune sous un angle différent |
@@ -149,7 +149,7 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 | **Location d'or** 6 %/an, avec rattrapage des jours manqués | ✅ |
 | Frais de garde 0,5 %/an ; impayés en dette lisible | ✅ |
 | Répartition d'un lot — vente / location / garde | ✅ |
-| Profil raffineur avec corridor | ⚠️ écrans non branchés |
+| **Profil raffineur avec corridor** — API, web et mobile | ✅ |
 
 ### Preuve de réserve
 
@@ -200,7 +200,6 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 | Rapport mensuel de l'État — bornes calculées en heure locale | Hors périmètre ; latent en production (Workers en UTC) |
 | Exécution des parcours mobiles bout-en-bout | Écrits, jamais exécutés |
 | QR du certificat mobile rendu par un tiers | Dépendance externe à lever |
-| Écrans du profil raffineur | Modèle en base, interface absente |
 
 ### 4.3 Avant toute mise en production
 

@@ -21,6 +21,7 @@ const entityLabels: Record<string, string> = {
   INDIVIDUAL: 'Orpailleur',
   COOPERATIVE: 'Coopérative',
   COMPANY: 'Société',
+  REFINER: 'Raffineur',
 };
 
 const FILTERS = ['', 'SUBMITTED', 'VERIFIED', 'REJECTED'];

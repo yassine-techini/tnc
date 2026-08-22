@@ -18,6 +18,7 @@ const entityLabels: Record<string, string> = {
   INDIVIDUAL: 'Orpailleur individuel',
   COOPERATIVE: 'Coopérative',
   COMPANY: 'Société',
+  REFINER: 'Raffineur',
 };
 
 export default function ProducerProfilePage() {
@@ -122,7 +123,7 @@ function ProfileSummary({ profile, onEdit }: { profile: Profile; onEdit: () => v
 }
 
 function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => void }) {
-  const [entityType, setEntityType] = useState<'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY'>(
+  const [entityType, setEntityType] = useState<'INDIVIDUAL' | 'COOPERATIVE' | 'COMPANY' | 'REFINER'>(
     existing?.entity_type ?? 'COOPERATIVE'
   );
   const [legalName, setLegalName] = useState(existing?.legal_name ?? '');
@@ -135,9 +136,16 @@ function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => v
   const [representativeName, setRepresentativeName] = useState(existing?.representative_name ?? '');
   const [representativeRole, setRepresentativeRole] = useState(existing?.representative_role ?? '');
   const [representativePhone, setRepresentativePhone] = useState(existing?.representative_phone ?? '');
+  const [corridorOrigin, setCorridorOrigin] = useState(existing?.corridor_origin_country ?? '');
+  const [corridorDestination, setCorridorDestination] = useState(
+    existing?.corridor_destination_country ?? ''
+  );
   const [files, setFiles] = useState<File[]>([]);
 
   const isEntity = entityType !== 'INDIVIDUAL';
+  // Un raffineur ne fait pas le meme metier : il recoit et affine, et son
+  // corridor dit d'ou vient le metal et ou il part.
+  const isRefiner = entityType === 'REFINER';
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -159,6 +167,10 @@ function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => v
         representativeName: representativeName.trim(),
         representativeRole: representativeRole.trim() || undefined,
         representativePhone: representativePhone.trim() || undefined,
+        corridorOriginCountry: isRefiner ? corridorOrigin.trim().toUpperCase() : undefined,
+        corridorDestinationCountry: isRefiner
+          ? corridorDestination.trim().toUpperCase()
+          : undefined,
         documents: documents.length ? documents : undefined,
       });
     },
@@ -168,7 +180,9 @@ function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => v
   const canSubmit =
     legalName.trim().length >= 2 &&
     representativeName.trim().length >= 2 &&
-    (!isEntity || registrationNumber.trim().length > 0);
+    (!isEntity || registrationNumber.trim().length > 0) &&
+    // Le serveur refuse un raffineur sans corridor : le bouton le dit avant.
+    (!isRefiner || (corridorOrigin.trim().length === 2 && corridorDestination.trim().length === 2));
 
   return (
     <form
@@ -182,6 +196,7 @@ function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => v
         <select className="input" value={entityType} onChange={(e) => setEntityType(e.target.value as typeof entityType)}>
           <option value="COOPERATIVE">Coopérative</option>
           <option value="COMPANY">Société</option>
+          <option value="REFINER">Raffineur</option>
           <option value="INDIVIDUAL">Orpailleur individuel</option>
         </select>
       </Field>
@@ -189,6 +204,29 @@ function ProfileForm({ existing, onDone }: { existing?: Profile; onDone: () => v
       <Field label={isEntity ? 'Raison sociale' : 'Nom complet'}>
         <input className="input" value={legalName} onChange={(e) => setLegalName(e.target.value)} required minLength={2} />
       </Field>
+
+      {isRefiner && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Pays d'origine" hint="D'où vient le métal — code ISO à 2 lettres (BF, CI, ML…)">
+            <input
+              className="input"
+              value={corridorOrigin}
+              onChange={(e) => setCorridorOrigin(e.target.value.toUpperCase().slice(0, 2))}
+              maxLength={2}
+              required
+            />
+          </Field>
+          <Field label="Pays de destination" hint="Où le métal est affiné (AE pour Dubaï)">
+            <input
+              className="input"
+              value={corridorDestination}
+              onChange={(e) => setCorridorDestination(e.target.value.toUpperCase().slice(0, 2))}
+              maxLength={2}
+              required
+            />
+          </Field>
+        </div>
+      )}
 
       {isEntity && (
         <>

@@ -2138,3 +2138,42 @@ node scripts/readiness.mjs --url <api> --token <jwt admin>
 
 Le rapport couvre désormais l'ancrage, les trois jobs quotidiens, les pays ouvrables et la
 fraîcheur du prix — il avait décroché du produit et ne le fait plus.
+
+
+---
+
+## Treizième passe — 22 août 2026, une colonne que rien ne pouvait remplir
+
+### Un raffineur ne pouvait pas exister ✅
+
+La migration **0027** a ajouté le type d'entité `REFINER` et son **corridor**
+(`corridor_origin_country`, `corridor_destination_country`), parce qu'un raffineur n'extrait
+pas : il reçoit et affine. La base l'admet depuis.
+
+`kybSchema` ne l'a jamais admis. Son énumération est restée
+`INDIVIDUAL | COOPERATIVE | COMPANY`, et c'est le **seul** chemin d'écriture vers
+`producer_profiles` — l'unique `INSERT` du dépôt passe par lui. Aucun compte ne pouvait donc
+porter `entity_type = 'REFINER'`, et les deux colonnes du corridor n'étaient écrites nulle part.
+
+**La conséquence n'est pas cosmétique.** Les frais de garde ne facturent que les raffineurs :
+
+```sql
+AND EXISTS (SELECT 1 FROM producer_profiles p
+            WHERE p.user_id = w.user_id AND p.entity_type = 'REFINER')
+```
+
+`storage_fee_applies_to` vaut `'REFINER'` par défaut. Le travail quotidien de facturation
+tournait donc, ne trouvait personne, et se déclarait satisfait — **une ligne de revenus
+silencieusement inactive**, dont aucun test ne révélait l'inactivité puisque `holdersToCharge`
+n'était testé qu'avec le périmètre `ALL`.
+
+Démontré avant d'être corrigé : trois tests sur une vraie base échouaient sur le code d'alors —
+le schéma refusait `REFINER`, le corridor ne survivait pas à l'écriture, et la liste des
+détenteurs à facturer restait vide malgré un portefeuille garni.
+
+**Corrigé de bout en bout** : le schéma accepte `REFINER` et **exige son corridor** — et de lui
+seul, une coopérative n'en ayant pas —, le service écrit et relit les deux colonnes, et les
+trois interfaces (web, mobile, back-office) proposent le type et ses deux champs.
+
+**Ce que cela n'a pas tranché** : `storage_fee_applies_to` reste à `'REFINER'`. Étendre la
+facturation à tous les détenteurs demeure une décision produit, pas technique.
