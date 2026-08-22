@@ -16,6 +16,7 @@ import type {
   StateProofOfReserveData,
   StateMonthlyReportData,
 } from '@tnc-trading/shared/contracts';
+import { texte } from '../lib/reponse-erreur';
 
 // Zod schemas for state endpoints
 const StateLoginSchema = z.object({
@@ -59,7 +60,7 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'STATE_AUTH_REQUIRED',
-        message: 'Authentification requise',
+        message: texte(c, 'STATE_AUTH_REQUIRED'),
       },
       requestId: crypto.randomUUID(),
     }, 401);
@@ -76,7 +77,7 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'AUTH_INVALID_TOKEN',
-          message: 'Token invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_TOKEN'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -89,7 +90,7 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'STATE_ACCESS_DENIED',
-          message: 'Accès portail État non autorisé',
+          message: texte(c, 'STATE_ACCESS_DENIED'),
         },
         requestId: crypto.randomUUID(),
       }, 403);
@@ -106,7 +107,7 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'STATE_ACCESS_DENIED',
-          message: 'Accès portail État non autorisé',
+          message: texte(c, 'STATE_ACCESS_DENIED'),
         },
         requestId: crypto.randomUUID(),
       }, 403);
@@ -122,7 +123,7 @@ async function stateJwtMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'STATE_AUTH_FAILED',
-        message: 'Authentification échouée',
+        message: texte(c, 'STATE_AUTH_FAILED'),
       },
       requestId: crypto.randomUUID(),
     }, 401);
@@ -141,7 +142,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: parseResult.error.issues[0]?.message || 'Données invalides',
+          message: parseResult.error.issues[0]?.message || texte(c, 'INVALID_INPUT'),
           details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),
@@ -161,7 +162,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Email ou mot de passe incorrect',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -176,7 +177,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Email ou mot de passe incorrect',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -204,7 +205,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_SETUP_REQUIRED',
-          message: 'Configuration 2FA obligatoire. Scannez le QR code pour activer.',
+          message: texte(c, '2FA_SETUP_REQUIRED'),
         },
         data: {
           setupToken,
@@ -220,7 +221,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_REQUIRED',
-          message: 'Code d\'authentification à deux facteurs requis',
+          message: texte(c, '2FA_REQUIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -237,7 +238,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_INVALID',
-          message: 'Code 2FA invalide',
+          message: texte(c, '2FA_INVALID'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -277,7 +278,7 @@ state.post('/login', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur interne',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -295,7 +296,7 @@ state.post('/2fa/setup', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token de configuration requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -308,7 +309,7 @@ state.post('/2fa/setup', async (c) => {
         success: false,
         error: {
           code: 'SETUP_TOKEN_EXPIRED',
-          message: 'Session de configuration expirée. Reconnectez-vous.',
+          message: texte(c, 'SETUP_TOKEN_EXPIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -345,7 +346,7 @@ state.post('/2fa/setup', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la configuration 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -363,7 +364,7 @@ state.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token et code requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -376,7 +377,7 @@ state.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: 'SETUP_EXPIRED',
-          message: 'Session de configuration expirée. Recommencez.',
+          message: texte(c, 'SETUP_EXPIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -394,7 +395,7 @@ state.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: '2FA_INVALID_CODE',
-          message: 'Code incorrect. Vérifiez l\'heure de votre appareil.',
+          message: texte(c, '2FA_INVALID_CODE'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -447,7 +448,7 @@ state.post('/2fa/verify', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'activation 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -511,7 +512,7 @@ state.get('/dashboard', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement du dashboard',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -552,7 +553,7 @@ state.get('/stock', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement du stock',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -623,7 +624,7 @@ state.get('/consignments/:id', async (c) => {
     .first();
 
   if (!consignment) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
 
   const events = await c.env.DB
@@ -718,7 +719,7 @@ state.get('/reports/por', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la génération du rapport',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -817,7 +818,7 @@ state.get('/reports/monthly', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la génération du rapport mensuel',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -858,7 +859,7 @@ state.get('/price/history', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement de l\'historique des prix',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -907,7 +908,7 @@ state.get('/transactions/stats', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement des statistiques',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -1017,7 +1018,7 @@ state.get('/reports/por/export', async (c) => {
     console.error('PoR export error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de l\'export' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId: crypto.randomUUID(),
     }, 500);
   }
@@ -1074,7 +1075,7 @@ state.get('/reports/monthly/export', async (c) => {
     console.error('Monthly export error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de l\'export' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId: crypto.randomUUID(),
     }, 500);
   }
@@ -1147,7 +1148,7 @@ state.get('/reports/data/export', async (c) => {
         success: false,
         error: {
           code: 'EXPORT_NOT_TRACEABLE',
-          message: "Export impossible : la trace d'audit n'a pas pu être enregistrée",
+          message: texte(c, 'EXPORT_NOT_TRACEABLE'),
         },
         requestId: crypto.randomUUID(),
       }, 503);
@@ -1183,7 +1184,7 @@ state.get('/reports/data/export', async (c) => {
     console.error('Data export error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de l\'export' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId: crypto.randomUUID(),
     }, 500);
   }

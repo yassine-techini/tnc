@@ -63,7 +63,7 @@ app.use('*', async (c, next) => {
       console.error(`FATAL: ${name} (${key}) is not set`);
       return c.json({
         success: false,
-        error: { code: 'CONFIG_ERROR', message: 'Server misconfigured' }
+        error: { code: 'CONFIG_ERROR', message: texte(c, 'CONFIG_ERROR') }
       }, 500);
     }
   }
@@ -138,7 +138,7 @@ app.use('*', async (c, next) => {
           success: false,
           error: {
             code: 'CSRF_ORIGIN_REJECTED',
-            message: 'Origin non autorisée',
+            message: texte(c, 'CSRF_ORIGIN_REJECTED'),
           },
           requestId: crypto.randomUUID(),
         }, 403);
@@ -304,7 +304,7 @@ app.notFound((c) => {
     success: false,
     error: {
       code: 'NOT_FOUND',
-      message: `Route ${c.req.method} ${c.req.path} not found`,
+      message: texte(c, 'NOT_FOUND', { ressource: 'route' }),
     },
     requestId: c.req.header('X-Request-ID') || crypto.randomUUID(),
   }, 404);
@@ -328,6 +328,7 @@ import { ConfigService } from './services/config.service';
 
 // Import tail handler for log archival
 import { handleTail, type TraceItem } from './tail-handler';
+import { texte } from './lib/reponse-erreur';
 
 // Export as module with fetch, scheduled, queue, and tail handlers
 export default {

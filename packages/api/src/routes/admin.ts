@@ -45,6 +45,7 @@ import {
 import { GOLD_STOCK_ID } from '../services/market.service';
 import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
+import { texte } from '../lib/reponse-erreur';
 
 /**
  * Roles that may be assigned to an admin account. Derived from ROLE_DEFAULTS so
@@ -108,7 +109,7 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'ADMIN_AUTH_REQUIRED',
-        message: 'Authentification admin requise',
+        message: texte(c, 'ADMIN_AUTH_REQUIRED'),
       },
       requestId: crypto.randomUUID(),
     }, 401);
@@ -125,7 +126,7 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'AUTH_INVALID_TOKEN',
-          message: 'Token invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_TOKEN'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -140,7 +141,7 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'ADMIN_ACCESS_DENIED',
-          message: 'Accès administrateur non autorisé',
+          message: texte(c, 'ADMIN_ACCESS_DENIED'),
         },
         requestId: crypto.randomUUID(),
       }, 403);
@@ -159,7 +160,7 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'ADMIN_ACCESS_DENIED',
-          message: 'Accès administrateur non autorisé',
+          message: texte(c, 'ADMIN_ACCESS_DENIED'),
         },
         requestId: crypto.randomUUID(),
       }, 403);
@@ -175,7 +176,7 @@ async function adminJwtMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'ADMIN_AUTH_FAILED',
-        message: 'Authentification échouée',
+        message: texte(c, 'ADMIN_AUTH_FAILED'),
       },
       requestId: crypto.randomUUID(),
     }, 401);
@@ -194,7 +195,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: parseResult.error.issues[0]?.message || 'Données invalides',
+          message: parseResult.error.issues[0]?.message || texte(c, 'INVALID_INPUT'),
           details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),
@@ -215,7 +216,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: 'AUTH_ACCOUNT_LOCKED',
-          message: `Compte temporairement bloqué. Réessayez dans ${Math.ceil((lockStatus.remainingSeconds || 0) / 60)} minute(s).`,
+          message: texte(c, 'AUTH_ACCOUNT_LOCKED', { minutes: Math.ceil((lockStatus.remainingSeconds || 0) / 60) }),
         },
         requestId: crypto.randomUUID(),
       }, 429);
@@ -233,7 +234,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Email ou mot de passe incorrect',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -249,7 +250,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Email ou mot de passe incorrect',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -277,7 +278,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_SETUP_REQUIRED',
-          message: 'Configuration 2FA obligatoire. Scannez le QR code pour activer.',
+          message: texte(c, '2FA_SETUP_REQUIRED'),
         },
         data: {
           setupToken,
@@ -293,7 +294,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_REQUIRED',
-          message: 'Code d\'authentification à deux facteurs requis',
+          message: texte(c, '2FA_REQUIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -311,7 +312,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: '2FA_INVALID',
-          message: 'Code 2FA invalide',
+          message: texte(c, '2FA_INVALID'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -358,7 +359,7 @@ admin.post('/login', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur interne',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -376,7 +377,7 @@ admin.post('/2fa/setup', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token de configuration requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -389,7 +390,7 @@ admin.post('/2fa/setup', async (c) => {
         success: false,
         error: {
           code: 'SETUP_TOKEN_EXPIRED',
-          message: 'Session de configuration expirée. Reconnectez-vous.',
+          message: texte(c, 'SETUP_TOKEN_EXPIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -426,7 +427,7 @@ admin.post('/2fa/setup', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la configuration 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -444,7 +445,7 @@ admin.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token et code requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -457,7 +458,7 @@ admin.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: 'SETUP_EXPIRED',
-          message: 'Session de configuration expirée. Recommencez.',
+          message: texte(c, 'SETUP_EXPIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -475,7 +476,7 @@ admin.post('/2fa/verify', async (c) => {
         success: false,
         error: {
           code: '2FA_INVALID_CODE',
-          message: 'Code incorrect. Vérifiez l\'heure de votre appareil.',
+          message: texte(c, '2FA_INVALID_CODE'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -531,7 +532,7 @@ admin.post('/2fa/verify', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'activation 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -622,7 +623,7 @@ admin.get('/dashboard', requirePermission('dashboard', 'view'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement du dashboard',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -684,7 +685,7 @@ admin.get('/users', requirePermission('users', 'view'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement des utilisateurs',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -710,7 +711,7 @@ admin.get('/users/:id', requirePermission('users', 'view'), async (c) => {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'USER_NOT_FOUND'),
         },
         requestId: crypto.randomUUID(),
       }, 404);
@@ -762,7 +763,7 @@ admin.get('/users/:id', requirePermission('users', 'view'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement de l\'utilisateur',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -781,7 +782,7 @@ admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => 
         success: false,
         error: {
           code: 'INVALID_ACTION',
-          message: 'Action invalide',
+          message: texte(c, 'INVALID_ACTION'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -826,7 +827,7 @@ admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => 
     if (decision.meta.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId: crypto.randomUUID(),
       }, 404);
     }
@@ -842,7 +843,7 @@ admin.patch('/users/:id/kyc', requirePermission('kyc', 'approve'), async (c) => 
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise à jour KYC',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -909,7 +910,7 @@ admin.get('/kyc/pending', requirePermission('kyc', 'view'), async (c) => {
     console.error('KYC pending list error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement des demandes KYC' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -937,7 +938,7 @@ admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
     if (!doc) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Soumission KYC non trouvée' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'soumissionKyc' }) },
         requestId,
       }, 404);
     }
@@ -984,7 +985,7 @@ admin.get('/kyc/:id', requirePermission('kyc', 'view'), async (c) => {
     console.error('KYC detail error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement de la soumission KYC' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1002,7 +1003,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
     if (!action || !['approve', 'reject'].includes(action)) {
       return c.json({
         success: false,
-        error: { code: 'INVALID_ACTION', message: 'Action invalide. Utilisez "approve" ou "reject".' },
+        error: { code: 'INVALID_ACTION', message: texte(c, 'INVALID_ACTION') },
         requestId,
       }, 400);
     }
@@ -1023,7 +1024,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
     if (!doc) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Soumission KYC non trouvée' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'soumissionKyc' }) },
         requestId,
       }, 404);
     }
@@ -1078,7 +1079,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
     if (dossier.meta.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'KYC_DOCUMENT_NOT_FOUND', message: 'Document introuvable' },
+        error: { code: 'KYC_DOCUMENT_NOT_FOUND', message: texte(c, 'KYC_DOCUMENT_NOT_FOUND') },
         requestId: crypto.randomUUID(),
       }, 404);
     }
@@ -1125,7 +1126,7 @@ admin.post('/kyc/:id/review', requirePermission('kyc', 'approve'), async (c) => 
     console.error('KYC review error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la revue KYC' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1149,7 +1150,7 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
     if (!user) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -1158,7 +1159,7 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
     if (user.suspended) {
       return c.json({
         success: false,
-        error: { code: 'USER_ALREADY_SUSPENDED', message: 'Utilisateur déjà suspendu' },
+        error: { code: 'USER_ALREADY_SUSPENDED', message: texte(c, 'USER_ALREADY_SUSPENDED') },
         requestId,
       }, 400);
     }
@@ -1214,7 +1215,7 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
     if (suspension.meta.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId: crypto.randomUUID(),
       }, 404);
     }
@@ -1258,7 +1259,7 @@ admin.post('/users/:id/suspend', requirePermission('users', 'update'), async (c)
     console.error('Suspend user error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la suspension' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1282,7 +1283,7 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
     if (!user) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -1290,7 +1291,7 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
     if (!user.suspended) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_SUSPENDED', message: 'Utilisateur non suspendu' },
+        error: { code: 'USER_NOT_SUSPENDED', message: texte(c, 'USER_NOT_SUSPENDED') },
         requestId,
       }, 400);
     }
@@ -1326,7 +1327,7 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
     if (levee.meta.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_SUSPENDED', message: 'Utilisateur non suspendu' },
+        error: { code: 'USER_NOT_SUSPENDED', message: texte(c, 'USER_NOT_SUSPENDED') },
         requestId,
       }, 400);
     }
@@ -1357,7 +1358,7 @@ admin.post('/users/:id/unsuspend', requirePermission('users', 'update'), async (
     console.error('Unsuspend user error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la réactivation' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1432,7 +1433,7 @@ admin.get('/users/:id/audit', requirePermission('users', 'view'), async (c) => {
     console.error('User audit error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement de l\'audit' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1516,7 +1517,7 @@ admin.get('/audit-logs', requirePermission('audit', 'view'), async (c) => {
     console.error('Audit logs error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement des logs' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1533,7 +1534,7 @@ admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) =
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return c.json({
         success: false,
-        error: { code: 'INVALID_INPUT', message: 'Liste d\'utilisateurs requise' },
+        error: { code: 'INVALID_INPUT', message: texte(c, 'INVALID_INPUT') },
         requestId,
       }, 400);
     }
@@ -1541,7 +1542,7 @@ admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) =
     if (userIds.length > 100) {
       return c.json({
         success: false,
-        error: { code: 'TOO_MANY_USERS', message: 'Maximum 100 utilisateurs par requête' },
+        error: { code: 'TOO_MANY_USERS', message: texte(c, 'TOO_MANY_USERS', { max: 100 }) },
         requestId,
       }, 400);
     }
@@ -1601,7 +1602,7 @@ admin.post('/bulk/kyc-approve', requirePermission('kyc', 'approve'), async (c) =
     console.error('Bulk KYC approve error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de l\'approbation en masse' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1647,7 +1648,7 @@ admin.get('/suspended-users', requirePermission('users', 'view'), async (c) => {
     console.error('Suspended users error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1706,7 +1707,7 @@ admin.get('/transactions', requirePermission('transactions', 'view'), async (c) 
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement des transactions',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -1743,7 +1744,7 @@ admin.get('/stock', requirePermission('stock', 'view'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement du stock',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -1767,7 +1768,14 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
     if (!verdict.ok) {
       return c.json({
         success: false,
-        error: { code: verdict.code, message: verdict.message, details: verdict.details },
+        error: {
+          code: verdict.code,
+          message:
+            verdict.code === 'STOCK_BELOW_ISSUED'
+              ? texte(c, 'STOCK_BELOW_ISSUED', { emisG: verdict.details.tokensIssued })
+              : texte(c, 'INVALID_INPUT'),
+          details: verdict.details,
+        },
         requestId: crypto.randomUUID(),
       }, verdict.status);
     }
@@ -1824,7 +1832,7 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
         success: false,
         error: {
           code: 'STOCK_BELOW_ISSUED',
-          message: "Ajustement impossible : un autre ajustement vient de modifier le stock. Réessayez.",
+          message: texte(c, 'STOCK_BELOW_ISSUED', {}),
         },
         requestId: crypto.randomUUID(),
       }, 409);
@@ -1841,7 +1849,7 @@ admin.post('/stock/adjust', requirePermission('stock', 'update'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'ajustement du stock',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -1888,7 +1896,7 @@ admin.get('/withdrawals', requirePermission('withdrawals', 'view'), async (c) =>
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du chargement des retraits',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -1909,7 +1917,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
         success: false,
         error: {
           code: 'INVALID_ACTION',
-          message: 'Action invalide',
+          message: texte(c, 'INVALID_ACTION'),
         },
         requestId,
       }, 400);
@@ -1932,7 +1940,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
         success: false,
         error: {
           code: 'WITHDRAWAL_NOT_FOUND',
-          message: 'Retrait non trouvé',
+          message: texte(c, 'WITHDRAWAL_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -1943,7 +1951,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
         success: false,
         error: {
           code: 'WITHDRAWAL_ALREADY_PROCESSED',
-          message: 'Ce retrait a déjà été traité',
+          message: texte(c, 'WITHDRAWAL_ALREADY_PROCESSED'),
         },
         requestId,
       }, 400);
@@ -2001,7 +2009,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
             success: false,
             error: {
               code: 'PAYOUT_FAILED',
-              message: payoutResult.error || 'Échec de l\'exécution du payout',
+              message: texte(c, 'PAYOUT_FAILED'),
             },
             requestId,
           }, 400);
@@ -2059,7 +2067,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       if ((resultatsApprobation[resultatsApprobation.length - 1].meta?.changes ?? 0) === 0) {
         return c.json({
           success: false,
-          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: 'Ce retrait a déjà été traité' },
+          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: texte(c, 'WITHDRAWAL_ALREADY_PROCESSED') },
           requestId: crypto.randomUUID(),
         }, 409);
       }
@@ -2135,7 +2143,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       if ((resultatsRejet[resultatsRejet.length - 1].meta?.changes ?? 0) === 0) {
         return c.json({
           success: false,
-          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: 'Ce retrait a déjà été traité' },
+          error: { code: 'WITHDRAWAL_ALREADY_PROCESSED', message: texte(c, 'WITHDRAWAL_ALREADY_PROCESSED') },
           requestId: crypto.randomUUID(),
         }, 409);
       }
@@ -2166,7 +2174,7 @@ admin.patch('/withdrawals/:id', requirePermission('withdrawals', 'approve'), asy
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du traitement du retrait',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -2314,7 +2322,7 @@ admin.get('/reports/por', requirePermission('stock', 'view'), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la génération du rapport',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -2331,7 +2339,7 @@ admin.get('/reports/por.pdf', requirePermission('stock', 'view'), async (c) => {
   if (!stock) {
     return c.json({
       success: false,
-      error: { code: 'NOT_FOUND', message: 'Aucun stock enregistré' },
+      error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'stock' }) },
       requestId: crypto.randomUUID(),
     }, 404);
   }
@@ -2484,7 +2492,7 @@ admin.get('/producers/:id', requirePermission('kyc', 'view'), async (c) => {
   const service = new ProducerProfileService(c.env.DB);
   const profile = await service.getById(c.req.param('id'));
   if (!profile) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Dossier non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'dossier' }) }, requestId }, 404);
   }
   return c.json({ success: true, data: profile, requestId });
 });
@@ -2511,12 +2519,12 @@ async function notifyProducer(
 function kybError(c: Context<AppEnv>, r: { ok?: boolean; error?: string; from?: string }) {
   const requestId = crypto.randomUUID();
   if (r.error === 'NOT_FOUND') {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Dossier non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'dossier' }) }, requestId }, 404);
   }
   if (r.error === 'INVALID_TRANSITION') {
-    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: `Dossier déjà traité (${r.from})` }, requestId }, 409);
+    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: texte(c, 'INVALID_TRANSITION', { depuis: r.from, dejaTraite: true }) }, requestId }, 409);
   }
-  return c.json({ success: false, error: { code: 'CONFLICT', message: 'Opération non aboutie, veuillez réessayer.' }, requestId }, 409);
+  return c.json({ success: false, error: { code: 'CONFLICT', message: texte(c, 'CONFLICT') }, requestId }, 409);
 }
 
 // POST /admin/producers/:id/approve — grants the configured KYC level
@@ -2565,12 +2573,12 @@ admin.post('/producers/:id/reject', requirePermission('kyc', 'reject'), async (c
 function consignmentError(c: Context<AppEnv>, r: { ok?: boolean; error?: string; from?: string }) {
   const requestId = crypto.randomUUID();
   if (r.error === 'NOT_FOUND') {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
   if (r.error === 'INVALID_TRANSITION') {
-    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: `Transition invalide depuis ${r.from}` }, requestId }, 409);
+    return c.json({ success: false, error: { code: 'INVALID_TRANSITION', message: texte(c, 'INVALID_TRANSITION', { depuis: r.from, dejaTraite: false }) }, requestId }, 409);
   }
-  return c.json({ success: false, error: { code: 'CONFLICT', message: 'Opération non aboutie, veuillez réessayer' }, requestId }, 409);
+  return c.json({ success: false, error: { code: 'CONFLICT', message: texte(c, 'CONFLICT') }, requestId }, 409);
 }
 
 function currentAdmin(c: Context<AppEnv>) {
@@ -2594,7 +2602,7 @@ admin.get('/consignments/:id', requirePermission('consignments', 'view'), async 
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
   const events = await service.listEvents(id);
   // La répartition fait partie de l'histoire du lot : sans elle, le support ne
@@ -2770,7 +2778,7 @@ admin.post('/consignments/:id/audit-validate', requirePermission('consignments',
   const requestId = crypto.randomUUID();
   const parsed = auditValidateSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
-    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') }, requestId }, 400);
   }
   // Share of the refined weight paid to the producer in tokens (see 0018).
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);

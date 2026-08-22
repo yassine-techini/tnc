@@ -21,6 +21,7 @@ import { NotificationService } from '../services/notification.service';
 import { ConfigService } from '../services/config.service';
 import { setAuthCookies, clearAuthCookies, getRefreshToken } from '../lib/cookies';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
+import { texte } from '../lib/reponse-erreur';
 
 const auth = new Hono<AppEnv>();
 
@@ -177,7 +178,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Trop de tentatives. Veuillez réessayer plus tard.',
+          message: texte(c, 'RATE_LIMIT_EXCEEDED'),
         },
         requestId,
       }, 429);
@@ -190,7 +191,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         success: false,
         error: {
           code: 'WEAK_PASSWORD',
-          message: 'Mot de passe non conforme aux exigences de sécurité',
+          message: texte(c, 'WEAK_PASSWORD'),
           details: passwordValidation.errors,
         },
         requestId,
@@ -212,7 +213,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_EMAIL_EXISTS',
-          message: 'Un compte avec cet email existe déjà',
+          message: texte(c, 'AUTH_EMAIL_EXISTS'),
         },
         requestId,
       }, 400);
@@ -224,7 +225,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_PHONE_EXISTS',
-          message: 'Un compte avec ce numéro de téléphone existe déjà',
+          message: texte(c, 'AUTH_PHONE_EXISTS'),
         },
         requestId,
       }, 400);
@@ -343,7 +344,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la création du compte',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -374,7 +375,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'IP_BLOCKED',
-          message: 'Accès temporairement bloqué. Contactez le support.',
+          message: texte(c, 'IP_BLOCKED'),
         },
         requestId,
       }, 403);
@@ -402,7 +403,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Trop de tentatives de connexion. Veuillez patienter.',
+          message: texte(c, 'RATE_LIMIT_EXCEEDED'),
         },
         requestId,
       }, 429);
@@ -415,7 +416,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_ACCOUNT_LOCKED',
-          message: `Compte temporairement bloqué. Réessayez dans ${Math.ceil(lockStatus.remainingSeconds! / 60)} minute(s).`,
+          message: texte(c, 'AUTH_ACCOUNT_LOCKED', { minutes: Math.ceil(lockStatus.remainingSeconds! / 60) }),
           lockoutUntil: lockStatus.lockoutUntil,
         },
         requestId,
@@ -440,7 +441,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Identifiants incorrects',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
         },
         requestId,
       }, 401);
@@ -466,7 +467,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
           success: false,
           error: {
             code: 'AUTH_ACCOUNT_LOCKED',
-            message: 'Compte bloqué suite à plusieurs tentatives échouées',
+            message: texte(c, 'AUTH_ACCOUNT_LOCKED', {}),
             lockoutUntil: lockResult.lockoutUntil,
           },
           requestId,
@@ -477,7 +478,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CREDENTIALS',
-          message: 'Identifiants incorrects',
+          message: texte(c, 'AUTH_INVALID_CREDENTIALS'),
           attemptsRemaining: lockResult.attemptsRemaining,
         },
         requestId,
@@ -512,7 +513,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_2FA_SETUP_REQUIRED',
-          message: 'Configuration 2FA obligatoire. Scannez le QR code pour activer.',
+          message: texte(c, 'AUTH_2FA_SETUP_REQUIRED'),
         },
         data: {
           setupToken,
@@ -528,7 +529,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_2FA_REQUIRED',
-          message: 'Code d\'authentification à deux facteurs requis',
+          message: texte(c, 'AUTH_2FA_REQUIRED'),
         },
         requestId,
       }, 401);
@@ -549,7 +550,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_2FA_INVALID',
-          message: 'Code 2FA invalide',
+          message: texte(c, 'AUTH_2FA_INVALID'),
         },
         requestId,
       }, 401);
@@ -626,7 +627,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la connexion',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -652,7 +653,7 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
           success: false,
           error: {
             code: 'RATE_LIMITED',
-            message: 'Trop de tentatives de rafraîchissement. Réessayez plus tard.',
+            message: texte(c, 'RATE_LIMITED'),
           },
           requestId,
         }, 429);
@@ -670,7 +671,7 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_REFRESH_TOKEN_REQUIRED',
-          message: 'Token de rafraîchissement requis',
+          message: texte(c, 'AUTH_REFRESH_TOKEN_REQUIRED'),
         },
         requestId,
       }, 400);
@@ -695,7 +696,7 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_REFRESH_TOKEN',
-          message: 'Token de rafraîchissement invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_REFRESH_TOKEN'),
         },
         requestId,
       }, 401);
@@ -719,7 +720,7 @@ auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du rafraîchissement',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -810,7 +811,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code de vérification invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_CODE'),
         },
         requestId,
       }, 400);
@@ -825,7 +826,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_TOO_MANY_ATTEMPTS',
-          message: 'Trop de tentatives. Veuillez demander un nouveau code.',
+          message: texte(c, 'AUTH_TOO_MANY_ATTEMPTS'),
         },
         requestId,
       }, 400);
@@ -846,7 +847,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code de vérification incorrect',
+          message: texte(c, 'AUTH_INVALID_CODE'),
           attemptsRemaining: verificationMaxAttempts - storedData.attempts,
         },
         requestId,
@@ -860,7 +861,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'AUTH_USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -890,7 +891,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la vérification',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -917,7 +918,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code de vérification invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_CODE'),
         },
         requestId,
       }, 400);
@@ -931,7 +932,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_TOO_MANY_ATTEMPTS',
-          message: 'Trop de tentatives. Veuillez demander un nouveau code.',
+          message: texte(c, 'AUTH_TOO_MANY_ATTEMPTS'),
         },
         requestId,
       }, 400);
@@ -951,7 +952,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code de vérification incorrect',
+          message: texte(c, 'AUTH_INVALID_CODE'),
         },
         requestId,
       }, 400);
@@ -963,7 +964,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
         success: false,
         error: {
           code: 'AUTH_USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'AUTH_USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -983,7 +984,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la vérification',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1140,7 +1141,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
         success: false,
         error: {
           code: 'AUTH_INVALID_RESET_TOKEN',
-          message: 'Lien de réinitialisation invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_RESET_TOKEN'),
         },
         requestId,
       }, 400);
@@ -1155,7 +1156,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
         success: false,
         error: {
           code: 'WEAK_PASSWORD',
-          message: 'Mot de passe non conforme aux exigences de sécurité',
+          message: texte(c, 'WEAK_PASSWORD'),
           details: passwordValidation.errors,
         },
         requestId,
@@ -1177,7 +1178,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
         success: false,
         error: {
           code: 'PASSWORD_RECENTLY_USED',
-          message: 'Ce mot de passe a été utilisé récemment. Choisissez un nouveau mot de passe.',
+          message: texte(c, 'PASSWORD_RECENTLY_USED'),
         },
         requestId,
       }, 400);
@@ -1238,7 +1239,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la réinitialisation',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1259,7 +1260,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1268,7 +1269,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1282,7 +1283,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     if (!user) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -1291,7 +1292,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     if (!passwordResult.valid) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_PASSWORD', message: 'Mot de passe incorrect' },
+        error: { code: 'AUTH_INVALID_PASSWORD', message: texte(c, 'AUTH_INVALID_PASSWORD') },
         requestId,
       }, 401);
     }
@@ -1308,7 +1309,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     if (user.two_factor_enabled) {
       return c.json({
         success: false,
-        error: { code: '2FA_ALREADY_ENABLED', message: '2FA est déjà activé' },
+        error: { code: '2FA_ALREADY_ENABLED', message: texte(c, '2FA_ALREADY_ENABLED') },
         requestId,
       }, 400);
     }
@@ -1346,7 +1347,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
     console.error('2FA setup error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la configuration 2FA' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1367,7 +1368,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1376,7 +1377,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1386,7 +1387,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     if (!setupData) {
       return c.json({
         success: false,
-        error: { code: '2FA_SETUP_EXPIRED', message: 'Session de configuration expirée. Recommencez.' },
+        error: { code: '2FA_SETUP_EXPIRED', message: texte(c, '2FA_SETUP_EXPIRED') },
         requestId,
       }, 400);
     }
@@ -1397,7 +1398,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     if (setup.secret !== body.secret) {
       return c.json({
         success: false,
-        error: { code: '2FA_INVALID_SECRET', message: 'Secret invalide' },
+        error: { code: '2FA_INVALID_SECRET', message: texte(c, '2FA_INVALID_SECRET') },
         requestId,
       }, 400);
     }
@@ -1407,7 +1408,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     if (!isValidCode) {
       return c.json({
         success: false,
-        error: { code: '2FA_INVALID_CODE', message: 'Code incorrect. Vérifiez l\'heure de votre appareil.' },
+        error: { code: '2FA_INVALID_CODE', message: texte(c, '2FA_INVALID_CODE') },
         requestId,
       }, 400);
     }
@@ -1463,7 +1464,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
     console.error('2FA verify error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de l\'activation 2FA' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1483,7 +1484,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1492,7 +1493,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1505,7 +1506,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     if (!user || !user.two_factor_enabled) {
       return c.json({
         success: false,
-        error: { code: '2FA_NOT_ENABLED', message: '2FA n\'est pas activé' },
+        error: { code: '2FA_NOT_ENABLED', message: texte(c, '2FA_NOT_ENABLED') },
         requestId,
       }, 400);
     }
@@ -1515,7 +1516,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     if (!passwordResult.valid) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_PASSWORD', message: 'Mot de passe incorrect' },
+        error: { code: 'AUTH_INVALID_PASSWORD', message: texte(c, 'AUTH_INVALID_PASSWORD') },
         requestId,
       }, 401);
     }
@@ -1534,7 +1535,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     if (!isValidCode) {
       return c.json({
         success: false,
-        error: { code: '2FA_INVALID_CODE', message: 'Code 2FA incorrect' },
+        error: { code: '2FA_INVALID_CODE', message: texte(c, '2FA_INVALID_CODE') },
         requestId,
       }, 400);
     }
@@ -1570,7 +1571,7 @@ auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
     console.error('2FA disable error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la désactivation 2FA' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1587,7 +1588,7 @@ auth.get('/sessions', async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1596,7 +1597,7 @@ auth.get('/sessions', async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1642,7 +1643,7 @@ auth.get('/sessions', async (c) => {
     console.error('Get sessions error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la récupération des sessions' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1662,7 +1663,7 @@ auth.delete('/sessions/:id', async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1671,7 +1672,7 @@ auth.delete('/sessions/:id', async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1701,7 +1702,7 @@ auth.delete('/sessions/:id', async (c) => {
     console.error('Revoke session error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la révocation' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1720,7 +1721,7 @@ auth.delete('/sessions', async (c) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_REQUIRED', message: 'Authentification requise' },
+        error: { code: 'AUTH_REQUIRED', message: texte(c, 'AUTH_REQUIRED') },
         requestId,
       }, 401);
     }
@@ -1729,7 +1730,7 @@ auth.delete('/sessions', async (c) => {
     if (!payload) {
       return c.json({
         success: false,
-        error: { code: 'AUTH_INVALID_TOKEN', message: 'Token invalide' },
+        error: { code: 'AUTH_INVALID_TOKEN', message: texte(c, 'AUTH_INVALID_TOKEN') },
         requestId,
       }, 401);
     }
@@ -1764,7 +1765,7 @@ auth.delete('/sessions', async (c) => {
     console.error('Revoke all sessions error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la révocation' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -1806,7 +1807,7 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Trop de demandes. Veuillez patienter quelques minutes.',
+          message: texte(c, 'RATE_LIMIT_EXCEEDED'),
         },
         requestId,
       }, 429);
@@ -1877,7 +1878,7 @@ auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'envoi du code',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1897,7 +1898,7 @@ auth.post('/2fa/setup-init', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token de configuration requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId,
       }, 400);
@@ -1910,7 +1911,7 @@ auth.post('/2fa/setup-init', async (c) => {
         success: false,
         error: {
           code: 'SETUP_TOKEN_EXPIRED',
-          message: 'Session de configuration expirée. Reconnectez-vous.',
+          message: texte(c, 'SETUP_TOKEN_EXPIRED'),
         },
         requestId,
       }, 400);
@@ -1947,7 +1948,7 @@ auth.post('/2fa/setup-init', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la configuration 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1969,7 +1970,7 @@ auth.post('/2fa/setup-complete', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Token et code requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId,
       }, 400);
@@ -1982,7 +1983,7 @@ auth.post('/2fa/setup-complete', async (c) => {
         success: false,
         error: {
           code: 'SETUP_EXPIRED',
-          message: 'Session de configuration expirée. Recommencez.',
+          message: texte(c, 'SETUP_EXPIRED'),
         },
         requestId,
       }, 400);
@@ -2000,7 +2001,7 @@ auth.post('/2fa/setup-complete', async (c) => {
         success: false,
         error: {
           code: '2FA_INVALID_CODE',
-          message: 'Code incorrect. Vérifiez l\'heure de votre appareil.',
+          message: texte(c, '2FA_INVALID_CODE'),
         },
         requestId,
       }, 400);
@@ -2028,7 +2029,7 @@ auth.post('/2fa/setup-complete', async (c) => {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -2097,7 +2098,7 @@ auth.post('/2fa/setup-complete', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'activation 2FA',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -2183,7 +2184,7 @@ auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema)
           success: false,
           error: {
             code: 'AUTH_RATE_LIMITED',
-            message: 'Trop de demandes. Veuillez réessayer dans quelques minutes.',
+            message: texte(c, 'AUTH_RATE_LIMITED'),
           },
           requestId,
         }, 429);
@@ -2265,7 +2266,7 @@ auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema)
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de l\'envoi du code',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -2294,7 +2295,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_CODE'),
         },
         requestId,
       }, 400);
@@ -2309,7 +2310,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         success: false,
         error: {
           code: 'AUTH_TOO_MANY_ATTEMPTS',
-          message: 'Trop de tentatives. Veuillez demander un nouveau code.',
+          message: texte(c, 'AUTH_TOO_MANY_ATTEMPTS'),
         },
         requestId,
       }, 400);
@@ -2328,7 +2329,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         success: false,
         error: {
           code: 'AUTH_INVALID_CODE',
-          message: 'Code incorrect',
+          message: texte(c, 'AUTH_INVALID_CODE'),
           attemptsRemaining: 5 - storedData.attempts,
         },
         requestId,
@@ -2346,7 +2347,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         success: false,
         error: {
           code: 'AUTH_USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'AUTH_USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -2358,7 +2359,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
         success: false,
         error: {
           code: 'AUTH_ACCOUNT_SUSPENDED',
-          message: 'Compte suspendu',
+          message: texte(c, 'AUTH_ACCOUNT_SUSPENDED'),
         },
         requestId,
       }, 403);
@@ -2371,7 +2372,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
           success: false,
           error: {
             code: 'AUTH_2FA_REQUIRED',
-            message: 'Code 2FA requis',
+            message: texte(c, 'AUTH_2FA_REQUIRED'),
           },
           requestId,
         }, 403);
@@ -2384,7 +2385,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
           success: false,
           error: {
             code: 'AUTH_2FA_INVALID',
-            message: 'Code 2FA invalide',
+            message: texte(c, 'AUTH_2FA_INVALID'),
           },
           requestId,
         }, 400);
@@ -2468,7 +2469,7 @@ auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), 
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la vérification',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);

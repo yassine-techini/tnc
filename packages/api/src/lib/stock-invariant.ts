@@ -18,7 +18,11 @@ export interface VerdictAjustement {
   /** Total apres ajustement — calcule meme en cas de refus, pour le message. */
   newTotal: number;
   code?: 'INVALID_INPUT' | 'STOCK_BELOW_ISSUED';
-  message?: string;
+  /**
+   * PAS DE `message` (ADR 025). Cette regle est appelee hors de toute requete —
+   * elle ne connait donc pas la langue du lecteur. Elle nomme le refus et
+   * fournit de quoi le rendre (`details.tokensIssued`) ; la route s'en charge.
+   */
   status?: 400 | 409;
   details?: { tokensIssued: number; currentAllocated: number; requestedTotal: number };
 }
@@ -41,7 +45,6 @@ export function verifierAjustementStock(
       ok: false,
       newTotal: alloue,
       code: 'INVALID_INPUT',
-      message: 'Montant invalide : un nombre non nul est attendu',
       status: 400,
     };
   }
@@ -55,7 +58,6 @@ export function verifierAjustementStock(
       ok: false,
       newTotal,
       code: 'STOCK_BELOW_ISSUED',
-      message: `Ajustement impossible : ${emis} g sont deja emis, l'allocation ne peut pas descendre en dessous.`,
       status: 409,
       details: { tokensIssued: emis, currentAllocated: alloue, requestedTotal: newTotal },
     };

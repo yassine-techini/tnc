@@ -2,6 +2,7 @@ import { Context, Next } from 'hono';
 import type { AppEnv } from '../types/env';
 import { ConfigService } from '../services/config.service';
 import { logger } from '../lib/logger';
+import { texte } from '../lib/reponse-erreur';
 
 /**
  * Rate limiter using Cloudflare KV with time-bucketed keys.
@@ -109,7 +110,7 @@ export async function rateLimiter(c: Context<AppEnv>, next: Next) {
           success: false,
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
-            message: 'Trop de requêtes. Veuillez réessayer dans une minute.',
+            message: texte(c, 'RATE_LIMIT_EXCEEDED'),
           },
           requestId: crypto.randomUUID(),
         },
@@ -136,7 +137,7 @@ export async function rateLimiter(c: Context<AppEnv>, next: Next) {
           success: false,
           error: {
             code: 'SERVICE_UNAVAILABLE',
-            message: 'Service temporairement indisponible. Veuillez réessayer.',
+            message: texte(c, 'SERVICE_UNAVAILABLE'),
           },
           requestId: crypto.randomUUID(),
         },

@@ -10,8 +10,8 @@
 |---|---|
 | **Ce qui tourne** | Une plateforme complète de tokenisation d'or, **sans blockchain** : le jeton est une écriture comptable en base |
 | **Volumétrie** | 14 modules API · 156 endpoints · 31 services · 38 migrations · 11 travaux planifiés · 4 Durable Objects · 5 applications front |
-| **Tests** | **920** côté API, **1 463** au total, tous exécutés |
-| **Garde-fous** | 5 contrôles statiques bloquants avant chaque suite de tests |
+| **Tests** | **935** côté API, **1 478** au total, tous exécutés |
+| **Garde-fous** | 6 contrôles statiques bloquants avant chaque suite de tests |
 | **Décisions écrites** | 23 ADR |
 | **Audits** | 12 passes, chacune sous un angle différent |
 | **Pays décrits** | 6 — Burkina Faso actif ; Côte d'Ivoire, Mali, Sénégal, Ouganda décrits et désactivés |
@@ -67,8 +67,10 @@ Les plus structurants :
 - la liste protégeant le registre d'audit **ne correspondait à aucune action réellement écrite** ;
 - fermer son compte **échouait pour quiconque avait demandé un devis**.
 
-Cinq garde-fous statiques empêchent ces classes de revenir : cohérence SQL/schéma, propriété des
-ressources, arrondi des grammes, registre des actions d'audit, format des échéances.
+Six garde-fous statiques empêchent ces classes de revenir : cohérence SQL/schéma, propriété des
+ressources, arrondi des grammes, registre des actions d'audit, format des échéances, et — depuis
+l'[ADR 025](adr/025-la-langue-d-une-reponse.md) — absence de tout texte littéral dans une réponse
+d'erreur.
 
 ### 2.4 Ce que le code ne prétend pas être
 
@@ -171,7 +173,7 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 | Réconciliation quotidienne, rapports mensuels | ✅ |
 | Diagnostic de disponibilité | ✅ |
 | Notifications **dans la langue du pays** — 7 courriels, 5 SMS | ✅ |
-| Messages d'erreur de l'API, en français uniquement | ⚙️ |
+| Réponses d'erreur de l'API **dans la langue du client** — 126 codes, deux langues | ✅ |
 
 ---
 
@@ -193,7 +195,7 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 
 | Sujet | Ampleur |
 |---|---|
-| Messages d'erreur de l'API en anglais — 108 codes distincts | Un passage entier ; le mécanisme existe, le catalogue non |
+| Messages de validation des schémas Zod, en français | Surface distincte de celle des erreurs d'API, qui est faite ([ADR 025](adr/025-la-langue-d-une-reponse.md)) |
 | Rapport mensuel de l'État — bornes calculées en heure locale | Hors périmètre ; latent en production (Workers en UTC) |
 | Exécution des parcours mobiles bout-en-bout | Écrits, jamais exécutés |
 | QR du certificat mobile rendu par un tiers | Dépendance externe à lever |

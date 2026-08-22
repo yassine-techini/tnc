@@ -1,6 +1,7 @@
 import { Context } from 'hono';
 import type { AppEnv } from '../types/env';
 import { logger } from '../lib/logger';
+import { texte } from '../lib/reponse-erreur';
 
 /** Redact PII and sensitive data from error messages before logging */
 function redactPii(value: unknown): string {
@@ -128,7 +129,7 @@ export function errorHandler(err: Error, c: Context<AppEnv>) {
       success: false,
       error: {
         code: 'VALIDATION_ERROR',
-        message: err.message,
+        message: texte(c, 'VALIDATION_ERROR'),
         details: isDev ? (err as any).details : undefined,
       },
       requestId,
@@ -141,7 +142,7 @@ export function errorHandler(err: Error, c: Context<AppEnv>) {
       success: false,
       error: {
         code: 'VALIDATION_ERROR',
-        message: 'Données invalides',
+        message: texte(c, 'VALIDATION_ERROR'),
         details: isDev ? (err as any).errors : undefined,
       },
       requestId,
@@ -153,7 +154,7 @@ export function errorHandler(err: Error, c: Context<AppEnv>) {
     success: false,
     error: {
       code: 'INTERNAL_ERROR',
-      message: isDev ? err.message : 'Une erreur interne est survenue',
+      message: isDev ? err.message : texte(c, 'INTERNAL_ERROR'),
     },
     requestId,
   }, 500);

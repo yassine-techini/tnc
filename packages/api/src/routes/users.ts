@@ -25,6 +25,7 @@ import { EncryptionService } from '../services/encryption.service';
 import { ConfigService } from '../services/config.service';
 import { sniffImageType, extensionFor } from '../lib/image-upload';
 import { PushTokenService } from '../services/push-token.service';
+import { texte } from '../lib/reponse-erreur';
 
 const users = new Hono<AppEnv>();
 
@@ -46,7 +47,7 @@ users.get('/me', async (c) => {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'USER_NOT_FOUND'),
         },
         requestId: crypto.randomUUID(),
       }, 404);
@@ -87,7 +88,7 @@ users.get('/me', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur interne',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -149,7 +150,7 @@ users.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise à jour',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -223,7 +224,7 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
         success: false,
         error: {
           code: 'KYC_DOCUMENT_TYPE_UNSUPPORTED',
-          message: `Ce type de document n'est pas accepté pour ${pays.name}. Documents acceptés : ${pays.idDocumentTypes.join(', ')}.`,
+          message: texte(c, 'KYC_DOCUMENT_TYPE_UNSUPPORTED', { pays: pays.name, acceptes: pays.idDocumentTypes }),
           details: { accepted: pays.idDocumentTypes, country: pays.code },
         },
         requestId: crypto.randomUUID(),
@@ -242,7 +243,7 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
           success: false,
           error: {
             code: 'KYC_ALREADY_VERIFIED',
-            message: 'KYC déjà vérifié',
+            message: texte(c, 'KYC_ALREADY_VERIFIED'),
           },
           requestId: crypto.randomUUID(),
         }, 400);
@@ -251,7 +252,7 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
         success: false,
         error: {
           code: 'KYC_PENDING',
-          message: 'Une demande KYC est déjà en cours',
+          message: texte(c, 'KYC_PENDING'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -268,7 +269,7 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
         success: false,
         error: {
           code: 'DOCUMENTS_REQUIRED',
-          message: 'Veuillez d\'abord télécharger vos documents',
+          message: texte(c, 'DOCUMENTS_REQUIRED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -341,7 +342,7 @@ users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la soumission KYC',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -385,7 +386,7 @@ users.get('/me/kyc/status', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération du statut KYC',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -407,7 +408,7 @@ users.post('/me/kyc/resubmit', async (c) => {
     if (!user) {
       return c.json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Utilisateur non trouvé' },
+        error: { code: 'USER_NOT_FOUND', message: texte(c, 'USER_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -417,14 +418,14 @@ users.post('/me/kyc/resubmit', async (c) => {
       if (user.kyc_status === 'APPROVED') {
         return c.json({
           success: false,
-          error: { code: 'KYC_ALREADY_APPROVED', message: 'Votre KYC est déjà approuvé' },
+          error: { code: 'KYC_ALREADY_APPROVED', message: texte(c, 'KYC_ALREADY_APPROVED') },
           requestId,
         }, 400);
       }
       if (['SUBMITTED', 'PENDING'].includes(user.kyc_status)) {
         return c.json({
           success: false,
-          error: { code: 'KYC_ALREADY_PENDING', message: 'Une demande KYC est déjà en cours' },
+          error: { code: 'KYC_ALREADY_PENDING', message: texte(c, 'KYC_ALREADY_PENDING') },
           requestId,
         }, 400);
       }
@@ -479,7 +480,7 @@ users.post('/me/kyc/resubmit', async (c) => {
     console.error('KYC resubmit error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors de la réinitialisation KYC' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -521,7 +522,7 @@ users.get('/me/kyc/history', async (c) => {
     console.error('KYC history error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur lors du chargement de l\'historique' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -541,7 +542,7 @@ users.post('/me/kyc/documents', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Type de document et fichier requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -552,7 +553,7 @@ users.post('/me/kyc/documents', async (c) => {
         success: false,
         error: {
           code: 'INVALID_DOCUMENT_TYPE',
-          message: 'Type de document invalide (front, back, selfie)',
+          message: texte(c, 'INVALID_DOCUMENT_TYPE'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -567,7 +568,7 @@ users.post('/me/kyc/documents', async (c) => {
         success: false,
         error: {
           code: 'FILE_TOO_LARGE',
-          message: `Fichier trop volumineux (max ${maxMb} Mo)`,
+          message: texte(c, 'FILE_TOO_LARGE', { maxMo: maxMb }),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -581,7 +582,7 @@ users.post('/me/kyc/documents', async (c) => {
         success: false,
         error: {
           code: 'INVALID_FILE_TYPE',
-          message: 'Format de fichier non supporté (JPEG, PNG, WebP uniquement)',
+          message: texte(c, 'INVALID_FILE_TYPE'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -595,7 +596,7 @@ users.post('/me/kyc/documents', async (c) => {
         success: false,
         error: {
           code: 'ENCRYPTION_UNAVAILABLE',
-          message: 'Service temporairement indisponible. Veuillez réessayer plus tard.',
+          message: texte(c, 'ENCRYPTION_UNAVAILABLE'),
         },
         requestId: crypto.randomUUID(),
       }, 503);
@@ -675,7 +676,7 @@ users.post('/me/kyc/documents', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du téléchargement',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -744,7 +745,7 @@ users.get('/me/notifications', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération des notifications',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -769,7 +770,7 @@ users.patch('/me/notifications/:id/read', async (c) => {
         success: false,
         error: {
           code: 'NOTIFICATION_NOT_FOUND',
-          message: 'Notification non trouvée',
+          message: texte(c, 'NOTIFICATION_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -786,7 +787,7 @@ users.patch('/me/notifications/:id/read', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise à jour',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -814,7 +815,7 @@ users.post('/me/notifications/read-all', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise à jour',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -887,7 +888,7 @@ users.get('/me/preferences/notifications', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la recuperation des preferences',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -989,7 +990,7 @@ users.patch('/me/preferences/notifications', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise a jour des preferences',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1033,7 +1034,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -1055,7 +1056,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         success: false,
         error: {
           code: 'INVALID_CURRENT_PASSWORD',
-          message: 'Mot de passe actuel incorrect',
+          message: texte(c, 'INVALID_CURRENT_PASSWORD'),
         },
         requestId,
       }, 401);
@@ -1069,7 +1070,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         success: false,
         error: {
           code: 'WEAK_PASSWORD',
-          message: 'Le nouveau mot de passe ne respecte pas les exigences de sécurité',
+          message: texte(c, 'WEAK_PASSWORD'),
           details: passwordValidation.errors,
         },
         requestId,
@@ -1091,7 +1092,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
         success: false,
         error: {
           code: 'PASSWORD_RECENTLY_USED',
-          message: 'Ce mot de passe a été utilisé récemment. Choisissez un nouveau mot de passe.',
+          message: texte(c, 'PASSWORD_RECENTLY_USED'),
         },
         requestId,
       }, 400);
@@ -1158,7 +1159,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema), async (c) =
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors du changement de mot de passe',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1244,7 +1245,7 @@ users.get('/me/price-alerts', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la récupération des alertes',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1271,7 +1272,7 @@ users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async
         success: false,
         error: {
           code: 'ALERT_LIMIT_EXCEEDED',
-          message: `Vous avez atteint la limite de ${maxAlerts} alertes actives`,
+          message: texte(c, 'ALERT_LIMIT_EXCEEDED', { max: maxAlerts }),
         },
         requestId,
       }, 400);
@@ -1294,7 +1295,7 @@ users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async
         success: false,
         error: {
           code: 'DUPLICATE_ALERT',
-          message: 'Une alerte similaire existe déjà',
+          message: texte(c, 'DUPLICATE_ALERT'),
         },
         requestId,
       }, 400);
@@ -1337,7 +1338,7 @@ users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la création de l\'alerte',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1363,7 +1364,7 @@ users.patch('/me/price-alerts/:id', zValidator('json', updatePriceAlertSchema), 
         success: false,
         error: {
           code: 'ALERT_NOT_FOUND',
-          message: 'Alerte non trouvée',
+          message: texte(c, 'ALERT_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -1398,7 +1399,7 @@ users.patch('/me/price-alerts/:id', zValidator('json', updatePriceAlertSchema), 
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Aucune donnée à mettre à jour',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId,
       }, 400);
@@ -1426,7 +1427,7 @@ users.patch('/me/price-alerts/:id', zValidator('json', updatePriceAlertSchema), 
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la mise à jour de l\'alerte',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1451,7 +1452,7 @@ users.delete('/me/price-alerts/:id', async (c) => {
         success: false,
         error: {
           code: 'ALERT_NOT_FOUND',
-          message: 'Alerte non trouvée',
+          message: texte(c, 'ALERT_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -1476,7 +1477,7 @@ users.delete('/me/price-alerts/:id', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la suppression de l\'alerte',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1501,7 +1502,7 @@ users.delete('/me', async (c) => {
         success: false,
         error: {
           code: 'PASSWORD_REQUIRED',
-          message: 'Mot de passe requis pour supprimer le compte',
+          message: texte(c, 'PASSWORD_REQUIRED'),
         },
         requestId,
       }, 400);
@@ -1518,7 +1519,7 @@ users.delete('/me', async (c) => {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'Utilisateur non trouvé',
+          message: texte(c, 'USER_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -1533,7 +1534,7 @@ users.delete('/me', async (c) => {
         success: false,
         error: {
           code: 'INVALID_PASSWORD',
-          message: 'Mot de passe incorrect',
+          message: texte(c, 'INVALID_PASSWORD'),
         },
         requestId,
       }, 401);
@@ -1601,7 +1602,7 @@ users.delete('/me', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur lors de la suppression du compte',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId,
     }, 500);
@@ -1628,7 +1629,7 @@ users.post('/me/devices', async (c) => {
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
       requestId,
     }, 400);
   }
@@ -1652,7 +1653,7 @@ users.delete('/me/devices', async (c) => {
   if (!body?.token) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: 'Token requis' },
+      error: { code: 'INVALID_INPUT', message: texte(c, 'INVALID_INPUT') },
       requestId,
     }, 400);
   }

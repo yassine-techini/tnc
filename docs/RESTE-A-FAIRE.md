@@ -1720,14 +1720,34 @@ L'accroche ne nomme plus aucun pays : le courriel de bienvenue vantait « la pla
 souveraine de tokenisation d'or **du Burkina Faso** », adressé à des raffineurs qui n'y sont
 pas.
 
-**Reste à faire** : les **338 messages d'erreur en ligne** de l'API restent en français. Le
-contrat avec les clients est le **code** (`error.code`), pas le texte, et le web traduit déjà
-côté client à partir du code — c'est la bonne place. Ce qui manque est un catalogue bilingue
-partagé par code, remplaçant la copie privée de `apps/web/src/hooks/useApiError.ts` : l'API
-émet **108 codes distincts**, dont 41 figurent au catalogue partagé actuel.
+**Corrigé** — [ADR 025](adr/025-la-langue-d-une-reponse.md).
 
-Le livrer à moitié donnerait un mélange de langues, pire qu'un français cohérent — d'où le
-choix de le laisser entier plutôt que de l'entamer.
+**Les réponses de l'API sont bilingues.** 359 sites d'erreur, 126 codes, chacun en français et
+en anglais dans `lib/messages-erreur.ts`. La langue vient d'`Accept-Language` — pas de la base :
+appeler `langueDeLUtilisateur` aurait mis une lecture sur le chemin d'erreur, là où la base est
+parfois la cause de l'erreur.
+
+Le texte a **quitté le site d'appel**. Garder le français sur place et n'ajouter qu'une couche
+anglaise aurait laissé deux sources de vérité pour le même message. Un sixième garde-fou,
+`check:messages`, refuse désormais toute réponse d'erreur portant une phrase littérale, et
+vérifie que le code annoncé et le code du message concordent.
+
+Trois choses trouvées en le faisant :
+
+- **L'API n'était pas « en français »**, elle était en français *et* en anglais :
+  `Server misconfigured`, `Unable to fetch gold price`, `Admin access required` partaient déjà
+  en anglais. Le mélange existait, il n'était pas décidé.
+- **`INTERNAL_ERROR` portait 90 sites et une cinquantaine de phrases** nommant l'étape interne
+  en échec — « Erreur lors du chargement des logs d'audit ». Elles renseignaient un appelant
+  sur la structure de la plateforme sans lui servir à rien. Un seul message désormais ; le
+  détail part dans les journaux.
+- **Quinze sites ont traversé trois passes sans être vus.** Les codes `2FA_*` des portails
+  privilégiés commencent par un **chiffre**, et l'inventaire, le codemod et la première version
+  du garde-fou cherchaient tous `'[A-Z]…'`. Les outils comptent désormais les chiffres.
+
+**Reste ouvert** : les messages de validation **rédigés dans les schémas Zod** sont encore en
+français. Ils sont conservés à l'affichage, avec le catalogue en repli — c'est une surface
+distincte (`packages/shared/validators`), pas un reste de celle-ci.
 
 ---
 

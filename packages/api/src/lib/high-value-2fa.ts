@@ -47,12 +47,23 @@ export interface HighValueGuardInput {
  * `strictNullChecks: false`, ou TypeScript ne retrecit pas les unions sur `ok`.
  * Une union serait ici une elegance qui ne compile pas.
  */
+/** Les seuls refus que cette garde sait produire. */
+export type CodeRefus2FA =
+  | 'TRADING_INVALID_AMOUNT'
+  | 'AUTH_USER_NOT_FOUND'
+  | 'AUTH_2FA_SETUP_REQUIRED'
+  | 'AUTH_2FA_REQUIRED'
+  | 'AUTH_2FA_INVALID';
+
 export interface HighValueGuardResult {
   ok: boolean;
   /** Vrai quand un code a effectivement ete demande et verifie. */
   challenged: boolean;
-  code?: string;
-  message?: string;
+  /**
+   * PAS DE `message` ICI (ADR 025). Cette garde n'a pas de contexte de requete
+   * sous la main, donc pas de langue : elle nomme le refus, la route le rend.
+   */
+  code?: CodeRefus2FA;
   status?: 403;
   /** Toujours renseigne : les clients affichent le seuil dans leur message. */
   thresholdXof: number;
@@ -105,7 +116,6 @@ export async function requireTwoFactorIfHighValue(
       ok: false,
       challenged: false,
       code: 'TRADING_INVALID_AMOUNT',
-      message: 'Montant de transaction invalide.',
       status: 403,
       thresholdXof: seuil,
     };
@@ -126,7 +136,6 @@ export async function requireTwoFactorIfHighValue(
       ok: false,
       challenged: false,
       code: 'AUTH_USER_NOT_FOUND',
-      message: 'Utilisateur introuvable.',
       status: 403,
       thresholdXof: seuil,
     };
@@ -147,9 +156,6 @@ export async function requireTwoFactorIfHighValue(
       ok: false,
       challenged: false,
       code: 'AUTH_2FA_SETUP_REQUIRED',
-      message:
-        "Cette operation depasse le seuil de verification renforcee. " +
-        "Activez la double authentification dans vos parametres de securite pour la realiser.",
       status: 403,
       thresholdXof: seuil,
     };
@@ -169,7 +175,6 @@ export async function requireTwoFactorIfHighValue(
       ok: false,
       challenged: false,
       code: 'AUTH_2FA_REQUIRED',
-      message: 'Code de double authentification requis pour cette operation.',
       status: 403,
       thresholdXof: seuil,
     };
@@ -195,7 +200,6 @@ export async function requireTwoFactorIfHighValue(
       // Un code a bien ete presente puis rejete : c'est different d'un code absent.
       challenged: true,
       code: 'AUTH_2FA_INVALID',
-      message: 'Code de double authentification invalide.',
       status: 403,
       thresholdXof: seuil,
     };

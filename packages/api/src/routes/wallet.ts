@@ -24,6 +24,7 @@ import { PaymentService } from '../services/payment.service';
 import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
 import { CountryConfigService } from '../services/country-config.service';
+import { texte } from '../lib/reponse-erreur';
 
 const wallet = new Hono<AppEnv>();
 
@@ -150,7 +151,7 @@ wallet.get('/transactions/:id', async (c) => {
       success: false,
       error: {
         code: 'TRANSACTION_NOT_FOUND',
-        message: 'Transaction non trouvée',
+        message: texte(c, 'TRANSACTION_NOT_FOUND'),
       },
       requestId,
     }, 404);
@@ -162,7 +163,7 @@ wallet.get('/transactions/:id', async (c) => {
       success: false,
       error: {
         code: 'TRANSACTION_ACCESS_DENIED',
-        message: 'Accès refusé',
+        message: texte(c, 'TRANSACTION_ACCESS_DENIED'),
       },
       requestId,
     }, 403);
@@ -217,7 +218,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
       success: false,
       error: {
         code: 'AMOUNT_TOO_LOW',
-        message: `Montant minimum de dépôt: ${minDeposit} XOF`,
+        message: texte(c, 'AMOUNT_TOO_LOW', { minimum: minDeposit, devise: 'XOF' }),
       },
       requestId,
     }, 400);
@@ -229,7 +230,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
       success: false,
       error: {
         code: 'PHONE_REQUIRED',
-        message: 'Numéro de téléphone requis pour le paiement mobile',
+        message: texte(c, 'PHONE_REQUIRED'),
       },
       requestId,
     }, 400);
@@ -299,7 +300,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
         success: false,
         error: {
           code: 'PAYMENT_INIT_FAILED',
-          message: paymentResult.error || 'Impossible d\'initialiser le paiement',
+          message: texte(c, 'PAYMENT_INIT_FAILED'),
         },
         requestId,
       }, 400);
@@ -338,7 +339,7 @@ wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
       success: false,
       error: {
         code: 'PAYMENT_ERROR',
-        message: 'Une erreur est survenue lors de l\'initialisation du paiement',
+        message: texte(c, 'PAYMENT_ERROR'),
       },
       requestId,
     }, 500);
@@ -386,7 +387,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
       success: false,
       error: {
         code: garde.code,
-        message: garde.message,
+        message: texte(c, garde.code),
         details: { thresholdXof: garde.thresholdXof },
       },
       requestId,
@@ -426,7 +427,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Niveau KYC insuffisant pour effectuer un retrait',
+        message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'retrait' }),
       },
       requestId,
     }, 403);
@@ -449,7 +450,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
   if (!lockResponse.ok) {
     return c.json({
       success: false,
-      error: { code: 'TRANSACTION_LOCKED', message: 'Une opération est déjà en cours' },
+      error: { code: 'TRANSACTION_LOCKED', message: texte(c, 'TRANSACTION_LOCKED') },
       requestId,
     }, 409);
   }
@@ -480,7 +481,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
         success: false,
         error: {
           code: 'WITHDRAWAL_LIMIT_EXCEEDED',
-          message: `Limite de retrait journalière dépassée. Max: ${dailyLimit.toLocaleString('fr-FR')} XOF/jour`,
+          message: texte(c, 'WITHDRAWAL_LIMIT_EXCEEDED', { plafond: dailyLimit, devise: 'XOF' }),
         },
         requestId,
       }, 400);
@@ -490,7 +491,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
     if (!walletData) {
       return c.json({
         success: false,
-        error: { code: 'WALLET_NOT_FOUND', message: 'Portefeuille non trouvé' },
+        error: { code: 'WALLET_NOT_FOUND', message: texte(c, 'WALLET_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -508,7 +509,7 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
     if (pendingWithdrawal) {
       return c.json({
         success: false,
-        error: { code: 'WITHDRAWAL_PENDING', message: 'Un retrait est déjà en cours de traitement' },
+        error: { code: 'WITHDRAWAL_PENDING', message: texte(c, 'WITHDRAWAL_PENDING') },
         requestId,
       }, 400);
     }
@@ -608,7 +609,7 @@ wallet.get('/certificate', async (c) => {
       success: false,
       error: {
         code: 'NO_TOKENS',
-        message: 'Vous n\'avez pas de tokens à certifier',
+        message: texte(c, 'NO_TOKENS'),
       },
       requestId,
     }, 400);
@@ -677,7 +678,7 @@ wallet.get('/certificate/:id', async (c) => {
       success: false,
       error: {
         code: 'CERTIFICATE_NOT_FOUND',
-        message: 'Certificat non trouvé ou expiré',
+        message: texte(c, 'CERTIFICATE_NOT_FOUND'),
       },
       requestId,
     }, 404);
@@ -688,7 +689,7 @@ wallet.get('/certificate/:id', async (c) => {
       success: false,
       error: {
         code: 'CERTIFICATE_ACCESS_DENIED',
-        message: 'Accès refusé',
+        message: texte(c, 'CERTIFICATE_ACCESS_DENIED'),
       },
       requestId,
     }, 403);
@@ -700,7 +701,7 @@ wallet.get('/certificate/:id', async (c) => {
       success: false,
       error: {
         code: 'CERTIFICATE_NOT_FOUND',
-        message: 'Certificat non trouvé ou expiré',
+        message: texte(c, 'CERTIFICATE_NOT_FOUND'),
       },
       requestId,
     }, 404);
@@ -763,7 +764,7 @@ wallet.get('/deposits/pending', async (c) => {
     console.error('Get pending deposits error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur interne' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -790,7 +791,7 @@ wallet.get('/deposit/status/:id', async (c) => {
     if (!transaction) {
       return c.json({
         success: false,
-        error: { code: 'DEPOSIT_NOT_FOUND', message: 'Dépôt non trouvé' },
+        error: { code: 'DEPOSIT_NOT_FOUND', message: texte(c, 'DEPOSIT_NOT_FOUND') },
         requestId,
       }, 404);
     }
@@ -854,7 +855,7 @@ wallet.get('/deposit/status/:id', async (c) => {
     console.error('Get deposit status error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur interne' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -910,7 +911,7 @@ wallet.post('/deposit/:id/cancel', async (c) => {
         success: false,
         error: {
           code: 'DEPOSIT_NOT_FOUND',
-          message: 'Dépôt non trouvé ou ne peut pas être annulé',
+          message: texte(c, 'DEPOSIT_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -922,7 +923,7 @@ wallet.post('/deposit/:id/cancel', async (c) => {
         success: false,
         error: {
           code: 'CANNOT_CANCEL',
-          message: 'Ce dépôt est déjà en cours de traitement et ne peut pas être annulé',
+          message: texte(c, 'CANNOT_CANCEL'),
         },
         requestId,
       }, 400);
@@ -953,7 +954,7 @@ wallet.post('/deposit/:id/cancel', async (c) => {
     console.error('Cancel deposit error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur interne' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }

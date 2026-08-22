@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import type { Env, AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
+import { texte } from '../lib/reponse-erreur';
 
 const realtime = new Hono<AppEnv>();
 
@@ -31,7 +32,7 @@ realtime.get('/prices/ws', async (c) => {
       success: false,
       error: {
         code: 'WEBSOCKET_REQUIRED',
-        message: 'This endpoint requires a WebSocket connection',
+        message: texte(c, 'WEBSOCKET_REQUIRED'),
       },
     }, 400);
   }
@@ -124,7 +125,7 @@ realtime.post('/alerts', authMiddleware, async (c) => {
       success: false,
       error: {
         code: 'INVALID_REQUEST',
-        message: 'targetPrice and direction are required',
+        message: texte(c, 'INVALID_REQUEST'),
       },
       requestId,
     }, 400);
@@ -135,7 +136,7 @@ realtime.post('/alerts', authMiddleware, async (c) => {
       success: false,
       error: {
         code: 'INVALID_DIRECTION',
-        message: 'direction must be "above" or "below"',
+        message: texte(c, 'INVALID_DIRECTION'),
       },
       requestId,
     }, 400);
@@ -221,7 +222,7 @@ realtime.post('/prices/auto-refresh/start', async (c) => {
     if (authHeader !== c.env.WEBHOOK_SECRET) {
       return c.json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Admin access required' },
+        error: { code: 'UNAUTHORIZED', message: texte(c, 'UNAUTHORIZED') },
         requestId,
       }, 401);
     }
@@ -252,7 +253,7 @@ realtime.post('/prices/auto-refresh/stop', async (c) => {
     if (authHeader !== c.env.WEBHOOK_SECRET) {
       return c.json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Admin access required' },
+        error: { code: 'UNAUTHORIZED', message: texte(c, 'UNAUTHORIZED') },
         requestId,
       }, 401);
     }
@@ -285,7 +286,7 @@ realtime.post('/prices/push', async (c) => {
     if (authHeader !== c.env.WEBHOOK_SECRET) {
       return c.json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Invalid refresh secret' },
+        error: { code: 'UNAUTHORIZED', message: texte(c, 'UNAUTHORIZED') },
         requestId,
       }, 401);
     }

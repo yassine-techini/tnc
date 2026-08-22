@@ -14,6 +14,7 @@ import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types/env';
 import { ConfigService } from '../services/config.service';
 import { isAllowed } from '../lib/ip-allowlist';
+import { texte } from '../lib/reponse-erreur';
 
 export function portalAllowlist(configKey: 'admin_ip_allowlist' | 'state_ip_allowlist') {
   return async function middleware(c: Context<AppEnv>, next: Next) {
@@ -33,7 +34,7 @@ export function portalAllowlist(configKey: 'admin_ip_allowlist' | 'state_ip_allo
         success: false,
         error: {
           code: 'IP_NOT_ALLOWED',
-          message: 'Accès refusé depuis ce réseau',
+          message: texte(c, 'IP_NOT_ALLOWED'),
         },
         requestId: crypto.randomUUID(),
       }, 403);

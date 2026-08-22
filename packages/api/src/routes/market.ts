@@ -20,6 +20,7 @@ import { ConfigService } from '../services/config.service';
 import { chiffresReserve } from '../lib/reserve';
 import { requireTwoFactorIfHighValue } from '../lib/high-value-2fa';
 import { KycService } from '../services/kyc.service';
+import { texte } from '../lib/reponse-erreur';
 
 const market = new Hono<AppEnv>();
 
@@ -35,7 +36,7 @@ market.get('/price', async (c) => {
       success: false,
       error: {
         code: 'MARKET_PRICE_UNAVAILABLE',
-        message: 'Prix du marché temporairement indisponible',
+        message: texte(c, 'MARKET_PRICE_UNAVAILABLE'),
       },
       requestId,
     }, 503);
@@ -187,7 +188,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Niveau KYC insuffisant pour acheter. Veuillez compléter votre vérification.',
+        message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'achat' }),
       },
       requestId,
     }, 403);
@@ -198,7 +199,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Niveau KYC insuffisant pour vendre. Veuillez compléter votre vérification.',
+        message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'vente' }),
       },
       requestId,
     }, 403);
@@ -212,7 +213,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
       success: false,
       error: {
         code: 'MARKET_PRICE_UNAVAILABLE',
-        message: 'Prix du marché temporairement indisponible',
+        message: texte(c, 'MARKET_PRICE_UNAVAILABLE'),
       },
       requestId,
     }, 503);
@@ -233,7 +234,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
         success: false,
         error: {
           code: 'TRADING_AMOUNT_TOO_SMALL',
-          message: `Montant trop faible : il faut au moins ${plancher} XOF pour ${MIN_GRAMS} g au cours actuel.`,
+          message: texte(c, 'TRADING_AMOUNT_TOO_SMALL', { grammesMinimum: MIN_GRAMS, plancher: { montant: plancher, devise: 'XOF' } }),
           details: { minimumXof: plancher, minimumGrams: MIN_GRAMS, pricePerGram },
         },
         requestId,
@@ -251,7 +252,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
       success: false,
       error: {
         code: 'TRADING_AMOUNT_TOO_SMALL',
-        message: `Quantité nulle après arrondi au milligramme. Minimum : ${MIN_GRAMS} g.`,
+        message: texte(c, 'TRADING_AMOUNT_TOO_SMALL', { grammesMinimum: MIN_GRAMS }),
         details: { minimumGrams: MIN_GRAMS },
       },
       requestId,
@@ -266,7 +267,7 @@ market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c)
         success: false,
         error: {
           code: 'TRADING_INSUFFICIENT_STOCK',
-          message: 'Stock insuffisant pour cette transaction',
+          message: texte(c, 'TRADING_INSUFFICIENT_STOCK'),
         },
         requestId,
       }, 400);
@@ -351,7 +352,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
         success: false,
         error: {
           code: garde.code,
-          message: garde.message,
+          message: texte(c, garde.code),
           details: { thresholdXof: garde.thresholdXof },
         },
         requestId,
@@ -366,7 +367,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       success: false,
       error: {
         code: 'TRADING_PRICE_EXPIRED',
-        message: 'Devis expiré ou invalide. Veuillez demander un nouveau devis.',
+        message: texte(c, 'TRADING_PRICE_EXPIRED'),
       },
       requestId,
     }, 400);
@@ -377,7 +378,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       success: false,
       error: {
         code: 'TRADING_INVALID_QUOTE_TYPE',
-        message: 'Ce devis n\'est pas pour un achat',
+        message: texte(c, 'TRADING_INVALID_QUOTE_TYPE', { attendu: 'achat' }),
       },
       requestId,
     }, 400);
@@ -402,7 +403,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
       success: false,
       error: {
         code: 'TRANSACTION_LOCKED',
-        message: lockError.message || 'Une transaction est déjà en cours',
+        message: texte(c, 'TRANSACTION_LOCKED'),
       },
       requestId,
     }, 409);
@@ -437,7 +438,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
         success: false,
         error: {
           code: 'TRADING_LIMIT_EXCEEDED',
-          message: `Limite journalière dépassée. Max: ${limits.dailyBuy}g/jour`,
+          message: texte(c, 'TRADING_LIMIT_EXCEEDED', { limiteG: limits.dailyBuy, periode: 'jour' }),
         },
         requestId,
       }, 400);
@@ -448,7 +449,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
         success: false,
         error: {
           code: 'TRADING_LIMIT_EXCEEDED',
-          message: `Limite mensuelle dépassée. Max: ${limits.monthlyBuy}g/mois`,
+          message: texte(c, 'TRADING_LIMIT_EXCEEDED', { limiteG: limits.monthlyBuy, periode: 'mois' }),
         },
         requestId,
       }, 400);
@@ -481,9 +482,9 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
     if (!result.ok) {
       const reason = result.reason; // capture before await (await resets narrowing)
       const errorMap = {
-        INSUFFICIENT_STOCK: { status: 400, code: 'TRADING_INSUFFICIENT_STOCK', message: 'Stock insuffisant' },
-        INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: 'Solde insuffisant. Veuillez recharger votre compte.' },
-        CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: 'Transaction non aboutie, veuillez réessayer.' },
+        INSUFFICIENT_STOCK: { status: 400, code: 'TRADING_INSUFFICIENT_STOCK', message: texte(c, 'TRADING_INSUFFICIENT_STOCK') },
+        INSUFFICIENT_BALANCE: { status: 400, code: 'TRADING_INSUFFICIENT_BALANCE', message: texte(c, 'TRADING_INSUFFICIENT_BALANCE') },
+        CONFLICT: { status: 409, code: 'TRADING_CONFLICT', message: texte(c, 'TRADING_CONFLICT') },
       } as const;
       // No transaction happened on a transient conflict — give the quote back so
       // the user can retry without requesting a new one.
@@ -550,7 +551,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Niveau KYC insuffisant pour vendre',
+        message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'vente' }),
       },
       requestId,
     }, 403);
@@ -580,7 +581,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
         success: false,
         error: {
           code: garde.code,
-          message: garde.message,
+          message: texte(c, garde.code),
           details: { thresholdXof: garde.thresholdXof },
         },
         requestId,
@@ -595,7 +596,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       success: false,
       error: {
         code: 'TRADING_PRICE_EXPIRED',
-        message: 'Devis expiré ou invalide',
+        message: texte(c, 'TRADING_PRICE_EXPIRED'),
       },
       requestId,
     }, 400);
@@ -606,7 +607,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       success: false,
       error: {
         code: 'TRADING_INVALID_QUOTE_TYPE',
-        message: 'Ce devis n\'est pas pour une vente',
+        message: texte(c, 'TRADING_INVALID_QUOTE_TYPE', { attendu: 'vente' }),
       },
       requestId,
     }, 400);
@@ -631,7 +632,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
       success: false,
       error: {
         code: 'TRANSACTION_LOCKED',
-        message: lockError.message || 'Une transaction est déjà en cours',
+        message: texte(c, 'TRANSACTION_LOCKED'),
       },
       requestId,
     }, 409);
@@ -662,7 +663,7 @@ market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c
         success: false,
         error: {
           code: 'WALLET_NOT_FOUND',
-          message: 'Portefeuille non trouvé',
+          message: texte(c, 'WALLET_NOT_FOUND'),
         },
         requestId,
       }, 404);
@@ -736,7 +737,7 @@ market.post('/price/refresh', async (c) => {
   if (c.env.ENVIRONMENT !== 'development' && authHeader !== c.env.WEBHOOK_SECRET) {
     return c.json({
       success: false,
-      error: { code: 'UNAUTHORIZED', message: 'Invalid refresh secret' },
+      error: { code: 'UNAUTHORIZED', message: texte(c, 'UNAUTHORIZED') },
       requestId,
     }, 401);
   }
@@ -757,7 +758,7 @@ market.post('/price/refresh', async (c) => {
     if (!priceData) {
       return c.json({
         success: false,
-        error: { code: 'PRICE_FETCH_FAILED', message: 'Unable to fetch gold price' },
+        error: { code: 'PRICE_FETCH_FAILED', message: texte(c, 'PRICE_FETCH_FAILED') },
         requestId,
       }, 503);
     }
@@ -808,7 +809,7 @@ market.post('/price/refresh', async (c) => {
     console.error('Price refresh error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Failed to refresh price' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types/env';
 import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
+import { texte } from '../lib/reponse-erreur';
 
 const setup = new Hono<AppEnv>();
 
@@ -34,7 +35,7 @@ function generatePassword(length = 24): string {
 function unauthorized(c: any) {
   return c.json({
     success: false,
-    error: { code: 'UNAUTHORIZED', message: 'Accès refusé' },
+    error: { code: 'UNAUTHORIZED', message: texte(c, 'UNAUTHORIZED') },
     requestId: crypto.randomUUID(),
   }, 403);
 }
@@ -51,7 +52,7 @@ setup.use('*', async (c, next) => {
   if (!configured || configured.length < 16) {
     return c.json({
       success: false,
-      error: { code: 'SETUP_DISABLED', message: 'Setup non disponible' },
+      error: { code: 'SETUP_DISABLED', message: texte(c, 'SETUP_DISABLED') },
       requestId: crypto.randomUUID(),
     }, 404);
   }
@@ -75,7 +76,7 @@ setup.post('/init', async (c) => {
         success: false,
         error: {
           code: 'ALREADY_INITIALIZED',
-          message: 'Les administrateurs sont déjà initialisés',
+          message: texte(c, 'ALREADY_INITIALIZED'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -162,7 +163,7 @@ setup.post('/init', async (c) => {
       success: false,
       error: {
         code: 'SETUP_FAILED',
-        message: 'Erreur lors de l\'initialisation',
+        message: texte(c, 'SETUP_FAILED'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -174,7 +175,7 @@ setup.post('/seed-demo', async (c) => {
   if (c.env.ENVIRONMENT === 'production') {
     return c.json({
       success: false,
-      error: { code: 'FORBIDDEN_IN_PRODUCTION', message: 'Seeding interdit en production' },
+      error: { code: 'FORBIDDEN_IN_PRODUCTION', message: texte(c, 'FORBIDDEN_IN_PRODUCTION') },
       requestId: crypto.randomUUID(),
     }, 403);
   }
@@ -282,7 +283,7 @@ setup.post('/seed-demo', async (c) => {
       success: false,
       error: {
         code: 'SEED_FAILED',
-        message: 'Erreur lors du seeding',
+        message: texte(c, 'SEED_FAILED'),
       },
       requestId: crypto.randomUUID(),
     }, 500);
@@ -300,7 +301,7 @@ setup.post('/reset-admin-password', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: 'Email et nouveau mot de passe (≥12 caractères) requis',
+          message: texte(c, 'INVALID_INPUT'),
         },
         requestId: crypto.randomUUID(),
       }, 400);
@@ -334,7 +335,7 @@ setup.post('/reset-admin-password', async (c) => {
         success: false,
         error: {
           code: 'ADMIN_NOT_FOUND',
-          message: 'Administrateur non trouvé',
+          message: texte(c, 'ADMIN_NOT_FOUND'),
         },
         requestId: crypto.randomUUID(),
       }, 404);
@@ -351,7 +352,7 @@ setup.post('/reset-admin-password', async (c) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Erreur interne',
+        message: texte(c, 'INTERNAL_ERROR'),
       },
       requestId: crypto.randomUUID(),
     }, 500);

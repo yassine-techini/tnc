@@ -18,6 +18,7 @@ import {
   enabledPaymentMethods,
   isServiceable,
 } from '../services/country-config.service';
+import { texte } from '../lib/reponse-erreur';
 
 const publicRoutes = new Hono<AppEnv>();
 
@@ -29,7 +30,7 @@ publicRoutes.get('/reserve/key', async (c) => {
   if (!jwk) {
     return c.json({
       success: false,
-      error: { code: 'NOT_CONFIGURED', message: 'Aucune clé de vérification publiée' },
+      error: { code: 'NOT_CONFIGURED', message: texte(c, 'NOT_CONFIGURED') },
       requestId,
     }, 404);
   }
@@ -39,7 +40,7 @@ publicRoutes.get('/reserve/key', async (c) => {
   } catch {
     return c.json({
       success: false,
-      error: { code: 'NOT_CONFIGURED', message: 'Clé de vérification illisible' },
+      error: { code: 'NOT_CONFIGURED', message: texte(c, 'NOT_CONFIGURED') },
       requestId,
     }, 500);
   }
@@ -72,7 +73,7 @@ publicRoutes.get('/reserve/attestations/latest', async (c) => {
   if (!latest) {
     return c.json({
       success: false,
-      error: { code: 'NOT_FOUND', message: 'Aucune attestation publiée' },
+      error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'attestationAucune' }) },
       requestId,
     }, 404);
   }
@@ -90,7 +91,7 @@ publicRoutes.get('/reserve/attestations/:digest', async (c) => {
   if (!/^[0-9a-f]{64}$/.test(digest)) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_DIGEST', message: 'Empreinte invalide' },
+      error: { code: 'INVALID_DIGEST', message: texte(c, 'INVALID_DIGEST') },
       requestId,
     }, 400);
   }
@@ -100,7 +101,7 @@ publicRoutes.get('/reserve/attestations/:digest', async (c) => {
   if (!result.found || !result.attestation) {
     return c.json({
       success: false,
-      error: { code: 'NOT_FOUND', message: 'Attestation inconnue' },
+      error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'attestation' }) },
       requestId,
     }, 404);
   }

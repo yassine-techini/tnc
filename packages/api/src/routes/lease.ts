@@ -23,6 +23,7 @@ import { CountryConfigService } from '../services/country-config.service';
 import { MarketService } from '../services/market.service';
 import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
+import { texte } from '../lib/reponse-erreur';
 
 const lease = new Hono<AppEnv>();
 
@@ -106,7 +107,7 @@ lease.get('/positions/:id/accruals', async (c) => {
   const position = await service.getById(positionId);
   if (!position || position.user_id !== userId) {
     return c.json(
-      { success: false, error: { code: 'NOT_FOUND', message: 'Position introuvable' } },
+      { success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'position' }) } },
       404
     );
   }
@@ -162,7 +163,7 @@ lease.post('/positions', zValidator('json', openSchema), async (c) => {
         success: false,
         error: {
           code: 'KYC_LEVEL_INSUFFICIENT',
-          message: 'Niveau KYC insuffisant pour cette opération',
+          message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'generique' }),
           details: { reason: tradable.reason },
         },
       },

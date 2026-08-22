@@ -22,6 +22,7 @@ import type {
 import type { AppEnv } from '../../types/env';
 import { requirePermission } from '../../middleware/rbac';
 import { LogArchiverService } from '../../services/log-archiver.service';
+import { texte } from '../../lib/reponse-erreur';
 
 const analytics = new Hono<AppEnv>();
 
@@ -47,7 +48,7 @@ analytics.get('/realtime', requirePermission('analytics', 'view'), async (c) => 
     if (!response.ok) {
       return c.json({
         success: false,
-        error: { code: 'ANALYTICS_ERROR', message: 'Impossible de récupérer les métriques' },
+        error: { code: 'ANALYTICS_ERROR', message: texte(c, 'ANALYTICS_ERROR') },
         requestId,
       }, 500);
     }
@@ -71,7 +72,7 @@ analytics.get('/realtime', requirePermission('analytics', 'view'), async (c) => 
     console.error('[Analytics] Realtime metrics error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -102,7 +103,7 @@ analytics.get('/history', requirePermission('analytics', 'view'), async (c) => {
     if (!response.ok) {
       return c.json({
         success: false,
-        error: { code: 'ANALYTICS_ERROR', message: 'Impossible de récupérer l\'historique' },
+        error: { code: 'ANALYTICS_ERROR', message: texte(c, 'ANALYTICS_ERROR') },
         requestId,
       }, 500);
     }
@@ -120,7 +121,7 @@ analytics.get('/history', requirePermission('analytics', 'view'), async (c) => {
     console.error('[Analytics] History error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -173,7 +174,7 @@ analytics.get('/logs', requirePermission('logs', 'view'), async (c) => {
     console.error('[Analytics] Log search error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -199,7 +200,7 @@ analytics.get('/logs/:id', requirePermission('logs', 'view'), async (c) => {
     if (!log) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Log non trouvé' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'journal' }) },
         requestId,
       }, 404);
     }
@@ -213,7 +214,7 @@ analytics.get('/logs/:id', requirePermission('logs', 'view'), async (c) => {
     console.error('[Analytics] Get log error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -247,7 +248,7 @@ analytics.get('/logs/stats', requirePermission('logs', 'view'), async (c) => {
     console.error('[Analytics] Log stats error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -286,7 +287,7 @@ analytics.get('/alerts/rules', requirePermission('alerts', 'view'), async (c) =>
     console.error('[Analytics] List alert rules error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -317,7 +318,7 @@ analytics.post('/alerts/rules', requirePermission('alerts', 'create'), async (c)
     if (!body.name || !body.metric || !body.operator || body.threshold === undefined || !body.severity) {
       return c.json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Champs requis manquants' },
+        error: { code: 'VALIDATION_ERROR', message: texte(c, 'VALIDATION_ERROR') },
         requestId,
       }, 400);
     }
@@ -326,7 +327,7 @@ analytics.post('/alerts/rules', requirePermission('alerts', 'create'), async (c)
     if (!validOperators.includes(body.operator)) {
       return c.json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Opérateur invalide' },
+        error: { code: 'VALIDATION_ERROR', message: texte(c, 'VALIDATION_ERROR') },
         requestId,
       }, 400);
     }
@@ -335,7 +336,7 @@ analytics.post('/alerts/rules', requirePermission('alerts', 'create'), async (c)
     if (!validSeverities.includes(body.severity)) {
       return c.json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Sévérité invalide' },
+        error: { code: 'VALIDATION_ERROR', message: texte(c, 'VALIDATION_ERROR') },
         requestId,
       }, 400);
     }
@@ -375,7 +376,7 @@ analytics.post('/alerts/rules', requirePermission('alerts', 'create'), async (c)
     console.error('[Analytics] Create alert rule error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -399,7 +400,7 @@ analytics.patch('/alerts/rules/:id', requirePermission('alerts', 'update'), asyn
     if (!existing) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Règle non trouvée' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'regle' }) },
         requestId,
       }, 404);
     }
@@ -437,7 +438,7 @@ analytics.patch('/alerts/rules/:id', requirePermission('alerts', 'update'), asyn
     if (updates.length === 0) {
       return c.json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Aucun champ à mettre à jour' },
+        error: { code: 'VALIDATION_ERROR', message: texte(c, 'VALIDATION_ERROR') },
         requestId,
       }, 400);
     }
@@ -458,7 +459,7 @@ analytics.patch('/alerts/rules/:id', requirePermission('alerts', 'update'), asyn
     console.error('[Analytics] Update alert rule error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -481,7 +482,7 @@ analytics.delete('/alerts/rules/:id', requirePermission('alerts', 'delete'), asy
     if (result.meta?.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Règle non trouvée' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'regle' }) },
         requestId,
       }, 404);
     }
@@ -495,7 +496,7 @@ analytics.delete('/alerts/rules/:id', requirePermission('alerts', 'delete'), asy
     console.error('[Analytics] Delete alert rule error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -569,7 +570,7 @@ analytics.get('/alerts', requirePermission('alerts', 'view'), async (c) => {
     console.error('[Analytics] List alerts error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -597,7 +598,7 @@ analytics.post('/alerts/:id/acknowledge', requirePermission('alerts', 'update'),
     if (result.meta?.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Alerte non trouvée ou déjà acquittée' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'alerteAcquittee' }) },
         requestId,
       }, 404);
     }
@@ -611,7 +612,7 @@ analytics.post('/alerts/:id/acknowledge', requirePermission('alerts', 'update'),
     console.error('[Analytics] Acknowledge alert error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -638,7 +639,7 @@ analytics.post('/alerts/:id/resolve', requirePermission('alerts', 'update'), asy
     if (result.meta?.changes === 0) {
       return c.json({
         success: false,
-        error: { code: 'NOT_FOUND', message: 'Alerte non trouvée ou déjà résolue' },
+        error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'alerteResolue' }) },
         requestId,
       }, 404);
     }
@@ -652,7 +653,7 @@ analytics.post('/alerts/:id/resolve', requirePermission('alerts', 'update'), asy
     console.error('[Analytics] Resolve alert error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -721,7 +722,7 @@ analytics.get('/transactions', requirePermission('analytics', 'view'), async (c)
     console.error('[Analytics] Transaction analytics error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -799,7 +800,7 @@ analytics.get('/users', requirePermission('analytics', 'view'), async (c) => {
     console.error('[Analytics] User analytics error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }
@@ -884,7 +885,7 @@ analytics.get('/dashboard', requirePermission('analytics', 'view'), async (c) =>
     console.error('[Analytics] Dashboard error:', error);
     return c.json({
       success: false,
-      error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' },
+      error: { code: 'INTERNAL_ERROR', message: texte(c, 'INTERNAL_ERROR') },
       requestId,
     }, 500);
   }

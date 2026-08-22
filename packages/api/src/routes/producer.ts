@@ -34,6 +34,7 @@ import {
 import { DispositionService } from '../services/disposition.service';
 import { StorageFeeService } from '../services/storage-fee.service';
 import { MarketService } from '../services/market.service';
+import { texte } from '../lib/reponse-erreur';
 
 const producer = new Hono<AppEnv>();
 
@@ -47,7 +48,7 @@ async function requireProducer(c: Context<AppEnv>, next: Next) {
   if (!row || row.role !== 'producer') {
     return c.json({
       success: false,
-      error: { code: 'NOT_A_PRODUCER', message: 'Accès réservé aux producteurs' },
+      error: { code: 'NOT_A_PRODUCER', message: texte(c, 'NOT_A_PRODUCER') },
       requestId: crypto.randomUUID(),
     }, 403);
   }
@@ -67,7 +68,7 @@ producer.post('/profile', async (c) => {
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
       requestId,
     }, 400);
   }
@@ -78,7 +79,7 @@ producer.post('/profile', async (c) => {
   if (badKey !== undefined) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_DOCUMENT_KEY', message: 'Référence de document invalide' },
+      error: { code: 'INVALID_DOCUMENT_KEY', message: texte(c, 'INVALID_DOCUMENT_KEY') },
       requestId,
     }, 400);
   }
@@ -88,7 +89,7 @@ producer.post('/profile', async (c) => {
   if (body.entityType !== 'INDIVIDUAL' && !body.registrationNumber) {
     return c.json({
       success: false,
-      error: { code: 'REGISTRATION_REQUIRED', message: 'Numéro RCCM requis pour une coopérative ou une société' },
+      error: { code: 'REGISTRATION_REQUIRED', message: texte(c, 'REGISTRATION_REQUIRED') },
       requestId,
     }, 400);
   }
@@ -98,7 +99,7 @@ producer.post('/profile', async (c) => {
   if (!profile) {
     return c.json({
       success: false,
-      error: { code: 'ALREADY_VERIFIED', message: 'Dossier déjà validé — contactez le support pour le modifier' },
+      error: { code: 'ALREADY_VERIFIED', message: texte(c, 'ALREADY_VERIFIED') },
       requestId,
     }, 409);
   }
@@ -112,7 +113,7 @@ producer.get('/profile', async (c) => {
   const service = new ProducerProfileService(c.env.DB);
   const profile = await service.getByUserId(userId);
   if (!profile) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Aucun dossier' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'dossier' }) }, requestId }, 404);
   }
   return c.json({ success: true, data: profile, requestId });
 });
@@ -125,18 +126,18 @@ producer.post('/profile/documents', async (c) => {
   const file = formData.get('file') as unknown as File;
 
   if (!file) {
-    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: texte(c, 'INVALID_INPUT') }, requestId }, 400);
   }
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);
   const maxSize = await cfg.getNumber('producer_max_document_bytes', 10 * 1024 * 1024);
   if (file.size > maxSize) {
-    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: texte(c, 'FILE_TOO_LARGE', { maxMo: Math.round(maxSize / (1024 * 1024)) }) }, requestId }, 400);
   }
 
   const bytes = await file.arrayBuffer();
   const contentType = sniffDocumentType(bytes);
   if (!contentType) {
-    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (PDF, JPEG, PNG, WebP)' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: texte(c, 'INVALID_FILE_TYPE') }, requestId }, 400);
   }
 
   // Company records are as sensitive as identity documents — same fail-closed
@@ -145,7 +146,7 @@ producer.post('/profile/documents', async (c) => {
     console.error('Producer document upload refused: ENCRYPTION_KEY is not configured');
     return c.json({
       success: false,
-      error: { code: 'ENCRYPTION_UNAVAILABLE', message: 'Service temporairement indisponible. Veuillez réessayer plus tard.' },
+      error: { code: 'ENCRYPTION_UNAVAILABLE', message: texte(c, 'ENCRYPTION_UNAVAILABLE') },
       requestId,
     }, 503);
   }
@@ -202,7 +203,7 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
       success: false,
       error: {
         code: 'KYC_LEVEL_INSUFFICIENT',
-        message: 'Vérification requise avant de consigner un lot : complétez votre dossier producteur',
+        message: texte(c, 'KYC_LEVEL_INSUFFICIENT', { operation: 'consignation' }),
       },
       requestId,
     }, 403);
@@ -214,7 +215,7 @@ producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
   if (badKey !== undefined) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_PHOTO_KEY', message: 'Référence de photo invalide' },
+      error: { code: 'INVALID_PHOTO_KEY', message: texte(c, 'INVALID_PHOTO_KEY') },
       requestId,
     }, 400);
   }
@@ -258,7 +259,7 @@ producer.get('/consignments/:id', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
   const events = await service.listEvents(id);
   const docService = new ConsignmentDocumentService(c.env.DB);
@@ -279,7 +280,7 @@ producer.get('/consignments/:id/statement.pdf', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) } }, 404);
   }
 
   const statements = new SettlementStatementService(
@@ -288,7 +289,7 @@ producer.get('/consignments/:id/statement.pdf', async (c) => {
   );
   const pdf = await statements.pdfFor(id);
   if (!pdf) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) } }, 404);
   }
 
   return new Response(pdf, {
@@ -317,7 +318,7 @@ producer.get('/consignments/:id/disposition', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) } }, 404);
   }
 
   const dispositions = new DispositionService(c.env.DB);
@@ -352,14 +353,14 @@ producer.post('/consignments/:id/disposition', zValidator('json', disposeSchema)
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(id);
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' } }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) } }, 404);
   }
   if (consignment.status !== 'AUDIT_VALIDATED') {
     return c.json({
       success: false,
       error: {
         code: 'NOT_SETTLED',
-        message: "Ce lot n'est pas encore réglé : la répartition se fait après l'essai",
+        message: texte(c, 'NOT_SETTLED'),
       },
     }, 400);
   }
@@ -472,25 +473,25 @@ producer.post('/consignments/:id/documents/upload', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(c.req.param('id'));
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
 
   const formData = await c.req.formData();
   const file = formData.get('file') as unknown as File;
   if (!file) {
-    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: texte(c, 'INVALID_INPUT') }, requestId }, 400);
   }
 
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);
   const maxSize = await cfg.getNumber('consignment_max_document_bytes', 10 * 1024 * 1024);
   if (file.size > maxSize) {
-    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: texte(c, 'FILE_TOO_LARGE', { maxMo: Math.round(maxSize / (1024 * 1024)) }) }, requestId }, 400);
   }
 
   const bytes = await file.arrayBuffer();
   const contentType = sniffDocumentType(bytes);
   if (!contentType) {
-    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (PDF, JPEG, PNG, WebP)' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: texte(c, 'INVALID_FILE_TYPE') }, requestId }, 400);
   }
 
   // Same fail-closed rule as KYC and KYB: an origin certificate is a legal
@@ -499,7 +500,7 @@ producer.post('/consignments/:id/documents/upload', async (c) => {
     console.error('Consignment document upload refused: ENCRYPTION_KEY is not configured');
     return c.json({
       success: false,
-      error: { code: 'ENCRYPTION_UNAVAILABLE', message: 'Service temporairement indisponible. Veuillez réessayer plus tard.' },
+      error: { code: 'ENCRYPTION_UNAVAILABLE', message: texte(c, 'ENCRYPTION_UNAVAILABLE') },
       requestId,
     }, 503);
   }
@@ -528,14 +529,14 @@ producer.post('/consignments/:id/documents', async (c) => {
   const service = new ConsignmentService(c.env.DB);
   const consignment = await service.getById(c.req.param('id'));
   if (!consignment || consignment.producer_id !== userId) {
-    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Lot non trouvé' }, requestId }, 404);
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: texte(c, 'NOT_FOUND', { ressource: 'consignation' }) }, requestId }, 404);
   }
 
   const parsed = attachDocumentSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || 'Données invalides' },
+      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
       requestId,
     }, 400);
   }
@@ -545,7 +546,7 @@ producer.post('/consignments/:id/documents', async (c) => {
   if (!isOwnedConsignmentDocumentKey(parsed.data.key, userId)) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_DOCUMENT_KEY', message: 'Référence de document invalide' },
+      error: { code: 'INVALID_DOCUMENT_KEY', message: texte(c, 'INVALID_DOCUMENT_KEY') },
       requestId,
     }, 400);
   }
@@ -555,7 +556,7 @@ producer.post('/consignments/:id/documents', async (c) => {
   if (!document) {
     return c.json({
       success: false,
-      error: { code: 'ALREADY_ATTACHED', message: 'Ce document est déjà rattaché à un lot' },
+      error: { code: 'ALREADY_ATTACHED', message: texte(c, 'ALREADY_ATTACHED') },
       requestId,
     }, 409);
   }
@@ -571,20 +572,20 @@ producer.post('/consignments/photos', async (c) => {
   const file = formData.get('file') as unknown as File;
 
   if (!file) {
-    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Fichier requis' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: texte(c, 'INVALID_INPUT') }, requestId }, 400);
   }
   // Size is checked before reading the body into memory.
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);
   const maxSize = await cfg.getNumber('consignment_max_photo_bytes', 8 * 1024 * 1024);
   if (file.size > maxSize) {
-    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `Fichier trop volumineux (max ${Math.round(maxSize / (1024 * 1024))} Mo)` }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: texte(c, 'FILE_TOO_LARGE', { maxMo: Math.round(maxSize / (1024 * 1024)) }) }, requestId }, 400);
   }
 
   // The declared MIME type is a client-supplied header — trust the bytes instead.
   const bytes = await file.arrayBuffer();
   const contentType = sniffImageType(bytes);
   if (!contentType) {
-    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: 'Format non supporté (JPEG, PNG, WebP)' }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_FILE_TYPE', message: texte(c, 'INVALID_FILE_TYPE') }, requestId }, 400);
   }
 
   const key = `${consignmentPhotoPrefix(userId)}${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${extensionFor(contentType)}`;

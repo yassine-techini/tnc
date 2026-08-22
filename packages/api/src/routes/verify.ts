@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types/env';
 import { CertificateService } from '../services/certificate.service';
+import { texte } from '../lib/reponse-erreur';
 
 const verify = new Hono<AppEnv>();
 
@@ -14,7 +15,7 @@ verify.get('/:code', async (c) => {
       success: false,
       error: {
         code: 'INVALID_CODE',
-        message: 'Code de vérification invalide',
+        message: texte(c, 'INVALID_CODE'),
       },
       requestId,
     }, 400);
@@ -28,7 +29,7 @@ verify.get('/:code', async (c) => {
       success: false,
       error: {
         code: 'CERTIFICATE_INVALID',
-        message: result.reason || 'Certificat non trouvé',
+        message: texte(c, 'CERTIFICATE_INVALID'),
       },
       requestId,
     }, 404);

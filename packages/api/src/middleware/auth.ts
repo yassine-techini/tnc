@@ -4,6 +4,7 @@ import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 import { logger } from '../lib/logger';
 import { getAccessToken } from '../lib/cookies';
+import { texte } from '../lib/reponse-erreur';
 
 /*
  * NOTE — Cloudflare Access is NOT used on this deployment.
@@ -32,7 +33,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'AUTH_REQUIRED',
-        message: 'Authentification requise',
+        message: texte(c, 'AUTH_REQUIRED'),
       },
       requestId: crypto.randomUUID(),
     }, 401);
@@ -47,7 +48,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'AUTH_INVALID_TOKEN',
-          message: 'Token invalide ou expiré',
+          message: texte(c, 'AUTH_INVALID_TOKEN'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -58,7 +59,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         success: false,
         error: {
           code: 'AUTH_INVALID_TOKEN_TYPE',
-          message: 'Type de token invalide',
+          message: texte(c, 'AUTH_INVALID_TOKEN_TYPE'),
         },
         requestId: crypto.randomUUID(),
       }, 401);
@@ -74,7 +75,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       success: false,
       error: {
         code: 'AUTH_INVALID_TOKEN',
-        message: 'Token invalide ou expiré',
+        message: texte(c, 'AUTH_INVALID_TOKEN'),
       },
       requestId: crypto.randomUUID(),
     }, 401);

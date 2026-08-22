@@ -44,7 +44,7 @@ describe('appartientA', () => {
 
 describe('refusSiEtranger', () => {
   it('ne rend rien quand la ressource appartient a l appelant', () => {
-    expect(refusSiEtranger({ user_id: 'usr_1' }, 'usr_1')).toBeNull();
+    expect(refusSiEtranger({ user_id: 'usr_1' }, 'usr_1', 'Lot introuvable')).toBeNull();
   });
 
   it('rend un 404 pour une ressource etrangere', () => {
@@ -57,8 +57,8 @@ describe('refusSiEtranger', () => {
   });
 
   it('rend le meme refus pour une ressource absente', () => {
-    const etrangere = refusSiEtranger({ user_id: 'usr_2' }, 'usr_1');
-    const absente = refusSiEtranger(null, 'usr_1');
+    const etrangere = refusSiEtranger({ user_id: 'usr_2' }, 'usr_1', 'Lot introuvable');
+    const absente = refusSiEtranger(null, 'usr_1', 'Lot introuvable');
 
     expect(absente).toEqual(etrangere);
   });

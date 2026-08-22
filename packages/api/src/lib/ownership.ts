@@ -53,7 +53,12 @@ export function appartientA(
 export function refusSiEtranger(
   ressource: RessourcePossedee | null | undefined,
   userId: string | null | undefined,
-  libelle = 'Ressource introuvable'
+  /**
+   * REQUIS depuis l'ADR 025 : ce helper n'a pas de contexte de requete, donc
+   * pas de langue. Un defaut ecrit ici serait du francais fige que rien ne
+   * traduirait. L'appelant passe `texte(c, 'NOT_FOUND', { ressource: … })`.
+   */
+  libelle: string
 ): { success: false; error: { code: 'NOT_FOUND'; message: string } } | null {
   if (appartientA(ressource, userId)) return null;
   return { success: false, error: { code: 'NOT_FOUND', message: libelle } };
