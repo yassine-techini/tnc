@@ -2177,3 +2177,26 @@ trois interfaces (web, mobile, back-office) proposent le type et ses deux champs
 
 **Ce que cela n'a pas tranché** : `storage_fee_applies_to` reste à `'REFINER'`. Étendre la
 facturation à tous les détenteurs demeure une décision produit, pas technique.
+
+
+### AN ter. Les schémas Zod parlent les deux langues ✅
+
+Le reste nommé par l'ADR 025, et refermé — [ADR 027](adr/027-la-langue-d-une-validation.md).
+
+Un point technique gouvernait la solution : **un message posé sur un schéma l'emporte sur toute
+carte d'erreurs**. Zod construit l'issue avec `issueData.message || errorMessage`. Une carte
+bilingue seule ne pouvait donc rien traduire tant que les messages restaient écrits.
+
+**Deux mécanismes, parce qu'il y a deux situations.** Ce qui se déduit du problème — champ requis,
+longueur, courriel, énumération — n'est plus écrit nulle part : `traduireProbleme` le remet en mots
+depuis l'issue. Ce qui ne s'en déduit pas devient une **clé** : `.regex(/[A-Z]/)` et
+`.regex(/[0-9]/)` produisent le même `invalid_string`, et supprimer leur message aurait remplacé
+« au moins une majuscule » par « format invalide » — une perte, pas une traduction.
+
+Le nom du champ est traduit aussi. Une leçon de la première version : les phrases **ne renomment
+pas le champ**, sans quoi on obtient « Adresse e-mail : adresse e-mail invalide ».
+
+**`zValidator` n'a pas eu à être remplacé** : traduire au *rendu* plutôt qu'à l'analyse obtient le
+même résultat sans réécrire 26 sites de plus.
+
+Le garde-fou refuse désormais toute prose dans un schéma, API et paquet partagé compris.

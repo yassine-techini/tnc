@@ -25,6 +25,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const NL = String.fromCharCode(10);
+const SEPARATEUR = String.fromCharCode(92);
+const BS = String.fromCharCode(92);
+const QUOTE = String.fromCharCode(39);
+const FIN_DE_LIGNE = new RegExp(String.fromCharCode(92) + 'r?' + String.fromCharCode(92) + 'n');
 const RACINE = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
 /**
@@ -168,8 +172,14 @@ function verifierLeDepot(catalogue) {
         // enveloppe. On elargit la fenetre pour chercher l'appel au catalogue,
         // sans elargir celle de la prose, qui doit rester serree.
         const valeurLarge = lignes.slice(j, j + 5).join(' ');
+
+        // `messageValidation(c, issues)` met en mots le premier probleme d'un
+        // schema (ADR 027). C'est le catalogue de validation qui parle, pas le
+        // site d'appel : il n'a pas de code a nommer.
+
+
         const mTexte = valeurLarge.match(/texte\(\s*c\s*,\s*'([0-9A-Z][0-9A-Z_]*)'/);
-        if (!mTexte) {
+        if (!mTexte && !valeurLarge.includes('messageValidation(c,')) {
           problemes.push({
             rel,
             ligne: j + 1,
@@ -179,7 +189,7 @@ function verifierLeDepot(catalogue) {
           break;
         }
 
-        if (mTexte[1] !== code) {
+        if (mTexte && mTexte[1] !== code) {
           problemes.push({
             rel,
             ligne: j + 1,
@@ -264,9 +274,66 @@ function verifierLeDepot(catalogue) {
   return problemes;
 }
 
+/**
+ * Aucune prose dans un schema Zod — ADR 027.
+ *
+ * Un message pose sur un schema l'emporte sur toute carte d'erreurs : ecrit en
+ * clair, il n'existe qu'en une langue et rien ne peut le traduire. Les regles
+ * dont l'intention ne se deduit pas du probleme portent donc une CLE, et les
+ * autres ne portent plus rien du tout.
+ *
+ * Le paquet partage est scanne aussi : c'est la que vivent les schemas
+ * d'inscription et de mot de passe.
+ */
+function verifierLesSchemas() {
+  const problemes = [];
+  const racines = [RACINE, join(RACINE, '../../shared/src')];
+
+  // Construites sans barre oblique inverse litterale : ce fichier a ete ecrit
+  // plusieurs fois a travers un shell qui les mangeait.
+  const CHAINE = new RegExp(QUOTE + '((?:[^' + QUOTE + BS + BS + ']|' + BS + BS + '.){3,}?)' + QUOTE, 'g');
+  const BLANC = new RegExp(BS + 's');
+  const NON_ASCII = new RegExp('[^' + BS + 'x00-' + BS + 'x7F]');
+  const CLE = new RegExp('^[A-Z][A-Z0-9_]*$');
+  const METHODE = new RegExp('^' + BS + 's*' + BS + '.(min|max|length|regex|email|uuid|positive|refine)' + BS + '(');
+
+  for (const racine of racines) {
+    let fichiers;
+    try {
+      fichiers = fichiersSource(racine);
+    } catch {
+      continue;
+    }
+    for (const fichier of fichiers) {
+      const rel = relative(racine, fichier).split(SEPARATEUR).join('/');
+      if (rel.includes('messages')) continue;
+
+      const lignes = readFileSync(fichier, 'utf8').split(FIN_DE_LIGNE);
+      for (let i = 0; i < lignes.length; i++) {
+        const l = lignes[i];
+        if (!l.includes('z.') && !METHODE.test(l)) continue;
+
+        for (const m of l.matchAll(CHAINE)) {
+          const t = m[1];
+          const prose = BLANC.test(t) || NON_ASCII.test(t);
+          // Une regex n'est pas un message, et une cle non plus.
+          if (!prose || t.startsWith('^') || t.includes(']+$') || CLE.test(t)) continue;
+          problemes.push({
+            rel,
+            ligne: i + 1,
+            quoi: 'prose dans un schema Zod',
+            detail: t.slice(0, 48),
+          });
+        }
+      }
+    }
+  }
+  return problemes;
+}
+
 if (process.argv[1] && process.argv[1].endsWith('check-error-messages.mjs')) {
   const catalogue = lireCatalogue();
-  const problemes = verifierLeDepot(catalogue);
+  const problemes = [...verifierLeDepot(catalogue), ...verifierLesSchemas()];
 
   if (problemes.length) {
     console.error('Messages d erreur (ADR 025) :' + NL);
@@ -281,4 +348,5 @@ if (process.argv[1] && process.argv[1].endsWith('check-error-messages.mjs')) {
 
   console.log(`Codes au catalogue : ${catalogue.size}, chacun en francais et en anglais.`);
   console.log('Aucune reponse d erreur ne porte son texte.');
+  console.log('Aucun schema Zod ne porte de prose.');
 }

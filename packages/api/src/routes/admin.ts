@@ -45,7 +45,7 @@ import {
 import { GOLD_STOCK_ID } from '../services/market.service';
 import type { NotificationType } from '../services/notification.service';
 import { streamConsignmentPhoto } from './producer';
-import { texte } from '../lib/reponse-erreur';
+import { messageValidation, texte } from '../lib/reponse-erreur';
 
 /**
  * Roles that may be assigned to an admin account. Derived from ROLE_DEFAULTS so
@@ -58,18 +58,18 @@ const ASSIGNABLE_ADMIN_ROLES = Object.keys(ROLE_DEFAULTS);
 
 // Zod schemas for admin endpoints
 const AdminLoginSchema = z.object({
-  email: z.string().email('Email invalide'),
-  password: z.string().min(1, 'Mot de passe requis'),
+  email: z.string().email(),
+  password: z.string().min(1),
   totpCode: z.string().length(6).optional(),
 });
 
 const Admin2FASetupSchema = z.object({
-  setupToken: z.string().uuid('Token invalide'),
+  setupToken: z.string().uuid(),
 });
 
 const Admin2FAVerifySchema = z.object({
-  setupToken: z.string().uuid('Token invalide'),
-  code: z.string().length(6, 'Code doit être 6 chiffres'),
+  setupToken: z.string().uuid(),
+  code: z.string().length(6),
 });
 
 // Type for admin record from DB
@@ -195,7 +195,7 @@ admin.post('/login', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: parseResult.error.issues[0]?.message || texte(c, 'INVALID_INPUT'),
+          message: messageValidation(c, parseResult.error.issues),
           details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),
@@ -2778,7 +2778,7 @@ admin.post('/consignments/:id/audit-validate', requirePermission('consignments',
   const requestId = crypto.randomUUID();
   const parsed = auditValidateSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
-    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') }, requestId }, 400);
+    return c.json({ success: false, error: { code: 'INVALID_INPUT', message: messageValidation(c, parsed.error.issues) }, requestId }, 400);
   }
   // Share of the refined weight paid to the producer in tokens (see 0018).
   const cfg = new ConfigService(c.env.DB, c.env.CACHE);

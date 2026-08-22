@@ -23,7 +23,8 @@
 
 import type { Context } from 'hono';
 import type { ZodError } from 'zod';
-import { texte } from './reponse-erreur';
+import { traduireProbleme } from '@tnc-trading/shared/validators';
+import { langueDeLaRequete, texte } from './reponse-erreur';
 
 /**
  * Ce que `zValidator` passe a son hook.
@@ -53,7 +54,14 @@ export const surErreurDeValidation = (
 ): Response | undefined => {
   if (resultat.success) return undefined;
 
-  const problemes = resultat.error.issues ?? [];
+  const langue = langueDeLaRequete(c);
+  const problemes = (resultat.error.issues ?? []).map((p) => ({
+    ...p,
+    // Le message porte par un schema est une CLE (ADR 027) ; c'est ici qu'il
+    // redevient une phrase, dans la langue du lecteur. Les autres sont remis en
+    // mots depuis le type de probleme.
+    message: traduireProbleme(p as never, langue),
+  }));
   const premier = problemes[0];
 
   return c.json(

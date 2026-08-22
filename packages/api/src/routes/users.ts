@@ -25,7 +25,7 @@ import { EncryptionService } from '../services/encryption.service';
 import { ConfigService } from '../services/config.service';
 import { sniffImageType, extensionFor } from '../lib/image-upload';
 import { PushTokenService } from '../services/push-token.service';
-import { texte } from '../lib/reponse-erreur';
+import { messageValidation, texte } from '../lib/reponse-erreur';
 import { surErreurDeValidation } from '../lib/validation-hook';
 
 const users = new Hono<AppEnv>();
@@ -135,10 +135,10 @@ const updateProfileSchema = z.object({
    * pouvait plus jamais corriger son numero.
    */
   phone: phoneSchema.optional(),
-  country: z.string().length(2, 'Code pays doit être 2 caractères').optional(),
+  country: z.string().length(2).optional(),
 }).refine(
   (data) => data.phone || data.country,
-  { message: 'Au moins un champ requis (phone ou country)' }
+  { message: 'CHAMP_AU_MOINS_UN' }
 );
 
 // PATCH /users/me
@@ -202,23 +202,23 @@ const kycSubmitSchema = z.object({
     .string()
     .min(2)
     .max(40)
-    .regex(/^[A-Z][A-Z0-9_]*$/, 'Type de document invalide'),
+    .regex(/^[A-Z][A-Z0-9_]*$/, 'TYPE_DOCUMENT_FORME'),
   documentNumber: z.string().min(1).max(30).optional(),
   firstName: z.string()
-    .min(1, 'Prénom requis')
-    .max(50, 'Prénom trop long')
-    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'Prénom contient des caractères invalides'),
+    .min(1)
+    .max(50)
+    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'NOM_CARACTERES'),
   lastName: z.string()
-    .min(1, 'Nom requis')
-    .max(50, 'Nom trop long')
-    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'Nom contient des caractères invalides'),
+    .min(1)
+    .max(50)
+    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'NOM_CARACTERES'),
   dateOfBirth: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide (YYYY-MM-DD)'),
-  nationality: z.string().length(2, 'Code pays doit être 2 caractères'),
-  address: z.string().max(200, 'Adresse trop longue').optional(),
-  city: z.string().max(100, 'Ville trop longue').optional(),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'DATE_ISO'),
+  nationality: z.string().length(2),
+  address: z.string().max(200).optional(),
+  city: z.string().max(100).optional(),
   documentExpiryDate: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'DATE_ISO')
     .optional(),
 });
 
@@ -1029,14 +1029,14 @@ users.patch('/me/preferences/notifications', async (c) => {
 
 // Password change validation schema
 const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Mot de passe actuel requis'),
+  currentPassword: z.string().min(1),
   newPassword: z
     .string()
-    .min(SECURITY_CONFIG.PASSWORD_MIN_LENGTH, `Minimum ${SECURITY_CONFIG.PASSWORD_MIN_LENGTH} caractères`)
+    .min(SECURITY_CONFIG.PASSWORD_MIN_LENGTH)
     .max(SECURITY_CONFIG.PASSWORD_MAX_LENGTH),
-  confirmPassword: z.string().min(1, 'Confirmation requise'),
+  confirmPassword: z.string().min(1),
 }).refine(data => data.newPassword === data.confirmPassword, {
-  message: 'Les mots de passe ne correspondent pas',
+  message: 'MDP_CONFIRMATION',
   path: ['confirmPassword'],
 });
 
@@ -1203,7 +1203,7 @@ users.post('/me/password', zValidator('json', changePasswordSchema, surErreurDeV
 // Price alert validation schema
 const createPriceAlertSchema = z.object({
   alertType: z.enum(['ABOVE', 'BELOW']),
-  targetPrice: z.number().positive('Le prix cible doit être positif'),
+  targetPrice: z.number().positive(),
   currency: z.enum(['XOF', 'USD']).default('XOF'),
   notificationMethod: z.enum(['PUSH', 'EMAIL', 'SMS', 'ALL']).default('PUSH'),
   note: z.string().max(200).optional(),
@@ -1663,7 +1663,7 @@ users.post('/me/devices', async (c) => {
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
+      error: { code: 'INVALID_INPUT', message: messageValidation(c, parsed.error.issues) },
       requestId,
     }, 400);
   }

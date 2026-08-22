@@ -50,13 +50,23 @@ describe('Hook de validation', () => {
     expect(corps.requestId).toBeTruthy();
   });
 
-  it('affiche le message du premier probleme', () => {
-    const { corps } = surErreurDeValidation(echec(), contexte()) as never as {
-      corps: { error: { message: string; details: unknown[] } };
+  it('affiche le premier probleme, mis en mots dans la langue du lecteur', () => {
+    // Depuis l'ADR 027, le message d'un schema est une CLE et le texte est
+    // engendre : le champ est nomme, puis la regle.
+    const fr = surErreurDeValidation(echec(), contexte('fr')) as never as {
+      corps: { error: { message: string; details: Array<{ message: string }> } };
     };
-    expect(corps.error.message).toBe('Adresse invalide');
-    // Les autres problemes ne sont pas perdus pour autant.
-    expect(corps.error.details).toHaveLength(2);
+    const en = surErreurDeValidation(echec(), contexte('en')) as never as {
+      corps: { error: { message: string } };
+    };
+
+    expect(fr.corps.error.message).toBe('Adresse e-mail : Adresse invalide');
+    expect(en.corps.error.message).toBe('Email address : Invalid address');
+    // Les autres problemes ne sont pas perdus, et sont traduits aussi.
+    expect(fr.corps.error.details).toHaveLength(2);
+    // `montant` n'est pas au catalogue des champs : le message se passe alors de
+    // prefixe plutot que d'afficher le nom technique au lecteur.
+    expect(fr.corps.error.details[1].message).toBe('Minimum 1000');
   });
 
   it('retombe sur le catalogue quand le probleme n a pas de message', () => {
@@ -72,8 +82,10 @@ describe('Hook de validation', () => {
       corps: { error: { message: string } };
     };
 
-    expect(fr.corps.error.message).toBe('Donnees invalides');
-    expect(en.corps.error.message).toBe('Invalid data');
+    // Un probleme sans message reconnaissable est tout de meme mis en mots,
+    // dans les deux langues, plutot que rendu tel quel.
+    expect(fr.corps.error.message).toBe('Valeur invalide');
+    expect(en.corps.error.message).toBe('Invalid value');
   });
 
   it('reprend le X-Request-ID du client quand il en fournit un', () => {

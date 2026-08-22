@@ -34,7 +34,7 @@ import {
 import { DispositionService } from '../services/disposition.service';
 import { StorageFeeService } from '../services/storage-fee.service';
 import { MarketService } from '../services/market.service';
-import { texte } from '../lib/reponse-erreur';
+import { messageValidation, texte } from '../lib/reponse-erreur';
 import { surErreurDeValidation } from '../lib/validation-hook';
 
 const producer = new Hono<AppEnv>();
@@ -69,7 +69,7 @@ producer.post('/profile', async (c) => {
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
+      error: { code: 'INVALID_INPUT', message: messageValidation(c, parsed.error.issues) },
       requestId,
     }, 400);
   }
@@ -538,7 +538,7 @@ producer.post('/consignments/:id/documents', async (c) => {
   if (!parsed.success) {
     return c.json({
       success: false,
-      error: { code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message || texte(c, 'INVALID_INPUT') },
+      error: { code: 'INVALID_INPUT', message: messageValidation(c, parsed.error.issues) },
       requestId,
     }, 400);
   }

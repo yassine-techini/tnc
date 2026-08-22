@@ -197,8 +197,8 @@ const WALLET_MAX_AMOUNT = 10_000_000;
 
 const depositSchema = z.object({
   amount: z.number()
-    .positive('Montant doit être positif')
-    .max(WALLET_MAX_AMOUNT, `Montant maximum: ${WALLET_MAX_AMOUNT.toLocaleString('fr-FR')} XOF`),
+    .positive()
+    .max(WALLET_MAX_AMOUNT),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'card', 'bank']),
   phoneNumber: z.string().optional(), // Required for mobile money
 });
@@ -349,8 +349,8 @@ wallet.post('/deposit', zValidator('json', depositSchema, surErreurDeValidation)
 
 const withdrawSchema = z.object({
   amount: z.number()
-    .positive('Montant doit être positif')
-    .max(WALLET_MAX_AMOUNT, `Montant maximum: ${WALLET_MAX_AMOUNT.toLocaleString('fr-FR')} XOF`),
+    .positive()
+    .max(WALLET_MAX_AMOUNT),
   paymentMethod: z.enum(['orange_money', 'moov_money', 'bank']),
   phoneNumber: z.string().optional(), // Required for mobile money
   bankAccount: z.string().optional(), // Required for bank

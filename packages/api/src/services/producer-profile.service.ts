@@ -52,7 +52,7 @@ export const kybSchema = z.object({
     d.entityType !== 'REFINER' ||
     Boolean(d.corridorOriginCountry && d.corridorDestinationCountry),
   {
-    message: 'Un raffineur doit declarer son corridor (origine et destination)',
+    message: 'CORRIDOR_REQUIS',
     path: ['corridorOriginCountry'],
   }
 );

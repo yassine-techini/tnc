@@ -155,7 +155,7 @@ export function planchierXof(pricePerGram: number): number {
 
 const quoteSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
-  amount: z.number().positive().max(MAX_XOF, 'Montant dépasse la limite maximale'),
+  amount: z.number().positive().max(MAX_XOF),
   amountType: z.enum(['grams', 'xof']),
 }).refine(
   (data) => {

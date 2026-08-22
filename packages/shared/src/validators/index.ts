@@ -4,13 +4,22 @@
 
 import { z } from 'zod';
 
+/**
+ * Les messages de validation, bilingues — ADR 027.
+ *
+ * Re-exportes ici pour que `@tnc-trading/shared/validators` reste le seul point
+ * d'entree : un schema et la facon de dire pourquoi il refuse ne se trouvent pas
+ * a deux endroits differents.
+ */
+export * from './messages';
+
 // ============================================
 // COMMON VALIDATORS
 // ============================================
 
 export const uuidSchema = z.string().uuid();
 
-export const emailSchema = z.string().email('Format email invalide');
+export const emailSchema = z.string().email();
 
 /**
  * Un numero de telephone international — ADR 021.
@@ -30,22 +39,22 @@ export const emailSchema = z.string().email('Format email invalide');
  */
 export const phoneSchema = z
   .string()
-  .min(10, 'Numéro de téléphone invalide')
+  .min(10)
   .max(20)
-  .regex(/^\+?[0-9]{10,15}$/, 'Format de téléphone invalide (indicatif international attendu)');
+  .regex(/^\+?[0-9]{10,15}$/, 'TELEPHONE_INTERNATIONAL');
 
 export const passwordSchema = z
   .string()
-  .min(12, 'Le mot de passe doit contenir au moins 12 caractères')
-  .regex(/[A-Z]/, 'Le mot de passe doit contenir au moins une majuscule')
-  .regex(/[a-z]/, 'Le mot de passe doit contenir au moins une minuscule')
-  .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre')
-  .regex(/[^A-Za-z0-9]/, 'Le mot de passe doit contenir au moins un caractère spécial');
+  .min(12)
+  .regex(/[A-Z]/, 'MDP_MAJUSCULE')
+  .regex(/[a-z]/, 'MDP_MINUSCULE')
+  .regex(/[0-9]/, 'MDP_CHIFFRE')
+  .regex(/[^A-Za-z0-9]/, 'MDP_SPECIAL');
 
 export const totpCodeSchema = z
   .string()
-  .length(6, 'Le code doit contenir 6 chiffres')
-  .regex(/^[0-9]+$/, 'Le code ne doit contenir que des chiffres');
+  .length(6)
+  .regex(/^[0-9]+$/, 'CODE_CHIFFRES_SEULEMENT');
 
 // ============================================
 // AUTH VALIDATORS
@@ -55,26 +64,26 @@ export const registerSchema = z.object({
   email: emailSchema,
   phone: phoneSchema,
   password: passwordSchema,
-  country: z.string().length(2, 'Code pays invalide').default('BF'),
+  country: z.string().length(2).default('BF'),
 });
 
 export const loginSchema = z.object({
-  identifier: z.string().min(1, 'Email ou téléphone requis'),
-  password: z.string().min(1, 'Mot de passe requis'),
+  identifier: z.string().min(1),
+  password: z.string().min(1),
   totpCode: totpCodeSchema.optional(),
 });
 
 export const verifyCodeSchema = z.object({
-  code: z.string().length(6, 'Code invalide'),
+  code: z.string().length(6),
 });
 
 export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token requis'),
+  token: z.string().min(1),
   newPassword: passwordSchema,
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Mot de passe actuel requis'),
+  currentPassword: z.string().min(1),
   newPassword: passwordSchema,
 });
 
@@ -86,21 +95,21 @@ export const documentTypeSchema = z.enum(['CNIB', 'PASSPORT', 'PERMIT', 'CEDEAO'
 
 export const kycSubmitSchema = z.object({
   documentType: documentTypeSchema,
-  firstName: z.string().min(2, 'Prénom requis'),
-  lastName: z.string().min(2, 'Nom requis'),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format date invalide (AAAA-MM-JJ)'),
-  nationality: z.string().length(2, 'Code pays invalide'),
-  address: z.string().min(5, 'Adresse requise').optional(),
-  city: z.string().min(2, 'Ville requise').optional(),
-  documentNumber: z.string().min(5, 'Numéro de document requis'),
+  firstName: z.string().min(2),
+  lastName: z.string().min(2),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'DATE_ISO'),
+  nationality: z.string().length(2),
+  address: z.string().min(5).optional(),
+  city: z.string().min(2).optional(),
+  documentNumber: z.string().min(5),
 });
 
 export const kycReviewSchema = z.object({
   action: z.enum(['APPROVE', 'REJECT']),
-  rejectionReason: z.string().min(10, 'Motif de rejet requis').optional(),
+  rejectionReason: z.string().min(10).optional(),
 }).refine(
   (data) => data.action === 'APPROVE' || data.rejectionReason,
-  { message: 'Motif de rejet requis', path: ['rejectionReason'] }
+  { message: 'MOTIF_REJET_REQUIS', path: ['rejectionReason'] }
 );
 
 // ============================================
@@ -109,7 +118,7 @@ export const kycReviewSchema = z.object({
 
 export const quoteRequestSchema = z.object({
   type: z.enum(['BUY', 'SELL']),
-  amount: z.number().positive('Montant doit être positif'),
+  amount: z.number().positive(),
   amountType: z.enum(['GRAMS', 'XOF']),
 });
 
@@ -134,7 +143,7 @@ export const sellRequestSchema = z.object({
     }
     return data.payoutDetails.phoneNumber;
   },
-  { message: 'Détails de paiement incomplets', path: ['payoutDetails'] }
+  { message: 'PAIEMENT_DETAILS_INCOMPLETS', path: ['payoutDetails'] }
 );
 
 // ============================================
@@ -142,12 +151,12 @@ export const sellRequestSchema = z.object({
 // ============================================
 
 export const depositRequestSchema = z.object({
-  amount: z.number().min(1000, 'Montant minimum: 1000 XOF'),
+  amount: z.number().min(1000),
   method: z.enum(['orange_money', 'moov_money', 'card']),
 });
 
 export const withdrawRequestSchema = z.object({
-  amount: z.number().min(1000, 'Montant minimum: 1000 XOF'),
+  amount: z.number().min(1000),
   method: z.enum(['orange_money', 'moov_money', 'bank']),
   totpCode: totpCodeSchema,
   details: z.object({
@@ -162,7 +171,7 @@ export const withdrawRequestSchema = z.object({
     }
     return data.details.phoneNumber;
   },
-  { message: 'Détails de paiement incomplets', path: ['details'] }
+  { message: 'PAIEMENT_DETAILS_INCOMPLETS', path: ['details'] }
 );
 
 // ============================================
@@ -171,17 +180,17 @@ export const withdrawRequestSchema = z.object({
 
 export const stockAdjustSchema = z.object({
   action: z.enum(['ADD', 'REMOVE']),
-  amount: z.number().positive('Montant doit être positif'),
-  reason: z.string().min(10, 'Motif requis'),
+  amount: z.number().positive(),
+  reason: z.string().min(10),
   auditReference: z.string().optional(),
 });
 
 export const withdrawalReviewSchema = z.object({
   action: z.enum(['APPROVE', 'REJECT']),
-  rejectionReason: z.string().min(10, 'Motif de rejet requis').optional(),
+  rejectionReason: z.string().min(10).optional(),
 }).refine(
   (data) => data.action === 'APPROVE' || data.rejectionReason,
-  { message: 'Motif de rejet requis', path: ['rejectionReason'] }
+  { message: 'MOTIF_REJET_REQUIS', path: ['rejectionReason'] }
 );
 
 export const configUpdateSchema = z.object({

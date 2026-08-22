@@ -10,9 +10,9 @@
 |---|---|
 | **Ce qui tourne** | Une plateforme complète de tokenisation d'or, **sans blockchain** : le jeton est une écriture comptable en base |
 | **Volumétrie** | 14 modules API · 156 endpoints · 31 services · 38 migrations · 11 travaux planifiés · 4 Durable Objects · 5 applications front |
-| **Tests** | **950** côté API, **1 493** au total, tous exécutés |
+| **Tests** | **950** côté API, **1 506** au total, tous exécutés |
 | **Garde-fous** | 6 contrôles statiques bloquants avant chaque suite de tests |
-| **Décisions écrites** | 26 ADR |
+| **Décisions écrites** | 27 ADR |
 | **Audits** | 12 passes, chacune sous un angle différent |
 | **Pays décrits** | 6 — Burkina Faso actif ; Côte d'Ivoire, Mali, Sénégal, Ouganda décrits et désactivés |
 | **Pour le token TNC** | **Tout l'on-chain reste à faire.** Aucun contrat n'est déployé |
@@ -175,6 +175,7 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 | Notifications **dans la langue du pays** — 7 courriels, 5 SMS | ✅ |
 | Réponses d'erreur de l'API **dans la langue du client** — 143 codes, deux langues | ✅ |
 | Forme d'erreur unique, **y compris en validation** — code, message, `requestId` | ✅ |
+| Messages de validation **bilingues**, champ nommé ([ADR 027](adr/027-la-langue-d-une-validation.md)) | ✅ |
 
 ---
 
@@ -196,7 +197,6 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 
 | Sujet | Ampleur |
 |---|---|
-| Messages de validation des schémas Zod, en français | Surface distincte de celle des erreurs d'API, qui est faite ([ADR 025](adr/025-la-langue-d-une-reponse.md)) |
 | Rapport mensuel de l'État — bornes calculées en heure locale | Hors périmètre ; latent en production (Workers en UTC) |
 | Exécution des parcours mobiles bout-en-bout | Écrits, jamais exécutés |
 | QR du certificat mobile rendu par un tiers | Dépendance externe à lever |

@@ -16,22 +16,22 @@ import type {
   StateProofOfReserveData,
   StateMonthlyReportData,
 } from '@tnc-trading/shared/contracts';
-import { texte } from '../lib/reponse-erreur';
+import { messageValidation, texte } from '../lib/reponse-erreur';
 
 // Zod schemas for state endpoints
 const StateLoginSchema = z.object({
-  email: z.string().email('Email invalide'),
-  password: z.string().min(1, 'Mot de passe requis'),
+  email: z.string().email(),
+  password: z.string().min(1),
   totpCode: z.string().length(6).optional(),
 });
 
 const State2FASetupSchema = z.object({
-  setupToken: z.string().uuid('Token invalide'),
+  setupToken: z.string().uuid(),
 });
 
 const State2FAVerifySchema = z.object({
-  setupToken: z.string().uuid('Token invalide'),
-  code: z.string().length(6, 'Code doit être 6 chiffres'),
+  setupToken: z.string().uuid(),
+  code: z.string().length(6),
 });
 
 // Type for admin record from DB
@@ -142,7 +142,7 @@ state.post('/login', async (c) => {
         success: false,
         error: {
           code: 'INVALID_INPUT',
-          message: parseResult.error.issues[0]?.message || texte(c, 'INVALID_INPUT'),
+          message: messageValidation(c, parseResult.error.issues),
           details: parseResult.error.issues,
         },
         requestId: crypto.randomUUID(),

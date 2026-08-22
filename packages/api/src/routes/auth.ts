@@ -64,21 +64,21 @@ function constantTimeEqual(a: string, b: string): boolean {
 // ==========================================
 
 const registerSchema = z.object({
-  email: z.string().email('Email invalide').max(255),
+  email: z.string().email().max(255),
   // La MEME regle que la mise a jour du profil, partagee (ADR 021) : deux copies
   // d'une regle sur un meme champ divergent, et c'est ce qui s'est produit.
   phone: phoneSchema,
   password: z.string()
-    .min(SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH, `Le mot de passe doit contenir au moins ${SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH} caractères`)
+    .min(SECURITY_DEFAULTS.PASSWORD_MIN_LENGTH)
     .max(SECURITY_DEFAULTS.PASSWORD_MAX_LENGTH),
   country: z.string().length(2).default('BF'),
-  firstName: z.string().min(1, 'Prénom requis').max(100).optional(),
-  lastName: z.string().min(1, 'Nom requis').max(100).optional(),
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
 });
 
 const loginSchema = z.object({
-  identifier: z.string().min(1, 'Identifiant requis'),
-  password: z.string().min(1, 'Mot de passe requis'),
+  identifier: z.string().min(1),
+  password: z.string().min(1),
   totpCode: z.string().length(6).optional(),
   deviceFingerprint: z.string().optional(),
 });
@@ -109,11 +109,11 @@ const resetPasswordSchema = z.object({
 });
 
 const setup2faSchema = z.object({
-  password: z.string().min(1, 'Mot de passe requis pour activer 2FA'),
+  password: z.string().min(1),
 });
 
 const verify2faSchema = z.object({
-  code: z.string().length(6, 'Code 2FA doit être 6 chiffres'),
+  code: z.string().length(6),
   secret: z.string().min(1),
 });
 
@@ -2111,13 +2111,13 @@ auth.post('/2fa/setup-complete', async (c) => {
 // ==========================================
 
 const passwordlessRequestSchema = z.object({
-  identifier: z.string().min(1, 'Email ou téléphone requis'),
+  identifier: z.string().min(1),
   method: z.enum(['email', 'sms']).default('email'),
 });
 
 const passwordlessVerifySchema = z.object({
-  identifier: z.string().min(1, 'Identifiant requis'),
-  code: z.string().length(6, 'Code doit être 6 chiffres'),
+  identifier: z.string().min(1),
+  code: z.string().length(6),
   totpCode: z.string().length(6).optional(),
 });
 

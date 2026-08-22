@@ -12,6 +12,7 @@
  */
 
 import type { Context } from 'hono';
+import { traduireProbleme } from '@tnc-trading/shared/validators';
 import { messageErreur, type CodeErreur, type Langue, type ParamsErreur } from './messages-erreur';
 
 /**
@@ -56,4 +57,21 @@ export function texte(c: Pick<Context, 'req'>, code: CodeErreur, params?: unknow
     langueDeLaRequete(c),
     params
   );
+}
+
+/**
+ * Le premier probleme de validation, mis en mots — ADR 027.
+ *
+ * A utiliser partout ou un schema est analyse a la main, plutot que de lire
+ * `issues[0].message` : ce message est une CLE depuis l'ADR 027, et l'afficher
+ * tel quel montrerait `CORRIDOR_REQUIS` au lecteur.
+ */
+export function messageValidation(
+  c: Pick<Context, 'req'>,
+  problemes: readonly unknown[] | undefined,
+  repli: CodeErreur = 'INVALID_INPUT'
+): string {
+  const premier = problemes?.[0];
+  if (!premier) return texte(c, repli as never);
+  return traduireProbleme(premier as never, langueDeLaRequete(c));
 }
