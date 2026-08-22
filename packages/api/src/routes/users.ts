@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 // Contrats partages : `satisfies` fait echouer la compilation si la forme
 // emise s ecarte de ce que les clients importent.
 import type {
@@ -17,7 +17,7 @@ import type { AppEnv } from '../types/env';
 import { authMiddleware } from '../middleware/auth';
 import { KycService } from '../services/kyc.service';
 import { CountryConfigService } from '../services/country-config.service';
-import { AccountClosureService } from '../services/account-closure.service';
+import { AccountClosureService, type MotifRefus } from '../services/account-closure.service';
 import { AuthService } from '../services/auth.service';
 import { SecurityService, SECURITY_CONFIG } from '../services/security.service';
 import { NotificationService } from '../services/notification.service';
@@ -26,8 +26,38 @@ import { ConfigService } from '../services/config.service';
 import { sniffImageType, extensionFor } from '../lib/image-upload';
 import { PushTokenService } from '../services/push-token.service';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const users = new Hono<AppEnv>();
+
+/**
+ * Met en mots un obstacle a la fermeture de compte (ADR 015, ADR 026).
+ *
+ * Le service nomme l'obstacle et compte ce qu'il y a a compter ; c'est ici,
+ * dans la requete, qu'on connait la langue du titulaire. Le `switch` est
+ * explicite plutot que generique : chaque motif a ses propres chiffres, et un
+ * rendu generique les aurait perdus.
+ */
+function messageObstacle(
+  c: Context<AppEnv>,
+  code: MotifRefus,
+  details: Record<string, unknown> | undefined
+): string {
+  const d = details ?? {};
+  switch (code) {
+    case 'LEASE_POSITION_OPEN':
+      return texte(c, 'LEASE_POSITION_OPEN', {
+        positions: Number(d.positions),
+        grammesG: Number(d.grammesG),
+      });
+    case 'CONSIGNMENT_IN_PROGRESS':
+      return texte(c, 'CONSIGNMENT_IN_PROGRESS', { lots: Number(d.lots) });
+    case 'STORAGE_FEES_OUTSTANDING':
+      return texte(c, 'STORAGE_FEES_OUTSTANDING', { montantXof: Number(d.montantXof) });
+    default:
+      return texte(c, code as 'BALANCE_NOT_ZERO' | 'PENDING_TRANSACTIONS' | 'STORAGE_DELETE_FAILED');
+  }
+}
 
 // All routes require authentication
 users.use('/*', authMiddleware);
@@ -112,7 +142,7 @@ const updateProfileSchema = z.object({
 );
 
 // PATCH /users/me
-users.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
+users.patch('/me', zValidator('json', updateProfileSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
 
   try {
@@ -193,7 +223,7 @@ const kycSubmitSchema = z.object({
 });
 
 // POST /users/me/kyc - Submit KYC application
-users.post('/me/kyc', zValidator('json', kycSubmitSchema), async (c) => {
+users.post('/me/kyc', zValidator('json', kycSubmitSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
 
   try {
@@ -1011,7 +1041,7 @@ const changePasswordSchema = z.object({
 });
 
 // POST /users/me/password - Change user password
-users.post('/me/password', zValidator('json', changePasswordSchema), async (c) => {
+users.post('/me/password', zValidator('json', changePasswordSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
@@ -1253,7 +1283,7 @@ users.get('/me/price-alerts', async (c) => {
 });
 
 // POST /users/me/price-alerts - Create a new price alert
-users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async (c) => {
+users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
@@ -1346,7 +1376,7 @@ users.post('/me/price-alerts', zValidator('json', createPriceAlertSchema), async
 });
 
 // PATCH /users/me/price-alerts/:id - Update a price alert
-users.patch('/me/price-alerts/:id', zValidator('json', updatePriceAlertSchema), async (c) => {
+users.patch('/me/price-alerts/:id', zValidator('json', updatePriceAlertSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const { id } = c.req.param();
   const body = c.req.valid('json');
@@ -1551,7 +1581,11 @@ users.delete('/me', async (c) => {
     if (!obstacle.ok) {
       return c.json({
         success: false,
-        error: { code: obstacle.code, message: obstacle.message, details: obstacle.details },
+        error: {
+          code: obstacle.code,
+          message: messageObstacle(c, obstacle.code, obstacle.details),
+          details: obstacle.details,
+        },
         requestId,
       }, 400);
     }
@@ -1563,7 +1597,7 @@ users.delete('/me', async (c) => {
     if (!pieces.ok) {
       return c.json({
         success: false,
-        error: { code: pieces.code, message: pieces.message },
+        error: { code: pieces.code, message: texte(c, 'STORAGE_DELETE_FAILED') },
         requestId,
       }, 503);
     }

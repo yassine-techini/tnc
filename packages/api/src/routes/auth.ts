@@ -22,6 +22,7 @@ import { ConfigService } from '../services/config.service';
 import { setAuthCookies, clearAuthCookies, getRefreshToken } from '../lib/cookies';
 import { encryptTotpSecret, decryptTotpSecret } from '../lib/totp-secret';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const auth = new Hono<AppEnv>();
 
@@ -140,7 +141,7 @@ function getUserAgent(c: any): string {
 // ==========================================
 
 // POST /auth/register
-auth.post('/register', zValidator('json', registerSchema), async (c) => {
+auth.post('/register', zValidator('json', registerSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -352,7 +353,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
 });
 
 // POST /auth/login
-auth.post('/login', zValidator('json', loginSchema), async (c) => {
+auth.post('/login', zValidator('json', loginSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -635,7 +636,7 @@ auth.post('/login', zValidator('json', loginSchema), async (c) => {
 });
 
 // POST /auth/refresh
-auth.post('/refresh', zValidator('json', refreshSchema), async (c) => {
+auth.post('/refresh', zValidator('json', refreshSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -789,7 +790,7 @@ auth.post('/logout', async (c) => {
 });
 
 // POST /auth/verify-email
-auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
+auth.post('/verify-email', zValidator('json', verifyEmailSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -899,7 +900,7 @@ auth.post('/verify-email', zValidator('json', verifyEmailSchema), async (c) => {
 });
 
 // POST /auth/verify-phone
-auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
+auth.post('/verify-phone', zValidator('json', verifyPhoneSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
 
@@ -992,7 +993,7 @@ auth.post('/verify-phone', zValidator('json', verifyPhoneSchema), async (c) => {
 });
 
 // POST /auth/forgot-password
-auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c) => {
+auth.post('/forgot-password', zValidator('json', forgotPasswordSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -1124,7 +1125,7 @@ auth.post('/forgot-password', zValidator('json', forgotPasswordSchema), async (c
 });
 
 // POST /auth/reset-password
-auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) => {
+auth.post('/reset-password', zValidator('json', resetPasswordSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -1247,7 +1248,7 @@ auth.post('/reset-password', zValidator('json', resetPasswordSchema), async (c) 
 });
 
 // POST /auth/2fa/setup - Initialize 2FA setup
-auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
+auth.post('/2fa/setup', zValidator('json', setup2faSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
 
@@ -1354,7 +1355,7 @@ auth.post('/2fa/setup', zValidator('json', setup2faSchema), async (c) => {
 });
 
 // POST /auth/2fa/verify - Verify and enable 2FA
-auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
+auth.post('/2fa/verify', zValidator('json', verify2faSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -1471,7 +1472,7 @@ auth.post('/2fa/verify', zValidator('json', verify2faSchema), async (c) => {
 });
 
 // POST /auth/2fa/disable - Disable 2FA
-auth.post('/2fa/disable', zValidator('json', disable2faSchema), async (c) => {
+auth.post('/2fa/disable', zValidator('json', disable2faSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -1777,7 +1778,7 @@ const resendCodeSchema = z.object({
   identifier: z.string().min(1), // email or phone
 });
 
-auth.post('/resend-code', zValidator('json', resendCodeSchema), async (c) => {
+auth.post('/resend-code', zValidator('json', resendCodeSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -2121,7 +2122,7 @@ const passwordlessVerifySchema = z.object({
 });
 
 // POST /auth/passwordless/request - Request a one-time code
-auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema), async (c) => {
+auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);
@@ -2274,7 +2275,7 @@ auth.post('/passwordless/request', zValidator('json', passwordlessRequestSchema)
 });
 
 // POST /auth/passwordless/verify - Verify code and login
-auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema), async (c) => {
+auth.post('/passwordless/verify', zValidator('json', passwordlessVerifySchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
   const ipAddress = getClientIp(c);

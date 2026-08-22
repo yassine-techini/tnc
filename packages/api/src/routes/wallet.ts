@@ -25,6 +25,7 @@ import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
 import { CountryConfigService } from '../services/country-config.service';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const wallet = new Hono<AppEnv>();
 
@@ -203,7 +204,7 @@ const depositSchema = z.object({
 });
 
 // POST /wallet/deposit
-wallet.post('/deposit', zValidator('json', depositSchema), async (c) => {
+wallet.post('/deposit', zValidator('json', depositSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
@@ -362,7 +363,7 @@ const withdrawSchema = z.object({
 });
 
 // POST /wallet/withdraw
-wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
+wallet.post('/withdraw', zValidator('json', withdrawSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
   const body = c.req.valid('json');
@@ -553,7 +554,9 @@ wallet.post('/withdraw', zValidator('json', withdrawSchema), async (c) => {
         success: false,
         error: {
           code: isConflict ? 'TRANSACTION_CONFLICT' : 'INSUFFICIENT_BALANCE',
-          message: isConflict ? 'Opération non aboutie, veuillez réessayer.' : 'Solde insuffisant',
+          message: isConflict
+            ? texte(c, 'TRANSACTION_CONFLICT')
+            : texte(c, 'INSUFFICIENT_BALANCE'),
         },
         requestId,
       }, isConflict ? 409 : 400);

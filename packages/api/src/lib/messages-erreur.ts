@@ -108,6 +108,10 @@ export interface ParamsErreur {
   AMOUNT_TOO_LOW: { minimum: number; devise: string };
   /** `minutes` absent : le blocage est connu, sa duree restante ne l'est pas. */
   AUTH_ACCOUNT_LOCKED: { minutes?: number };
+  BELOW_MINIMUM: { minimumG: number };
+  CONSIGNMENT_IN_PROGRESS: { lots: number };
+  LEASE_POSITION_OPEN: { positions: number; grammesG: number };
+  STORAGE_FEES_OUTSTANDING: { montantXof: number };
   FILE_TOO_LARGE: { maxMo: number };
   INVALID_TRANSITION: { depuis: string; dejaTraite: boolean };
   KYC_DOCUMENT_TYPE_UNSUPPORTED: { pays: string; acceptes: string[] };
@@ -479,6 +483,37 @@ export const MESSAGES = {
     en: 'A withdrawal is already being processed',
   },
 
+  /**
+   * — Location et repartition de lot ——————————————————————————————
+   *
+   * Ces codes vivaient dans des `Record<string, string>` francais, indexes par
+   * le code d'erreur du service. Le garde-fou ne les voyait pas : leur reponse
+   * ecrit `code: result.error`, une expression et non un litteral, et la regle
+   * ne s'accrochait qu'aux litteraux. Elle s'accroche desormais aux deux.
+   */
+  ALREADY_DISPOSED: { fr: 'Ce lot a deja ete reparti', en: 'This lot has already been allocated' },
+  ALREADY_EXITING: {
+    fr: 'Une sortie est deja en cours sur cette position',
+    en: 'An exit is already under way on this position',
+  },
+  BELOW_MINIMUM: {
+    fr: (p: ParamsErreur['BELOW_MINIMUM']) => `Le minimum est de ${p.minimumG} g`,
+    en: (p: ParamsErreur['BELOW_MINIMUM']) => `The minimum is ${p.minimumG} g`,
+  },
+  INSUFFICIENT_BALANCE: { fr: 'Solde en or insuffisant', en: 'Not enough gold' },
+  NEGATIVE_SHARE: { fr: 'Une part ne peut pas etre negative', en: 'A share cannot be negative' },
+  NOTHING_CREDITED: { fr: 'Aucun gramme credite sur ce lot', en: 'No grams credited on this lot' },
+  NOT_ACTIVE: { fr: 'Cette position est cloturee', en: 'This position is closed' },
+  NO_PRICE: {
+    fr: 'Prix indisponible : la vente est impossible pour le moment',
+    en: 'Price unavailable: selling is not possible right now',
+  },
+  NO_WALLET: { fr: 'Portefeuille introuvable', en: 'Wallet not found' },
+  SPLIT_MISMATCH: {
+    fr: 'La somme des trois parts doit couvrir exactement le lot',
+    en: 'The three shares must add up to exactly the lot',
+  },
+
   // — Filiere or —————————————————————————————————————————————————
   ALREADY_ATTACHED: {
     fr: 'Ce document est deja rattache a un lot',
@@ -515,6 +550,49 @@ export const MESSAGES = {
   NOT_CONFIGURED: {
     fr: 'Aucune cle de verification publiee',
     en: 'No verification key published',
+  },
+
+  /**
+   * — Fermeture de compte (ADR 015) ———————————————————————————————
+   *
+   * `AccountClosureService` redigeait ces phrases lui-meme et les faisait
+   * traverser jusqu'a la reponse. Un service n'a pas de requete sous la main,
+   * donc pas de langue : il nomme l'obstacle et fournit ses chiffres, la route
+   * les met en mots.
+   */
+  BALANCE_NOT_ZERO: {
+    fr: 'Soldez d’abord votre compte : retirez vos especes et vendez vos grammes.',
+    en: 'Settle your account first: withdraw your cash and sell your grams.',
+  },
+  CONSIGNMENT_IN_PROGRESS: {
+    fr: (p: ParamsErreur['CONSIGNMENT_IN_PROGRESS']) =>
+      `Vous avez ${p.lots} lot(s) de consignation en cours. Leur traitement doit s’achever avant la fermeture.`,
+    en: (p: ParamsErreur['CONSIGNMENT_IN_PROGRESS']) =>
+      `You have ${p.lots} consignment(s) in progress. They must complete before closing.`,
+  },
+  LEASE_POSITION_OPEN: {
+    fr: (p: ParamsErreur['LEASE_POSITION_OPEN']) =>
+      `Vous avez ${p.positions} position(s) de location en cours (${p.grammesG} g). Sortez-en avant de fermer votre compte.`,
+    en: (p: ParamsErreur['LEASE_POSITION_OPEN']) =>
+      `You have ${p.positions} open lease position(s) (${p.grammesG} g). Exit them before closing your account.`,
+  },
+  PENDING_TRANSACTIONS: {
+    fr: 'Vous avez des transactions en cours. Attendez leur finalisation.',
+    en: 'You have transactions in progress. Please wait for them to settle.',
+  },
+  STORAGE_DELETE_FAILED: {
+    fr: 'La suppression de vos pieces d’identite a echoue. Votre compte n’a pas ete ferme — reessayez.',
+    en: 'Deleting your identity documents failed. Your account was not closed — please try again.',
+  },
+  STORAGE_FEES_OUTSTANDING: {
+    fr: (p: ParamsErreur['STORAGE_FEES_OUTSTANDING']) =>
+      `Des frais de garde restent impayes (${nombre(p.montantXof, 'fr')} XOF). Reglez-les avant de fermer votre compte.`,
+    en: (p: ParamsErreur['STORAGE_FEES_OUTSTANDING']) =>
+      `Storage fees are still outstanding (${nombre(p.montantXof, 'en')} XOF). Settle them before closing your account.`,
+  },
+  TRANSACTION_CONFLICT: {
+    fr: 'Operation non aboutie, veuillez reessayer.',
+    en: 'The operation did not complete, please try again.',
   },
 
   // — Administration des utilisateurs —————————————————————————————

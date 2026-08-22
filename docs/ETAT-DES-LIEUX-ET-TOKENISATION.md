@@ -10,9 +10,9 @@
 |---|---|
 | **Ce qui tourne** | Une plateforme complète de tokenisation d'or, **sans blockchain** : le jeton est une écriture comptable en base |
 | **Volumétrie** | 14 modules API · 156 endpoints · 31 services · 38 migrations · 11 travaux planifiés · 4 Durable Objects · 5 applications front |
-| **Tests** | **935** côté API, **1 478** au total, tous exécutés |
+| **Tests** | **941** côté API, **1 484** au total, tous exécutés |
 | **Garde-fous** | 6 contrôles statiques bloquants avant chaque suite de tests |
-| **Décisions écrites** | 23 ADR |
+| **Décisions écrites** | 26 ADR |
 | **Audits** | 12 passes, chacune sous un angle différent |
 | **Pays décrits** | 6 — Burkina Faso actif ; Côte d'Ivoire, Mali, Sénégal, Ouganda décrits et désactivés |
 | **Pour le token TNC** | **Tout l'on-chain reste à faire.** Aucun contrat n'est déployé |
@@ -173,7 +173,8 @@ Légende : ✅ opérationnel · ⚙️ implémenté mais inerte sans configurati
 | Réconciliation quotidienne, rapports mensuels | ✅ |
 | Diagnostic de disponibilité | ✅ |
 | Notifications **dans la langue du pays** — 7 courriels, 5 SMS | ✅ |
-| Réponses d'erreur de l'API **dans la langue du client** — 126 codes, deux langues | ✅ |
+| Réponses d'erreur de l'API **dans la langue du client** — 143 codes, deux langues | ✅ |
+| Forme d'erreur unique, **y compris en validation** — code, message, `requestId` | ✅ |
 
 ---
 

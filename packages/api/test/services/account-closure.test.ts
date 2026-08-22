@@ -46,7 +46,10 @@ describe('Ce qui empeche la fermeture se dit', () => {
     const v = await new AccountClosureService(db as never).obstacles('u1');
 
     expect(v.code).toBe('LEASE_POSITION_OPEN');
-    expect(v.message).toContain('100');
+    // Le service ne redige plus la phrase (ADR 026) : il fournit les chiffres,
+    // la route les met en mots. L'assertion porte donc sur le nombre lui-meme,
+    // ce qui la rend plus stricte qu'une recherche de sous-chaine.
+    expect(v.details).toMatchObject({ positions: 1, grammesG: 100 });
   });
 
   it('refuse un lot de consignation en cours', async () => {

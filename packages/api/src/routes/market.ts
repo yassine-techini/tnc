@@ -21,6 +21,7 @@ import { chiffresReserve } from '../lib/reserve';
 import { requireTwoFactorIfHighValue } from '../lib/high-value-2fa';
 import { KycService } from '../services/kyc.service';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const market = new Hono<AppEnv>();
 
@@ -171,7 +172,7 @@ const quoteSchema = z.object({
 );
 
 // POST /market/quote - Protected
-market.post('/quote', authMiddleware, zValidator('json', quoteSchema), async (c) => {
+market.post('/quote', authMiddleware, zValidator('json', quoteSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
@@ -311,7 +312,7 @@ function getTransactionSession(env: Env, userId: string) {
 }
 
 // POST /market/buy - Protected
-market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c) => {
+market.post('/buy', authMiddleware, zValidator('json', executeSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';
@@ -526,7 +527,7 @@ market.post('/buy', authMiddleware, zValidator('json', executeSchema), async (c)
 });
 
 // POST /market/sell - Protected
-market.post('/sell', authMiddleware, zValidator('json', executeSchema), async (c) => {
+market.post('/sell', authMiddleware, zValidator('json', executeSchema, surErreurDeValidation), async (c) => {
   const body = c.req.valid('json');
   const userId = c.get('userId');
   const kycLevel = c.get('kycLevel') as 'BASIC' | 'STANDARD' | 'VERIFIED';

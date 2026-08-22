@@ -30,15 +30,18 @@ export type MotifRefus =
 export interface VerdictCloture {
   ok: boolean;
   code?: MotifRefus;
-  message?: string;
+  /**
+   * PAS DE `message` (ADR 025/026). Ce service tourne hors requete : il ne
+   * connait pas la langue du titulaire. Il nomme l'obstacle et fournit ses
+   * chiffres dans `details` ; la route les met en mots.
+   */
   details?: Record<string, unknown>;
 }
 
 /** Forme PLATE : ce paquet compile avec `strictNullChecks: false`. */
-const refus = (code: MotifRefus, message: string, details?: Record<string, unknown>): VerdictCloture => ({
+const refus = (code: MotifRefus, details?: Record<string, unknown>): VerdictCloture => ({
   ok: false,
   code,
-  message,
   details,
 });
 
@@ -61,11 +64,10 @@ export class AccountClosureService {
       .first<{ token_balance: number; cash_balance: number }>();
 
     if (wallet && (wallet.token_balance > 0 || wallet.cash_balance > 0)) {
-      return refus(
-        'BALANCE_NOT_ZERO',
-        "Vous devez d'abord solder votre compte (retirer tous vos FCFA et vendre tous vos tokens)",
-        { tokenBalance: wallet.token_balance, cashBalance: wallet.cash_balance }
-      );
+      return refus('BALANCE_NOT_ZERO', {
+        tokenBalance: wallet.token_balance,
+        cashBalance: wallet.cash_balance,
+      });
     }
 
     const enCours = await this.db
@@ -74,7 +76,7 @@ export class AccountClosureService {
       .first<{ count: number }>();
 
     if ((enCours?.count || 0) > 0) {
-      return refus('PENDING_TRANSACTIONS', 'Vous avez des transactions en cours. Veuillez attendre leur finalisation.');
+      return refus('PENDING_TRANSACTIONS');
     }
 
     // Le controle qui manquait vraiment. Louer son or le retire du portefeuille :
@@ -85,11 +87,10 @@ export class AccountClosureService {
       .first<{ count: number; grammes: number }>();
 
     if ((location?.count || 0) > 0) {
-      return refus(
-        'LEASE_POSITION_OPEN',
-        `Vous avez ${location.count} position(s) de location en cours (${location.grammes} g). Sortez-en avant de fermer votre compte.`,
-        { positions: location.count, grammesG: location.grammes }
-      );
+      return refus('LEASE_POSITION_OPEN', {
+        positions: location.count,
+        grammesG: location.grammes,
+      });
     }
 
     const lots = await this.db
@@ -98,11 +99,7 @@ export class AccountClosureService {
       .first<{ count: number }>();
 
     if ((lots?.count || 0) > 0) {
-      return refus(
-        'CONSIGNMENT_IN_PROGRESS',
-        `Vous avez ${lots.count} lot(s) de consignation en cours. Leur traitement doit s'achever avant la fermeture.`,
-        { lots: lots.count }
-      );
+      return refus('CONSIGNMENT_IN_PROGRESS', { lots: lots.count });
     }
 
     const arrieres = await this.db
@@ -111,11 +108,7 @@ export class AccountClosureService {
       .first<{ total: number }>();
 
     if ((arrieres?.total || 0) > 0) {
-      return refus(
-        'STORAGE_FEES_OUTSTANDING',
-        `Des frais de garde restent impayés (${Math.round(arrieres.total)} XOF). Réglez-les avant de fermer votre compte.`,
-        { montantXof: Math.round(arrieres.total) }
-      );
+      return refus('STORAGE_FEES_OUTSTANDING', { montantXof: Math.round(arrieres.total) });
     }
 
     return { ok: true };
@@ -148,11 +141,7 @@ export class AccountClosureService {
         await this.stockage.delete(cle);
       }
     } catch (error) {
-      return refus(
-        'STORAGE_DELETE_FAILED',
-        "La suppression de vos pièces d'identité a échoué. Votre compte n'a pas été fermé — réessayez.",
-        { raison: String(error) }
-      );
+      return refus('STORAGE_DELETE_FAILED', { raison: String(error) });
     }
 
     return { ok: true };

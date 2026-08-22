@@ -1749,6 +1749,32 @@ Trois choses trouvées en le faisant :
 français. Ils sont conservés à l'affichage, avec le catalogue en repli — c'est une surface
 distincte (`packages/shared/validators`), pas un reste de celle-ci.
 
+### AN bis. Vingt-six routes ne rendaient pas la forme d'erreur de la plateforme ✅
+
+Trouvé en instruisant le point précédent, et plus grave que lui. `@hono/zod-validator` sans
+*hook* répond `c.json(result, 400)` — le `ZodError` brut. Mesuré :
+
+```
+error.code    -> undefined
+error.message -> undefined
+requestId     -> undefined
+```
+
+Vingt-six routes répondaient ainsi : inscription, connexion, rafraîchissement de jeton, dépôt,
+retrait. **Un client qui aiguille sur `error.code` n'y trouvait rien** — et il y trouvait en
+revanche un `issues[0].code` valant `invalid_string`, c'est-à-dire le vocabulaire interne d'une
+bibliothèque tierce. Sans `requestId`, l'erreur la plus courante était aussi la seule qu'un
+utilisateur ne pouvait pas rapporter au support.
+
+**Corrigé** — [ADR 026](adr/026-une-erreur-de-validation-est-une-erreur.md) : un hook partagé,
+imposé par le garde-fou.
+
+Trois autres sources de français ont été trouvées en élargissant le contrôle : des
+`Record<string, string>` de messages indexés par code dans trois routes, les refus de fermeture
+de compte rédigés par le service, et deux messages de retrait. Le garde-fou ne les voyait pas
+parce que leur réponse écrit `code: result.error` — une expression, pas un littéral. Il
+s'accroche désormais aux deux.
+
 ---
 
 ## Douzième audit — 18 août 2026, deux à la fois

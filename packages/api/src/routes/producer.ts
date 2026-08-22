@@ -35,6 +35,7 @@ import { DispositionService } from '../services/disposition.service';
 import { StorageFeeService } from '../services/storage-fee.service';
 import { MarketService } from '../services/market.service';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const producer = new Hono<AppEnv>();
 
@@ -184,7 +185,7 @@ const submitSchema = z.object({
 });
 
 // POST /producer/consignments — submit a new gold lot
-producer.post('/consignments', zValidator('json', submitSchema), async (c) => {
+producer.post('/consignments', zValidator('json', submitSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
   const requestId = crypto.randomUUID();
@@ -345,7 +346,7 @@ producer.get('/consignments/:id/disposition', async (c) => {
 });
 
 // POST /producer/consignments/:id/disposition — répartir, éventuellement en trois
-producer.post('/consignments/:id/disposition', zValidator('json', disposeSchema), async (c) => {
+producer.post('/consignments/:id/disposition', zValidator('json', disposeSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const { id } = c.req.param();
   const split = c.req.valid('json');
@@ -386,21 +387,22 @@ producer.post('/consignments/:id/disposition', zValidator('json', disposeSchema)
   });
 
   if (!result.disposition) {
-    const messages: Record<string, string> = {
-      SPLIT_MISMATCH: 'La somme des trois parts doit couvrir exactement le lot',
-      NEGATIVE_SHARE: 'Une part ne peut pas être négative',
-      NOTHING_CREDITED: 'Aucun gramme crédité sur ce lot',
-      ALREADY_DISPOSED: 'Ce lot a déjà été réparti',
-      INSUFFICIENT_BALANCE: 'Solde en or insuffisant pour cette répartition',
-      NO_PRICE: 'Prix indisponible : la vente est impossible pour le moment',
-      NO_WALLET: 'Portefeuille introuvable',
-    };
     const status = result.error === 'ALREADY_DISPOSED' ? 409 : 400;
     return c.json({
       success: false,
       error: {
         code: result.error,
-        message: messages[result.error as string] || 'Répartition impossible',
+        message: texte(
+          c,
+          result.error as
+            | 'SPLIT_MISMATCH'
+            | 'NEGATIVE_SHARE'
+            | 'NOTHING_CREDITED'
+            | 'ALREADY_DISPOSED'
+            | 'INSUFFICIENT_BALANCE'
+            | 'NO_PRICE'
+            | 'NO_WALLET'
+        ),
       },
     }, status as 400 | 409);
   }

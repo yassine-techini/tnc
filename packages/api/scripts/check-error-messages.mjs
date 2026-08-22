@@ -102,10 +102,22 @@ function verifierLeDepot(catalogue) {
     for (let i = 0; i < lignes.length; i++) {
       // `[0-9A-Z]` en tete, pas `[A-Z]` : les codes `2FA_*` des portails
       // privilegies commencent par un chiffre. Quinze sites leur ont echappe.
-      const mCode = lignes[i].match(/\bcode:\s*'([0-9A-Z][0-9A-Z_]*)'/);
+      //
+      // Et le code n'est pas toujours un LITTERAL : `code: result.error`,
+      // `code: verdict.code`. La regle ne s'accrochait qu'aux litteraux, et
+      // laissait donc passer trois `Record<string, string>` de messages
+      // francais indexes par code — la forme meme qu'elle existe pour
+      // interdire. Elle s'accroche desormais aux deux, et se contente de
+      // verifier l'usage du catalogue quand le code est calcule.
+      const mCode = lignes[i].match(
+        /\bcode:\s*(?:'([0-9A-Z][0-9A-Z_]*)'|([A-Za-z_$][\w$.]*))/
+      );
       if (!mCode) continue;
       const code = mCode[1];
-      if (PAS_UN_CODE_ERREUR.test(code)) continue;
+      const codeCalcule = !code;
+      if (code && PAS_UN_CODE_ERREUR.test(code)) continue;
+      // `code: string` dans une signature de fonction n'est pas une reponse.
+      if (/^(string|number|boolean)$/.test(mCode[2] || '')) continue;
 
       // Le message accompagne le code sur sa ligne, ou dans les trois suivantes,
       // sans franchir la fermeture de l'objet.
@@ -136,7 +148,27 @@ function verifierLeDepot(catalogue) {
           break;
         }
 
-        const mTexte = valeur.match(/texte\(\s*c\s*,\s*'([0-9A-Z][0-9A-Z_]*)'/);
+        /**
+         * Code calcule : `code: result.error`, `code: e.code`.
+         *
+         * La concordance n'est pas verifiable, et l'exigence d'un `texte()` sur
+         * place ne l'est pas non plus : le message a souvent ete construit
+         * ailleurs (`e.message`, `messageObstacle(...)`) — legitimement, et le
+         * lieu de construction est lui-meme scanne. Ce qui reste verifiable, et
+         * qui est le vrai defaut, c'est la PROSE : elle a deja ete refusee
+         * au-dessus. On s'arrete donc ici.
+         *
+         * LIMITE ASSUMEE : une prose cachee derriere deux indirections
+         * echapperait. C'est pourquoi la regle des cartes de messages, plus bas,
+         * existe separement.
+         */
+        if (codeCalcule) break;
+
+        // La valeur peut s'etaler sur plusieurs lignes — un ternaire, un appel
+        // enveloppe. On elargit la fenetre pour chercher l'appel au catalogue,
+        // sans elargir celle de la prose, qui doit rester serree.
+        const valeurLarge = lignes.slice(j, j + 5).join(' ');
+        const mTexte = valeurLarge.match(/texte\(\s*c\s*,\s*'([0-9A-Z][0-9A-Z_]*)'/);
         if (!mTexte) {
           problemes.push({
             rel,
@@ -159,6 +191,57 @@ function verifierLeDepot(catalogue) {
           problemes.push({ rel, ligne: j + 1, quoi: 'code absent du catalogue', detail: code });
         }
         break;
+      }
+    }
+
+    /**
+     * Aucune carte de messages indexee par code, dans une route.
+     *
+     * `{ INSUFFICIENT_BALANCE: 'Solde en or insuffisant', … }` puis
+     * `message: messages[result.error]` : la prose est a deux pas du site
+     * d'erreur, et le code y etant calcule, la regle principale ne la voyait
+     * pas. Trois routes en portaient une.
+     *
+     * Restreint a `routes/` et `middleware/` a dessein : `lib/` et `services/`
+     * contiennent des cartes de LIBELLES — types de documents, niveaux de
+     * verification, natures de transaction — qui composent des documents
+     * francais et ne sont pas des messages d'erreur.
+     */
+    if (rel.startsWith('routes/') || rel.startsWith('middleware/')) {
+      for (let i = 0; i < lignes.length; i++) {
+        // Pas d'ancrage en debut de ligne : une carte ecrite sur UNE seule
+        // ligne est la meme faute, et elle passait.
+        const m = lignes[i].match(/\b([A-Z][A-Z0-9_]{3,}):\s*((['"`])(?:(?!\3).)*\3)/);
+        if (m && estUnePhrase(m[2])) {
+          problemes.push({
+            rel,
+            ligne: i + 1,
+            quoi: 'carte de messages indexee par code',
+            detail: m[1],
+          });
+        }
+      }
+    }
+
+    /**
+     * Tout `zValidator` porte le hook partage — ADR 026.
+     *
+     * Sans lui, `@hono/zod-validator` repond `c.json(result, 400)` : le
+     * `ZodError` brut, sans `code`, sans `message`, sans `requestId`. Vingt-six
+     * routes le faisaient. Le controle est ici parce que la prochaine route
+     * ajoutee le referait, et que personne ne le verrait avant qu'un client ne
+     * s'en plaigne.
+     */
+    for (let i = 0; i < lignes.length; i++) {
+      if (!/\bzValidator\(/.test(lignes[i])) continue;
+      const fenetre = lignes.slice(i, i + 3).join(' ');
+      if (!fenetre.includes('surErreurDeValidation')) {
+        problemes.push({
+          rel,
+          ligne: i + 1,
+          quoi: 'zValidator sans le hook partage',
+          detail: lignes[i].trim().slice(0, 56),
+        });
       }
     }
 

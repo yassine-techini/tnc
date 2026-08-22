@@ -24,6 +24,7 @@ import { MarketService } from '../services/market.service';
 import { ConfigService } from '../services/config.service';
 import { KycService } from '../services/kyc.service';
 import { texte } from '../lib/reponse-erreur';
+import { surErreurDeValidation } from '../lib/validation-hook';
 
 const lease = new Hono<AppEnv>();
 
@@ -143,7 +144,7 @@ lease.get('/positions/:id/accruals', async (c) => {
 });
 
 /** Open a position: the grams leave the wallet. */
-lease.post('/positions', zValidator('json', openSchema), async (c) => {
+lease.post('/positions', zValidator('json', openSchema, surErreurDeValidation), async (c) => {
   const userId = c.get('userId');
   const { grams } = c.req.valid('json');
 
@@ -182,16 +183,16 @@ lease.post('/positions', zValidator('json', openSchema), async (c) => {
 
   if (!result.ok) {
     const status = result.error === 'INSUFFICIENT_BALANCE' ? 400 : result.error === 'CONFLICT' ? 409 : 400;
-    const messages: Record<string, string> = {
-      INSUFFICIENT_BALANCE: 'Solde en or insuffisant',
-      BELOW_MINIMUM: `Le minimum est de ${minimumG} g`,
-      NO_WALLET: 'Portefeuille introuvable',
-      CONFLICT: 'Opération concurrente, veuillez réessayer',
-    };
     return c.json(
       {
         success: false,
-        error: { code: result.error, message: messages[result.error] || 'Opération impossible' },
+        error: {
+          code: result.error,
+          message:
+            result.error === 'BELOW_MINIMUM'
+              ? texte(c, 'BELOW_MINIMUM', { minimumG })
+              : texte(c, result.error as 'INSUFFICIENT_BALANCE' | 'NO_WALLET' | 'CONFLICT'),
+        },
       },
       status as 400 | 409
     );
@@ -237,18 +238,15 @@ lease.post('/positions/:id/exit', async (c) => {
 
   if (!result.ok) {
     const status = result.error === 'NOT_FOUND' ? 404 : result.error === 'CONFLICT' ? 409 : 400;
-    const messages: Record<string, string> = {
-      NOT_FOUND: 'Position introuvable',
-      ALREADY_EXITING: 'Une sortie est déjà en cours sur cette position',
-      NOT_ACTIVE: 'Cette position est clôturée',
-      CONFLICT: 'Opération concurrente, veuillez réessayer',
-    };
     return c.json(
       {
         success: false,
         error: {
           code: result.error,
-          message: messages[result.error as string] || 'Sortie impossible',
+          message:
+            result.error === 'NOT_FOUND'
+              ? texte(c, 'NOT_FOUND', { ressource: 'position' })
+              : texte(c, result.error as 'ALREADY_EXITING' | 'NOT_ACTIVE' | 'CONFLICT'),
         },
       },
       status as 400 | 404 | 409
